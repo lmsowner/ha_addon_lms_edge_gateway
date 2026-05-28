@@ -1,0 +1,39 @@
+@namespace LMS.Shared.Components
+
+<div class="lms-shell">
+    <aside class="lms-sidebar">
+        <a class="lms-brand" href="">
+            <img src="images/lms-edge-gateway-icon.png" alt="" />
+            <span>
+                <strong>LMS Edge Gateway</strong>
+                <small>Home Assistant Add-on</small>
+            </span>
+        </a>
+        <nav aria-label="Primary navigation">
+            @foreach (var item in Items)
+            {
+                <NavLink class="lms-nav-row" href="@item.Href" Match="@GetMatch(item.Href)">
+                    <span aria-hidden="true">@item.Icon</span>
+                    <span>
+                        <strong>@item.Label</strong>
+                        <small>@item.Description</small>
+                    </span>
+                </NavLink>
+            }
+        </nav>
+        <div class="lms-sidebar-footer">
+            <span class="lms-sidebar-chip">Cloudflare + Caddy + MFA</span>
+        </div>
+    </aside>
+    <main class="lms-main">
+        @ChildContent
+    </main>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<NavigationItem> Items { get; set; } = [];
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private static NavLinkMatch GetMatch(string href) =>
+        href.Equals("/", StringComparison.Ordinal) ? NavLinkMatch.All : NavLinkMatch.Prefix;
+}

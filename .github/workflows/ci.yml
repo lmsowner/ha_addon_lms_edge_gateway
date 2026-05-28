@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore HA.LMS.EdgeGateway.slnx
+      - name: Build
+        run: dotnet build HA.LMS.EdgeGateway.slnx --configuration Release --no-restore
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build add-on image
+        run: |
+          docker build \
+            --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest \
+            --build-arg BUILD_ARCH=amd64 \
+            --build-arg BUILD_VERSION=0.1.0 \
+            -t local/lms-edge-gateway-addon \
+            lms_edge_gateway

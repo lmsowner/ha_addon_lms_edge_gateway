@@ -1,0 +1,79 @@
+@page "/"
+@rendermode InteractiveServer
+@inject IEdgeGatewayStatusService StatusService
+
+<PageTitle>LMS Edge Gateway</PageTitle>
+
+<div class="page-stack">
+    <section class="hero-band">
+        <div>
+            <p class="lms-eyebrow">Home Assistant Add-on</p>
+            <h1>Make self-hosting sane.</h1>
+            <p>Publish Home Assistant and LAN applications through Cloudflare, Cloudflare Access, Caddy, and LMS Edge Gateway orchestration.</p>
+        </div>
+        <div class="hero-actions">
+            <LmsButton Label="Open onboarding" Href="/cloudflare" Primary="true" />
+            <LmsButton Label="View diagnostics" Href="/diagnostics" />
+        </div>
+    </section>
+
+    @if (status is null)
+    {
+        <LmsPanel Title="Checking runtime">
+            <p class="muted">Reading add-on status from the LMS Edge Gateway control plane.</p>
+        </LmsPanel>
+    }
+    else
+    {
+        <section class="status-grid">
+            @foreach (var component in status.Components)
+            {
+                <article class="status-card">
+                    <header>
+                        <span>@component.Name</span>
+                        <LmsStatusPill Text="@component.State.ToString()" Tone="@GetTone(component.State)" />
+                    </header>
+                    <strong>@component.Summary</strong>
+                    <p>@component.Detail</p>
+                </article>
+            }
+        </section>
+
+        <section class="two-column">
+            <LmsPanel Kicker="Flow" Title="Secure publishing path">
+                <ol class="flow-list">
+                    <li><span>1</span><strong>Cloudflare Access</strong><p>Put identity, MFA, passkeys, or email auth in front of the public hostname.</p></li>
+                    <li><span>2</span><strong>Cloudflare Tunnel</strong><p>Outbound-only tunnel from this add-on to Cloudflare.</p></li>
+                    <li><span>3</span><strong>Caddy</strong><p>Local reverse proxy generated and reloaded by LMS Edge Gateway.</p></li>
+                    <li><span>4</span><strong>LAN app</strong><p>Home Assistant or another LAN service stays private.</p></li>
+                </ol>
+            </LmsPanel>
+
+            <LmsPanel Kicker="State" Title="Configuration storage">
+                <dl class="detail-list">
+                    <div><dt>Data root</dt><dd>@status.DataRoot</dd></div>
+                    <div><dt>Ingress</dt><dd>@(status.IsHomeAssistantIngress ? "Home Assistant ingress detected" : "Standalone/local mode")</dd></div>
+                    <div><dt>Published apps</dt><dd>@status.Configuration.Applications.Count</dd></div>
+                    <div><dt>Last check</dt><dd>@status.CheckedAtUtc.ToLocalTime().ToString("g")</dd></div>
+                </dl>
+            </LmsPanel>
+        </section>
+    }
+</div>
+
+@code {
+    private EdgeGatewayRuntimeStatus? status;
+
+    protected override async Task OnInitializedAsync()
+    {
+        status = await StatusService.GetStatusAsync();
+    }
+
+    private static LmsStatusTone GetTone(EdgeGatewayComponentState state) => state switch
+    {
+        EdgeGatewayComponentState.Ready => LmsStatusTone.Ready,
+        EdgeGatewayComponentState.Warning or EdgeGatewayComponentState.Starting => LmsStatusTone.Warning,
+        EdgeGatewayComponentState.Error => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+}

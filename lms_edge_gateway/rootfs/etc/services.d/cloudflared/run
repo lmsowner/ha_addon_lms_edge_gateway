@@ -1,0 +1,13 @@
+#!/usr/bin/with-contenv bashio
+
+set -euo pipefail
+
+TOKEN="$(jq -r '.cloudflare_tunnel_token // ""' /data/options.json 2>/dev/null || true)"
+
+if [[ -z "${TOKEN}" ]]; then
+  bashio::log.info "Cloudflare tunnel token is not configured yet. cloudflared is idle."
+  exec sleep infinity
+fi
+
+bashio::log.info "Starting cloudflared tunnel."
+exec cloudflared tunnel --no-autoupdate run --token "${TOKEN}"

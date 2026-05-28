@@ -1,0 +1,15 @@
+services:
+  lms-edge-gateway:
+    build:
+      context: ./lms_edge_gateway
+      args:
+        BUILD_FROM: ghcr.io/home-assistant/amd64-base:latest
+        BUILD_ARCH: amd64
+        BUILD_VERSION: 0.1.0
+    ports:
+      - "5000:5000"
+      - "8080:8080"
+    volumes:
+      - ./local-data:/data
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production

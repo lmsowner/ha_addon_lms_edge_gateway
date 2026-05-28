@@ -1,0 +1,39 @@
+@page "/diagnostics"
+@rendermode InteractiveServer
+@inject IEdgeGatewayStatusService StatusService
+
+<PageTitle>Diagnostics</PageTitle>
+
+<div class="page-stack">
+    <LmsPanel Kicker="Health" Title="Runtime diagnostics">
+        @if (status is null)
+        {
+            <p class="muted">Checking runtime.</p>
+        }
+        else
+        {
+            <dl class="detail-list">
+                <div><dt>Data root</dt><dd>@status.DataRoot</dd></div>
+                <div><dt>Ingress path</dt><dd>@(string.IsNullOrWhiteSpace(status.IngressPath) ? "Not supplied" : status.IngressPath)</dd></div>
+                <div><dt>Checked</dt><dd>@status.CheckedAtUtc.ToLocalTime().ToString("O")</dd></div>
+            </dl>
+        }
+    </LmsPanel>
+
+    <LmsPanel Kicker="Logs" Title="Where to look">
+        <div class="log-panel">
+            <p>Home Assistant add-on logs capture stdout and stderr from the .NET control plane, Caddy, and cloudflared.</p>
+            <p>Caddy config: <code>/data/caddy/Caddyfile</code></p>
+            <p>LMS Edge Gateway state: <code>/data/lms-edge-gateway/edge-gateway.json</code></p>
+        </div>
+    </LmsPanel>
+</div>
+
+@code {
+    private EdgeGatewayRuntimeStatus? status;
+
+    protected override async Task OnInitializedAsync()
+    {
+        status = await StatusService.GetStatusAsync();
+    }
+}

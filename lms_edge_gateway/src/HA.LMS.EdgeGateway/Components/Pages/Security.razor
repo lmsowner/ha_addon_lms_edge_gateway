@@ -1,0 +1,23 @@
+@page "/security"
+
+<PageTitle>Security</PageTitle>
+
+<div class="page-stack">
+    <LmsPanel Kicker="Access" Title="Authentication policy" Description="The add-on will use Cloudflare Access plus LMS auth policy so published apps can use MFA, passkeys, email code/link, or pass-through where appropriate.">
+        <div class="security-grid">
+            <article><strong>MFA</strong><p>Authenticator codes for operators and protected routes.</p></article>
+            <article><strong>Passkeys</strong><p>Device-bound WebAuthn sign-in for low-friction access.</p></article>
+            <article><strong>Email code/link</strong><p>Verified messaging-backed sign-in when an email address exists.</p></article>
+            <article><strong>Pass-through</strong><p>Use only when the upstream app already owns authentication.</p></article>
+        </div>
+    </LmsPanel>
+
+    <LmsPanel Kicker="Safety" Title="Phase 1 guardrails">
+        <ul class="plain-list">
+            <li>No public route is generated automatically.</li>
+            <li>No Cloudflare token is required until the user starts onboarding.</li>
+            <li>Caddy defaults to a local health endpoint only.</li>
+            <li>Persistent configuration stays under Home Assistant add-on data.</li>
+        </ul>
+    </LmsPanel>
+</div>

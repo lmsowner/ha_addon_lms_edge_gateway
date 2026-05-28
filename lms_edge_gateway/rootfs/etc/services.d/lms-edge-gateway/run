@@ -1,0 +1,6 @@
+#!/usr/bin/with-contenv bashio
+
+set -euo pipefail
+
+bashio::log.info "Starting LMS Edge Gateway control plane."
+exec /app/HA.LMS.EdgeGateway

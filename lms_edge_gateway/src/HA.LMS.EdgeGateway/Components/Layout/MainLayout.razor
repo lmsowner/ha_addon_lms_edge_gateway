@@ -1,0 +1,22 @@
+@inherits LayoutComponentBase
+
+<LmsShell Items="@Items">
+    @Body
+</LmsShell>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>
+
+@code {
+    private static readonly IReadOnlyList<NavigationItem> Items =
+    [
+        new("Dashboard", "/", "D", "Runtime overview"),
+        new("Applications", "/applications", "A", "Published LAN apps"),
+        new("Cloudflare", "/cloudflare", "T", "Tunnel and DNS"),
+        new("Security", "/security", "S", "MFA and passkeys"),
+        new("Diagnostics", "/diagnostics", "L", "Logs and checks")
+    ];
+}

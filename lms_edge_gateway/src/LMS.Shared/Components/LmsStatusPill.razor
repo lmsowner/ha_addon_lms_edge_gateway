@@ -1,0 +1,19 @@
+@namespace LMS.Shared.Components
+
+<span class="@CssClass">
+    <span aria-hidden="true"></span>
+    @Text
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = string.Empty;
+    [Parameter] public LmsStatusTone Tone { get; set; }
+
+    private string CssClass => Tone switch
+    {
+        LmsStatusTone.Ready => "lms-status-pill ready",
+        LmsStatusTone.Warning => "lms-status-pill warning",
+        LmsStatusTone.Critical => "lms-status-pill critical",
+        _ => "lms-status-pill"
+    };
+}

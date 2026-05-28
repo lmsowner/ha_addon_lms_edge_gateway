@@ -1,0 +1,46 @@
+@using Microsoft.AspNetCore.Http
+@inject IHttpContextAccessor HttpContextAccessor
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="@BaseHref" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["HA.LMS.EdgeGateway.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    private string BaseHref
+    {
+        get
+        {
+            var rawPath = HttpContextAccessor.HttpContext?.Request.Headers["X-Ingress-Path"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(rawPath))
+            {
+                return "/";
+            }
+
+            var path = rawPath.Trim();
+            if (!path.StartsWith('/'))
+            {
+                path = "/" + path;
+            }
+
+            return path.TrimEnd('/') + "/";
+        }
+    }
+}

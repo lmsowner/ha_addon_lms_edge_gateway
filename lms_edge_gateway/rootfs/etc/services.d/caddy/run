@@ -1,0 +1,6 @@
+#!/usr/bin/with-contenv bashio
+
+set -euo pipefail
+
+bashio::log.info "Starting Caddy with /data/caddy/Caddyfile."
+exec caddy run --config /data/caddy/Caddyfile --adapter caddyfile

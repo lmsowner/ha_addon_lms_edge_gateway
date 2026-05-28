@@ -1,0 +1,9 @@
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:latest
+  aarch64: ghcr.io/home-assistant/aarch64-base:latest
+args:
+  DOTNET_CONFIGURATION: Release
+labels:
+  org.opencontainers.image.title: LMS Edge Gateway Home Assistant Add-on
+  org.opencontainers.image.description: Secure Cloudflare, Caddy, MFA, and LMS Edge Gateway orchestration for Home Assistant.
+  org.opencontainers.image.source: https://github.com/lmsowner/ha_addon_lms_edge_gateway

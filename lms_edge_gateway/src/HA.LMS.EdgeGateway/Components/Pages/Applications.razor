@@ -1,0 +1,51 @@
+@page "/applications"
+@rendermode InteractiveServer
+@inject IEdgeGatewayStatusService StatusService
+
+<PageTitle>Published Applications</PageTitle>
+
+<div class="page-stack">
+    <LmsPanel Kicker="Routes" Title="Published applications" Description="Phase 1 shows the operating surface and persistent route model. Phase 2 wires this to Cloudflare DNS, Access, Tunnel, and generated Caddy config.">
+        <HeaderContent>
+            <LmsButton Label="Add app" Disabled="true" Primary="true" />
+        </HeaderContent>
+        <ChildContent>
+            @if (status?.Configuration.Applications.Count > 0)
+            {
+                <div class="table-list">
+                    @foreach (var app in status.Configuration.Applications)
+                    {
+                        <div class="table-row">
+                            <span>@app.Name</span>
+                            <span>@app.PublicHostname</span>
+                            <span>@app.UpstreamUrl</span>
+                            <LmsStatusPill Text="Configured" Tone="LmsStatusTone.Ready" />
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    <strong>No published applications yet.</strong>
+                    <p>The first guided preset will publish Home Assistant through Cloudflare Access and a generated Caddy route.</p>
+                </div>
+            }
+        </ChildContent>
+    </LmsPanel>
+
+    <section class="preset-grid">
+        <article><strong>Home Assistant</strong><p>Publish the HA UI with Cloudflare Access and passkeys.</p></article>
+        <article><strong>LAN web app</strong><p>Expose a local HTTP service safely behind LMS auth policy.</p></article>
+        <article><strong>Tailscale-only</strong><p>Keep the public edge closed and route through a private mesh.</p></article>
+    </section>
+</div>
+
+@code {
+    private EdgeGatewayRuntimeStatus? status;
+
+    protected override async Task OnInitializedAsync()
+    {
+        status = await StatusService.GetStatusAsync();
+    }
+}

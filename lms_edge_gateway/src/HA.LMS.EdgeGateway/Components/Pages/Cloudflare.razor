@@ -1,0 +1,54 @@
+@page "/cloudflare"
+@rendermode InteractiveServer
+@inject IEdgeGatewayStatusService StatusService
+
+<PageTitle>Cloudflare Setup</PageTitle>
+
+<div class="page-stack">
+    <LmsPanel Kicker="Onboarding" Title="Cloudflare tunnel setup" Description="Bring a Cloudflare account, a free Cloudflare domain, and an API token. LMS Edge Gateway will own the boring proxy work.">
+        <HeaderContent>
+            <LmsButton Label="Connect Cloudflare" Disabled="true" Primary="true" />
+        </HeaderContent>
+        <ChildContent>
+            <div class="setup-steps">
+                <div><span>1</span><strong>Connect account</strong><p>Store a scoped Cloudflare API token in add-on data.</p></div>
+                <div><span>2</span><strong>Create tunnel</strong><p>Provision cloudflared and keep the tunnel health visible.</p></div>
+                <div><span>3</span><strong>Select domain</strong><p>Pick the zone and hostname for Home Assistant or a LAN app.</p></div>
+                <div><span>4</span><strong>Apply safely</strong><p>Generate Caddy config, validate, reload, health check, then persist.</p></div>
+            </div>
+        </ChildContent>
+    </LmsPanel>
+
+    <LmsPanel Kicker="Runtime" Title="Tunnel status">
+        @if (cloudflared is null)
+        {
+            <p class="muted">Checking cloudflared status.</p>
+        }
+        else
+        {
+            <div class="status-line">
+                <LmsStatusPill Text="@cloudflared.State.ToString()" Tone="@GetTone(cloudflared.State)" />
+                <span>@cloudflared.Summary</span>
+            </div>
+            <p>@cloudflared.Detail</p>
+        }
+    </LmsPanel>
+</div>
+
+@code {
+    private EdgeGatewayComponentStatus? cloudflared;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var status = await StatusService.GetStatusAsync();
+        cloudflared = status.Components.SingleOrDefault(item => item.Id == "cloudflared");
+    }
+
+    private static LmsStatusTone GetTone(EdgeGatewayComponentState state) => state switch
+    {
+        EdgeGatewayComponentState.Ready => LmsStatusTone.Ready,
+        EdgeGatewayComponentState.Warning or EdgeGatewayComponentState.Starting => LmsStatusTone.Warning,
+        EdgeGatewayComponentState.Error => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+}

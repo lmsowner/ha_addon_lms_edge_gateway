@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/lms_edge_gateway/" />
+  <Folder Name="/lms_edge_gateway/src/">
+    <Project Path="lms_edge_gateway/src/HA.LMS.EdgeGateway/HA.LMS.EdgeGateway.csproj" />
+    <Project Path="lms_edge_gateway/src/LMS.EdgeGateway.Core/LMS.EdgeGateway.Core.csproj" />
+    <Project Path="lms_edge_gateway/src/LMS.Shared/LMS.Shared.csproj" />
+  </Folder>
+</Solution>
