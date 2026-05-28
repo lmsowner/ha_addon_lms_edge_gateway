@@ -31,6 +31,30 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAntiforgery();
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = "LMS Edge Gateway Add-on" }));
+app.MapPost("/api/setup/cloudflare-api-token", async (
+    HttpContext httpContext,
+    ICloudflareApiTokenStore tokenStore,
+    ICloudflareApiTokenValidator tokenValidator,
+    CancellationToken cancellationToken) =>
+{
+    var form = await httpContext.Request.ReadFormAsync(cancellationToken);
+    var token = form["cloudflare_api_token"].ToString();
+
+    if (string.IsNullOrWhiteSpace(token))
+    {
+        return Results.Redirect("/?setup=missing");
+    }
+
+    var validation = await tokenValidator.ValidateAsync(token, cancellationToken);
+    if (!validation.IsValid)
+    {
+        return Results.Redirect("/?setup=invalid");
+    }
+
+    await tokenStore.SaveTokenAsync(token, cancellationToken);
+    return Results.Redirect("/");
+}).DisableAntiforgery();
+
 app.MapGet("/api/status", async (
     HttpContext httpContext,
     IEdgeGatewayStatusService statusService,

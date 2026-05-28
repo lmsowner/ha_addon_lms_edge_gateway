@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 namespace LMS.EdgeGateway.Core;
@@ -6,19 +5,21 @@ namespace LMS.EdgeGateway.Core;
 public sealed class EdgeGatewayStatusService(
     IOptions<EdgeGatewayCoreOptions> options,
     IProcessStatusProbe processStatusProbe,
-    IEdgeGatewayConfigurationStore configurationStore) : IEdgeGatewayStatusService
+    IEdgeGatewayConfigurationStore configurationStore,
+    ICloudflareApiTokenStore apiTokenStore) : IEdgeGatewayStatusService
 {
     public async Task<EdgeGatewayRuntimeStatus> GetStatusAsync(
         string? ingressPath = null,
         CancellationToken cancellationToken = default)
     {
         var configuration = await configurationStore.LoadAsync(cancellationToken);
+        var apiTokenState = await apiTokenStore.GetStateAsync(cancellationToken);
         var components = new List<EdgeGatewayComponentStatus>
         {
             await GetApplicationStatusAsync(cancellationToken),
             await GetCaddyStatusAsync(cancellationToken),
-            await GetCloudflaredStatusAsync(cancellationToken),
-            GetCloudflareStatus(configuration)
+            await GetCloudflaredStatusAsync(apiTokenState, cancellationToken),
+            GetCloudflareStatus(configuration, apiTokenState)
         };
 
         return new EdgeGatewayRuntimeStatus(
@@ -65,9 +66,10 @@ public sealed class EdgeGatewayStatusService(
             hasConfig ? configPath : "The container init script creates /data/caddy/Caddyfile.");
     }
 
-    private async Task<EdgeGatewayComponentStatus> GetCloudflaredStatusAsync(CancellationToken cancellationToken)
+    private async Task<EdgeGatewayComponentStatus> GetCloudflaredStatusAsync(
+        CloudflareApiTokenState apiTokenState,
+        CancellationToken cancellationToken)
     {
-        var hasTunnelToken = await HasCloudflareTunnelTokenAsync(cancellationToken);
         var isRunning = await processStatusProbe.IsRunningAsync("(^|/)cloudflared( |$)", cancellationToken);
 
         if (isRunning)
@@ -83,15 +85,27 @@ public sealed class EdgeGatewayStatusService(
         return new EdgeGatewayComponentStatus(
             "cloudflared",
             "Cloudflare Tunnel",
-            hasTunnelToken ? EdgeGatewayComponentState.Warning : EdgeGatewayComponentState.Disabled,
-            hasTunnelToken ? "Tunnel token configured but process is not running" : "Tunnel not configured",
-            hasTunnelToken
-                ? "Check the add-on log for cloudflared startup output."
-                : "Phase 2 will provision named tunnels through the Cloudflare API. A manual token can already be supplied in options.json for testing.");
+            apiTokenState.HasToken ? EdgeGatewayComponentState.Starting : EdgeGatewayComponentState.Disabled,
+            apiTokenState.HasToken ? "Tunnel not provisioned yet" : "Cloudflare API token required",
+            apiTokenState.HasToken
+                ? "The API token is ready; tunnel provisioning is the next setup step."
+                : "Add and validate a Cloudflare API token before provisioning a tunnel.");
     }
 
-    private static EdgeGatewayComponentStatus GetCloudflareStatus(EdgeGatewayConfiguration configuration)
+    private static EdgeGatewayComponentStatus GetCloudflareStatus(
+        EdgeGatewayConfiguration configuration,
+        CloudflareApiTokenState apiTokenState)
     {
+        if (apiTokenState.HasToken)
+        {
+            return new EdgeGatewayComponentStatus(
+                "cloudflare",
+                "Cloudflare",
+                EdgeGatewayComponentState.Ready,
+                "API token validated",
+                "Cloudflare API credentials are stored for tunnel, Access, and DNS automation.");
+        }
+
         if (configuration.CloudflareTunnel.IsAuthenticated)
         {
             return new EdgeGatewayComponentStatus(
@@ -110,28 +124,6 @@ public sealed class EdgeGatewayStatusService(
             EdgeGatewayComponentState.Disabled,
             "Cloudflare not connected",
             "Connect a Cloudflare account in Phase 2 to automate DNS, Access, and tunnel lifecycle.");
-    }
-
-    private async Task<bool> HasCloudflareTunnelTokenAsync(CancellationToken cancellationToken)
-    {
-        var optionsPath = ResolvePath(options.Value.OptionsJsonPath);
-        if (!File.Exists(optionsPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            await using var stream = File.OpenRead(optionsPath);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            return document.RootElement.TryGetProperty("cloudflare_tunnel_token", out var token) &&
-                token.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrWhiteSpace(token.GetString());
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private string GetDataRoot() => ResolvePath(options.Value.DataRoot);

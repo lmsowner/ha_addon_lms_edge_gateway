@@ -1,8 +1,24 @@
 @inherits LayoutComponentBase
+@inject ICloudflareApiTokenStore ApiTokenStore
 
-<LmsShell Items="@Items">
-    @Body
-</LmsShell>
+@if (tokenState is null)
+{
+    <main class="setup-gate">
+        <section class="setup-card">
+            <p class="muted">Checking Cloudflare setup.</p>
+        </section>
+    </main>
+}
+else if (!tokenState.HasToken)
+{
+    <CloudflareFirstRunSetup />
+}
+else
+{
+    <LmsShell Items="@Items">
+        @Body
+    </LmsShell>
+}
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -11,6 +27,13 @@
 </div>
 
 @code {
+    private CloudflareApiTokenState? tokenState;
+
+    protected override async Task OnInitializedAsync()
+    {
+        tokenState = await ApiTokenStore.GetStateAsync();
+    }
+
     private static readonly IReadOnlyList<NavigationItem> Items =
     [
         new("Dashboard", "/", "D", "Runtime overview"),

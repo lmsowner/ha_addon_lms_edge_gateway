@@ -3,4 +3,5 @@
 set -euo pipefail
 
 bashio::log.info "Starting LMS Edge Gateway control plane."
+cd /app
 exec /app/HA.LMS.EdgeGateway

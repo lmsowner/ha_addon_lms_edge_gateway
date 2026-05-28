@@ -1,0 +1,80 @@
+@inject NavigationManager Navigation
+
+<main class="setup-gate">
+    <section class="setup-card">
+        <header class="setup-copy">
+            <img class="setup-logo" src="images/lms-edge-gateway-icon.png" alt="" />
+            <div>
+                <p class="lms-eyebrow">Required setup</p>
+                <h1>Connect Cloudflare API first</h1>
+                <p>
+                    Create a Cloudflare API token with the permissions shown below, then paste it here.
+                    The add-on validates the token before saving it.
+                </p>
+            </div>
+        </header>
+
+        <div class="setup-actions">
+            <a class="lms-button" href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">Open Cloudflare API Tokens</a>
+        </div>
+
+        <section class="permission-panel">
+            <h2>Required token permissions</h2>
+            <img class="permission-screenshot"
+                 src="images/cloudflare-api-token-permissions.png"
+                 alt="Cloudflare token permissions: Account Cloudflare Tunnel Edit, Account Access Apps and Policies Edit, Zone DNS Edit." />
+        </section>
+
+        <form class="token-form" method="post" action="api/setup/cloudflare-api-token">
+            <label for="cloudflare_api_token">Cloudflare API token</label>
+            <input id="cloudflare_api_token"
+                   name="cloudflare_api_token"
+                   type="password"
+                   autocomplete="off"
+                   spellcheck="false"
+                   required
+                   placeholder="Paste the API token" />
+            @if (ShowError)
+            {
+                <p class="setup-error">Cloudflare did not validate that token. Check the token value and permissions, then try again.</p>
+            }
+            <button class="lms-button lms-button-primary" type="submit">
+                <span>Save and validate token</span>
+            </button>
+        </form>
+
+        <div class="setup-reference">
+            <section>
+                <h2>Create the token</h2>
+                <ol class="numbered-list">
+                    <li>Open <strong>My Profile</strong>, then <strong>API Tokens</strong>.</li>
+                    <li>Create a custom token.</li>
+                    <li>Add the three permissions shown above.</li>
+                    <li>Scope the token to the Cloudflare account and zone you want LMS Edge Gateway to manage.</li>
+                    <li>Copy the generated token and paste it above.</li>
+                </ol>
+            </section>
+
+            <section>
+                <h2>Permission rows</h2>
+                <ul class="plain-list">
+                    <li><code>Account</code> / <code>Cloudflare Tunnel</code> / <code>Edit</code></li>
+                    <li><code>Account</code> / <code>Access: Apps and Policies</code> / <code>Edit</code></li>
+                    <li><code>Zone</code> / <code>DNS</code> / <code>Edit</code></li>
+                </ul>
+            </section>
+        </div>
+    </section>
+</main>
+
+@code {
+    private bool ShowError
+    {
+        get
+        {
+            var query = new Uri(Navigation.Uri).Query;
+            return query.Contains("setup=invalid", StringComparison.OrdinalIgnoreCase) ||
+                query.Contains("setup=missing", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+}

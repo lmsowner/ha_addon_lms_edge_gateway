@@ -8,6 +8,15 @@ public static class DependencyInjection
     {
         services.AddSingleton<IProcessStatusProbe, ProcessStatusProbe>();
         services.AddSingleton<IEdgeGatewayConfigurationStore, JsonEdgeGatewayConfigurationStore>();
+        services.AddSingleton<ICloudflareApiTokenStore, JsonCloudflareApiTokenStore>();
+        services.AddHttpClient<ICloudflareApiTokenValidator, CloudflareApiTokenValidator>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.cloudflare.com/client/v4/");
+        });
+        services.AddHttpClient<ICloudflareZoneService, CloudflareZoneService>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.cloudflare.com/client/v4/");
+        });
         services.AddScoped<IEdgeGatewayStatusService, EdgeGatewayStatusService>();
         return services;
     }

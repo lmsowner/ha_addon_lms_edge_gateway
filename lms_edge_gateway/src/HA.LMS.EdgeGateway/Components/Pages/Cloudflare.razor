@@ -1,21 +1,80 @@
 @page "/cloudflare"
 @rendermode InteractiveServer
 @inject IEdgeGatewayStatusService StatusService
+@inject ICloudflareZoneService ZoneService
 
 <PageTitle>Cloudflare Setup</PageTitle>
 
 <div class="page-stack">
-    <LmsPanel Kicker="Onboarding" Title="Cloudflare tunnel setup" Description="Bring a Cloudflare account, a free Cloudflare domain, and an API token. LMS Edge Gateway will own the boring proxy work.">
+    <section class="page-header">
+        <div>
+            <p class="lms-eyebrow">Cloudflare</p>
+            <h1>Domains</h1>
+            <p>Choose the Cloudflare zone LMS Edge Gateway should use for tunnels, Access applications, and DNS records.</p>
+        </div>
+        <div class="page-actions">
+            <LmsStatusPill Text="Connected" Tone="LmsStatusTone.Ready" />
+        </div>
+    </section>
+
+    <LmsPanel Kicker="Zones" Title="Cloudflare domains">
         <HeaderContent>
-            <LmsButton Label="Connect Cloudflare" Disabled="true" Primary="true" />
+            <LmsButton Label="Refresh" Href="/cloudflare" />
         </HeaderContent>
         <ChildContent>
-            <div class="setup-steps">
-                <div><span>1</span><strong>Connect account</strong><p>Store a scoped Cloudflare API token in add-on data.</p></div>
-                <div><span>2</span><strong>Create tunnel</strong><p>Provision cloudflared and keep the tunnel health visible.</p></div>
-                <div><span>3</span><strong>Select domain</strong><p>Pick the zone and hostname for Home Assistant or a LAN app.</p></div>
-                <div><span>4</span><strong>Apply safely</strong><p>Generate Caddy config, validate, reload, health check, then persist.</p></div>
-            </div>
+            @if (zonesResult is null)
+            {
+                <p class="muted">Loading domains from Cloudflare.</p>
+            }
+            else if (!string.IsNullOrWhiteSpace(zonesResult.Error))
+            {
+                <div class="empty-state">
+                    <strong>Could not load Cloudflare domains.</strong>
+                    <p>@zonesResult.Error</p>
+                    <p>If this is a permissions error, add <strong>Zone / Zone / Read</strong> to the API token so Cloudflare allows zone listing.</p>
+                </div>
+            }
+            else if (zonesResult.Zones.Count == 0)
+            {
+                <div class="empty-state">
+                    <strong>No Cloudflare domains found.</strong>
+                    <p>Add a domain to Cloudflare or widen the token's zone scope.</p>
+                </div>
+            }
+            else
+            {
+                <div class="zone-list">
+                    @foreach (var zone in zonesResult.Zones)
+                    {
+                        <article class="zone-card">
+                            <div>
+                                <h2>@zone.Name</h2>
+                                <p>@(string.IsNullOrWhiteSpace(zone.AccountName) ? "Cloudflare account" : zone.AccountName)</p>
+                            </div>
+                            <div class="zone-meta">
+                                <LmsStatusPill Text="@FormatStatus(zone.Status)" Tone="@GetZoneTone(zone.Status)" />
+                                <span>@FormatType(zone.Type)</span>
+                            </div>
+                            <div class="zone-nameservers">
+                                @if (zone.NameServers.Count > 0)
+                                {
+                                    @foreach (var nameServer in zone.NameServers)
+                                    {
+                                        <code>@nameServer</code>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="muted">No nameservers returned.</span>
+                                }
+                            </div>
+                            <div class="zone-actions">
+                                <LmsButton Label="Use domain" Href="/applications" Primary="true" />
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
         </ChildContent>
     </LmsPanel>
 
@@ -37,11 +96,13 @@
 
 @code {
     private EdgeGatewayComponentStatus? cloudflared;
+    private CloudflareZoneListResult? zonesResult;
 
     protected override async Task OnInitializedAsync()
     {
         var status = await StatusService.GetStatusAsync();
         cloudflared = status.Components.SingleOrDefault(item => item.Id == "cloudflared");
+        zonesResult = await ZoneService.ListZonesAsync();
     }
 
     private static LmsStatusTone GetTone(EdgeGatewayComponentState state) => state switch
@@ -51,4 +112,15 @@
         EdgeGatewayComponentState.Error => LmsStatusTone.Critical,
         _ => LmsStatusTone.Neutral
     };
+
+    private static LmsStatusTone GetZoneTone(string status) =>
+        status.Equals("active", StringComparison.OrdinalIgnoreCase)
+            ? LmsStatusTone.Ready
+            : LmsStatusTone.Warning;
+
+    private static string FormatStatus(string status) =>
+        string.IsNullOrWhiteSpace(status) ? "Unknown" : status;
+
+    private static string FormatType(string type) =>
+        string.IsNullOrWhiteSpace(type) ? "Zone" : type;
 }
