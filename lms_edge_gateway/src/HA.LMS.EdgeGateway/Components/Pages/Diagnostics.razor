@@ -2,31 +2,91 @@
 @rendermode InteractiveServer
 @inject IEdgeGatewayStatusService StatusService
 
-<PageTitle>Diagnostics</PageTitle>
+<PageTitle>Diagnostics | Linux Made Sane - Edge Gateway</PageTitle>
 
-<div class="page-stack">
-    <LmsPanel Kicker="Health" Title="Runtime diagnostics">
+<div class="page-shell edge-gateway-page">
+    <section class="surface-card edge-card edge-advanced-card">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Diagnostics</p>
+                <h2>Route checks and access log</h2>
+                <p class="meta-text">Run Test on a published app to show route checks here. The log shows recent auth decisions.</p>
+            </div>
+        </div>
+
         @if (status is null)
         {
-            <p class="muted">Checking runtime.</p>
+            <div class="edge-loading-card">
+                <span class="edge-loading-progress">
+                    <span class="edge-loading-progress-fill"></span>
+                </span>
+                <p class="meta-text">Checking runtime.</p>
+            </div>
         }
         else
         {
-            <dl class="detail-list">
-                <div><dt>Data root</dt><dd>@status.DataRoot</dd></div>
-                <div><dt>Ingress path</dt><dd>@(string.IsNullOrWhiteSpace(status.IngressPath) ? "Not supplied" : status.IngressPath)</dd></div>
-                <div><dt>Checked</dt><dd>@status.CheckedAtUtc.ToLocalTime().ToString("O")</dd></div>
-            </dl>
-        }
-    </LmsPanel>
+            <div class="edge-runtime-grid">
+                @foreach (var component in status.Components)
+                {
+                    <div class="surface-subcard edge-runtime-item">
+                        <LmsStatusPill Text="@component.State.ToString()" Tone="@GetTone(component.State)" />
+                        <div>
+                            <strong>@component.Name</strong>
+                            <span>@component.Detail</span>
+                        </div>
+                    </div>
+                }
+            </div>
 
-    <LmsPanel Kicker="Logs" Title="Where to look">
-        <div class="log-panel">
-            <p>Home Assistant add-on logs capture stdout and stderr from the .NET control plane, Caddy, and cloudflared.</p>
-            <p>Caddy config: <code>/data/caddy/Caddyfile</code></p>
-            <p>LMS Edge Gateway state: <code>/data/lms-edge-gateway/edge-gateway.json</code></p>
+            <div class="edge-audit-table">
+                <div class="edge-audit-row edge-audit-heading">
+                    <span>Key</span>
+                    <span>Value</span>
+                    <span>Source</span>
+                    <span>Status</span>
+                    <span>Notes</span>
+                </div>
+                <div class="edge-audit-row">
+                    <span>Data root</span>
+                    <span>@status.DataRoot</span>
+                    <span>Add-on storage</span>
+                    <span>Ready</span>
+                    <span>Persistent configuration and generated runtime files.</span>
+                </div>
+                <div class="edge-audit-row">
+                    <span>Ingress path</span>
+                    <span>@(string.IsNullOrWhiteSpace(status.IngressPath) ? "Not supplied" : status.IngressPath)</span>
+                    <span>Home Assistant</span>
+                    <span>@(status.IsHomeAssistantIngress ? "Detected" : "Local")</span>
+                    <span>@(status.IsHomeAssistantIngress ? "Running through Home Assistant ingress." : "Standalone/local mode.")</span>
+                </div>
+                <div class="edge-audit-row">
+                    <span>Checked</span>
+                    <span>@status.CheckedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                    <span>Control plane</span>
+                    <span>OK</span>
+                    <span>Latest runtime status read.</span>
+                </div>
+            </div>
+        }
+    </section>
+
+    <section class="surface-card edge-card edge-advanced-card">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Logs</p>
+                <h2>Where to look</h2>
+                <p class="meta-text">Home Assistant add-on logs capture stdout and stderr from the .NET control plane, Caddy, and cloudflared.</p>
+            </div>
         </div>
-    </LmsPanel>
+        <div class="edge-flow-line">
+            <span>/data/caddy/Caddyfile</span>
+            <span>/data/lms-edge-gateway/edge-gateway.json</span>
+            <span>cloudflared</span>
+            <span>Caddy</span>
+            <span>HA add-on logs</span>
+        </div>
+    </section>
 </div>
 
 @code {
@@ -36,4 +96,12 @@
     {
         status = await StatusService.GetStatusAsync();
     }
+
+    private static LmsStatusTone GetTone(EdgeGatewayComponentState state) => state switch
+    {
+        EdgeGatewayComponentState.Ready => LmsStatusTone.Ready,
+        EdgeGatewayComponentState.Warning or EdgeGatewayComponentState.Starting => LmsStatusTone.Warning,
+        EdgeGatewayComponentState.Error => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
 }

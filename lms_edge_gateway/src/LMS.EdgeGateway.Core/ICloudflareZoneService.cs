@@ -12,6 +12,7 @@ public sealed record CloudflareZoneListResult(
 public sealed record CloudflareZoneSummary(
     string Id,
     string Name,
+    string AccountId,
     string AccountName,
     string Status,
     string Type,

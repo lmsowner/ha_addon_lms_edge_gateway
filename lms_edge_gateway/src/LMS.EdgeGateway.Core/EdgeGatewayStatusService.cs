@@ -8,17 +8,20 @@ public sealed class EdgeGatewayStatusService(
     IEdgeGatewayConfigurationStore configurationStore,
     ICloudflareApiTokenStore apiTokenStore) : IEdgeGatewayStatusService
 {
+    private const string CloudflaredProcessPattern = "(^|/)(cloudflared|lms-edge-cloudflared)( |$)";
+
     public async Task<EdgeGatewayRuntimeStatus> GetStatusAsync(
         string? ingressPath = null,
         CancellationToken cancellationToken = default)
     {
         var configuration = await configurationStore.LoadAsync(cancellationToken);
         var apiTokenState = await apiTokenStore.GetStateAsync(cancellationToken);
+        var tunnelToken = await apiTokenStore.GetTunnelTokenAsync(cancellationToken);
         var components = new List<EdgeGatewayComponentStatus>
         {
             await GetApplicationStatusAsync(cancellationToken),
             await GetCaddyStatusAsync(cancellationToken),
-            await GetCloudflaredStatusAsync(apiTokenState, cancellationToken),
+            await GetCloudflaredStatusAsync(configuration, apiTokenState, tunnelToken, cancellationToken),
             GetCloudflareStatus(configuration, apiTokenState)
         };
 
@@ -36,7 +39,7 @@ public sealed class EdgeGatewayStatusService(
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new EdgeGatewayComponentStatus(
             "app",
-            "LMS Edge Gateway",
+            "Linux Made Sane - Edge Gateway",
             EdgeGatewayComponentState.Ready,
             "Control plane is running",
             "The Blazor orchestration layer is available through Home Assistant ingress or the configured port."));
@@ -67,10 +70,25 @@ public sealed class EdgeGatewayStatusService(
     }
 
     private async Task<EdgeGatewayComponentStatus> GetCloudflaredStatusAsync(
+        EdgeGatewayConfiguration configuration,
         CloudflareApiTokenState apiTokenState,
+        string? tunnelToken,
         CancellationToken cancellationToken)
     {
-        var isRunning = await processStatusProbe.IsRunningAsync("(^|/)cloudflared( |$)", cancellationToken);
+        var healthyRelay = configuration.RelayZones.FirstOrDefault(relay =>
+            !string.IsNullOrWhiteSpace(relay.TunnelId) &&
+            IsTunnelHealthy(relay.TunnelStatus));
+        if (healthyRelay is not null)
+        {
+            return new EdgeGatewayComponentStatus(
+                "cloudflared",
+                "Cloudflare Tunnel",
+                EdgeGatewayComponentState.Ready,
+                "Tunnel connector is online",
+                $"{healthyRelay.DomainName}: Cloudflare reports tunnel {healthyRelay.TunnelName} as healthy.");
+        }
+
+        var isRunning = await processStatusProbe.IsRunningAsync(CloudflaredProcessPattern, cancellationToken);
 
         if (isRunning)
         {
@@ -80,6 +98,16 @@ public sealed class EdgeGatewayStatusService(
                 EdgeGatewayComponentState.Ready,
                 "Tunnel process is running",
                 "cloudflared is active inside the add-on container.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(tunnelToken))
+        {
+            return new EdgeGatewayComponentStatus(
+                "cloudflared",
+                "Cloudflare Tunnel",
+                EdgeGatewayComponentState.Starting,
+                "Tunnel token saved",
+                "cloudflared has a tunnel token saved. Restart the add-on if the tunnel process does not start automatically.");
         }
 
         return new EdgeGatewayComponentStatus(
@@ -96,26 +124,44 @@ public sealed class EdgeGatewayStatusService(
         EdgeGatewayConfiguration configuration,
         CloudflareApiTokenState apiTokenState)
     {
+        var provisionedRelays = configuration.RelayZones
+            .Where(relay => !string.IsNullOrWhiteSpace(relay.TunnelId) &&
+                            !string.IsNullOrWhiteSpace(relay.DnsTarget) &&
+                            !string.IsNullOrWhiteSpace(relay.WildcardHostname))
+            .ToArray();
+        var healthyRelays = provisionedRelays
+            .Where(relay => IsTunnelHealthy(relay.TunnelStatus))
+            .ToArray();
+
+        if (healthyRelays.Length > 0)
+        {
+            return new EdgeGatewayComponentStatus(
+                "cloudflare",
+                "Cloudflare",
+                EdgeGatewayComponentState.Ready,
+                "Cloudflare tunnel healthy",
+                string.Join(", ", healthyRelays.Select(relay => $"{relay.DomainName}: {NormalizeTunnelStatus(relay.TunnelStatus)}")));
+        }
+
+        if (provisionedRelays.Length > 0)
+        {
+            return new EdgeGatewayComponentStatus(
+                "cloudflare",
+                "Cloudflare",
+                EdgeGatewayComponentState.Warning,
+                "Cloudflare tunnel not healthy",
+                string.Join(", ", provisionedRelays.Select(relay =>
+                    $"{relay.DomainName}: {NormalizeTunnelStatus(relay.TunnelStatus)}")));
+        }
+
         if (apiTokenState.HasToken)
         {
             return new EdgeGatewayComponentStatus(
                 "cloudflare",
                 "Cloudflare",
-                EdgeGatewayComponentState.Ready,
-                "API token validated",
-                "Cloudflare API credentials are stored for tunnel, Access, and DNS automation.");
-        }
-
-        if (configuration.CloudflareTunnel.IsAuthenticated)
-        {
-            return new EdgeGatewayComponentStatus(
-                "cloudflare",
-                "Cloudflare",
-                EdgeGatewayComponentState.Ready,
-                "Cloudflare account connected",
-                string.IsNullOrWhiteSpace(configuration.CloudflareTunnel.AccountName)
-                    ? "Cloudflare API credentials are stored."
-                    : configuration.CloudflareTunnel.AccountName);
+                EdgeGatewayComponentState.Warning,
+                "API token saved; relay not provisioned",
+                "Run Setup Relay to create the Cloudflare tunnel, wildcard DNS, tunnel ingress, cloudflared token, and Caddy config.");
         }
 
         return new EdgeGatewayComponentStatus(
@@ -123,8 +169,16 @@ public sealed class EdgeGatewayStatusService(
             "Cloudflare",
             EdgeGatewayComponentState.Disabled,
             "Cloudflare not connected",
-            "Connect a Cloudflare account in Phase 2 to automate DNS, Access, and tunnel lifecycle.");
+            "Save a Cloudflare API token before provisioning the relay.");
     }
+
+    private static bool IsTunnelHealthy(string status) =>
+        NormalizeTunnelStatus(status).Equals("healthy", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeTunnelStatus(string status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "unknown"
+            : status.Trim().ToLowerInvariant();
 
     private string GetDataRoot() => ResolvePath(options.Value.DataRoot);
 

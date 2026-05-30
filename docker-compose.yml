@@ -8,7 +8,7 @@ services:
         BUILD_VERSION: 0.1.0
     ports:
       - "5000:5000"
-      - "8080:8080"
+      - "18080:18080"
     volumes:
       - ./local-data:/data
     environment:

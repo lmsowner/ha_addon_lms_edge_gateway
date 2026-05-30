@@ -1,23 +1,763 @@
 @page "/security"
+@rendermode InteractiveServer
+@inject IEdgeGatewaySecurityService SecurityService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
 
-<PageTitle>Security</PageTitle>
+<PageTitle>Security/Users</PageTitle>
 
-<div class="page-stack">
-    <LmsPanel Kicker="Access" Title="Authentication policy" Description="The add-on will use Cloudflare Access plus LMS auth policy so published apps can use MFA, passkeys, email code/link, or pass-through where appropriate.">
-        <div class="security-grid">
-            <article><strong>MFA</strong><p>Authenticator codes for operators and protected routes.</p></article>
-            <article><strong>Passkeys</strong><p>Device-bound WebAuthn sign-in for low-friction access.</p></article>
-            <article><strong>Email code/link</strong><p>Verified messaging-backed sign-in when an email address exists.</p></article>
-            <article><strong>Pass-through</strong><p>Use only when the upstream app already owns authentication.</p></article>
-        </div>
-    </LmsPanel>
+<div class="page-stack edge-security-page">
+    @if (!isLoaded)
+    {
+        <section class="surface-card edge-card">
+            <p class="muted">Loading LMS account settings...</p>
+        </section>
+    }
+    else
+    {
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Security / Users</p>
+                    <h2>LMS accounts and messaging</h2>
+                    <p class="meta-text">Accounts use email plus authenticator MFA. Messaging handles setup emails and future route login workflows.</p>
+                </div>
+            </div>
 
-    <LmsPanel Kicker="Safety" Title="Phase 1 guardrails">
-        <ul class="plain-list">
-            <li>No public route is generated automatically.</li>
-            <li>No Cloudflare token is required until the user starts onboarding.</li>
-            <li>Caddy defaults to a local health endpoint only.</li>
-            <li>Persistent configuration stays under Home Assistant add-on data.</li>
-        </ul>
-    </LmsPanel>
+            <div class="security-inner-tabs" role="tablist" aria-label="Security sections">
+                <button class="tab-trigger @(activeTab == UsersTab ? "active" : string.Empty)"
+                        type="button"
+                        role="tab"
+                        aria-selected="@(activeTab == UsersTab ? "true" : "false")"
+                        @onclick="@(() => SetTab(UsersTab))">
+                    <span class="tab-trigger-title">Users</span>
+                </button>
+                <button class="tab-trigger @(activeTab == MessagingTab ? "active" : string.Empty)"
+                        type="button"
+                        role="tab"
+                        aria-selected="@(activeTab == MessagingTab ? "true" : "false")"
+                        @onclick="@(() => SetTab(MessagingTab))">
+                    <span class="tab-trigger-title">Messaging</span>
+                </button>
+            </div>
+
+            @if (activeTab == UsersTab)
+            {
+                <div class="security-tab-content">
+                    <section class="surface-subcard security-create-panel">
+                        <div class="security-section-heading">
+                            <div>
+                                <h3>@(userEditor.Id.HasValue ? "Edit LMS account" : "Create LMS account")</h3>
+                                <p class="meta-text">Create an account, issue the authenticator QR, and optionally send the setup email when Messaging is verified.</p>
+                            </div>
+                            <span class="security-status-pill @(page.Messaging.CanSendLoginSetupEmail ? "success" : "neutral")">
+                                @(page.Messaging.CanSendLoginSetupEmail ? "Email + OTP" : "OTP only")
+                            </span>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(userMessage))
+                        {
+                            <p class="callout @(userMessageIsError ? "warning" : "ready")">@userMessage</p>
+                        }
+
+                        <div class="edge-form-grid security-user-form-grid">
+                            <label class="ui-field">
+                                <span class="ui-field-label">Email</span>
+                                <input type="email" @bind="userEditor.Email" autocomplete="email" placeholder="you@example.com" />
+                                <span class="ui-field-helper">Used for LMS Edge Gateway sign-in.</span>
+                            </label>
+
+                            <label class="ui-field">
+                                <span class="ui-field-label">Display name</span>
+                                <input @bind="userEditor.DisplayName" autocomplete="name" placeholder="Optional" />
+                                <span class="ui-field-helper">Leave blank to show the email address.</span>
+                            </label>
+
+                            <label class="ui-field">
+                                <span class="ui-field-label">Login session minutes</span>
+                                <input type="number"
+                                       min="@SecuritySessionPolicy.MinimumSessionLifetimeMinutes"
+                                       max="@SecuritySessionPolicy.MaximumSessionLifetimeMinutes"
+                                       step="5"
+                                       @bind="userEditor.SessionLifetimeMinutes" />
+                                <span class="ui-field-helper">@FormatSessionLifetimeMinutes(userEditor.SessionLifetimeMinutes)</span>
+                            </label>
+
+                            <label class="security-checkbox-field">
+                                <input type="checkbox" @bind="userEditor.IsEnabled" />
+                                <span>Account enabled</span>
+                            </label>
+                        </div>
+
+                        @if (!page.Messaging.CanSendLoginSetupEmail)
+                        {
+                            <p class="meta-text">Messaging must be saved and verified before setup QR emails are sent. The QR is still shown here after account creation or OTP reset.</p>
+                        }
+
+                        <div class="toolbar-row security-toolbar">
+                            <LmsButton Label="@(isSavingUser ? "Saving..." : userEditor.Id.HasValue ? "Save account" : "Register account")"
+                                       Icon="@(userEditor.Id.HasValue ? "save" : "plus")"
+                                       Primary="true"
+                                       Disabled="@isSavingUser"
+                                       OnClick="SaveUserFormAsync" />
+                            @if (userEditor.Id.HasValue)
+                            {
+                                <LmsButton Label="Cancel edit" Icon="close" OnClick="CancelUserEdit" />
+                            }
+                        </div>
+                    </section>
+
+                    @if (provisioningResult is not null)
+                    {
+                        <section class="surface-subcard security-provisioning-panel">
+                            <LmsQrCode Payload="@provisioningResult.OtpUri"
+                                       Caption="Scan this in your authenticator app" />
+                            <div class="security-provisioning-details">
+                                <div>
+                                    <span class="meta-text">Provisioned email</span>
+                                    <strong>@provisioningResult.Email</strong>
+                                </div>
+                                <div>
+                                    <span class="meta-text">Manual key</span>
+                                    <code>@provisioningResult.ManualEntryKey</code>
+                                </div>
+                                <div>
+                                    <span class="meta-text">OTP URI</span>
+                                    <code>@provisioningResult.OtpUri</code>
+                                </div>
+                                @if (provisioningResult.EmailSucceeded)
+                                {
+                                    <p class="callout ready">Setup email sent to @provisioningResult.Email.</p>
+                                }
+                                else if (provisioningResult.EmailAttempted)
+                                {
+                                    <p class="callout warning">Account setup succeeded, but the setup email was not sent. @provisioningResult.EmailMessage</p>
+                                }
+                                else if (!page.Messaging.CanSendLoginSetupEmail)
+                                {
+                                    <p class="callout warning">Setup email was not sent because Messaging is not verified. Send a successful test email from the Messaging tab.</p>
+                                }
+                            </div>
+                        </section>
+                    }
+
+                    <section class="surface-subcard security-create-panel">
+                        <div class="security-section-heading">
+                            <div>
+                                <h3>Users</h3>
+                                <p class="meta-text">These accounts are available for Edge Gateway MFA login.</p>
+                            </div>
+                            <span class="security-status-pill neutral">@(page.Users.Count) account(s)</span>
+                        </div>
+
+                        @if (page.Users.Count == 0)
+                        {
+                            <div class="empty-state">
+                                <strong>No LMS accounts</strong>
+                                <span>Create an account before enabling MFA-protected routes.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="security-user-list">
+                                @foreach (var user in page.Users)
+                                {
+                                    <article class="security-user-row">
+                                        <div class="security-user-main">
+                                            <strong>@user.Email</strong>
+                                            <span>@(string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName)</span>
+                                        </div>
+                                        <div class="security-user-meta">
+                                            <span class="security-status-pill @(user.IsEnabled ? "success" : "neutral")">@(user.IsEnabled ? "Enabled" : "Disabled")</span>
+                                            <span class="security-status-pill @(user.HasOtpSecret ? "success" : "warning")">@(user.HasOtpSecret ? "MFA ready" : "MFA missing")</span>
+                                            <span class="security-status-pill neutral">@user.PasskeyCount passkey(s)</span>
+                                            <span class="meta-text">Session @FormatSessionLifetimeMinutes(user.SessionLifetimeMinutes)</span>
+                                            <span class="meta-text">Last login @FormatTimestamp(user.LastLoginAtUtc, "Never")</span>
+                                        </div>
+                                        <div class="security-user-actions">
+                                            <LmsButton Label="Edit" Icon="edit" OnClick="@(() => EditUserAsync(user.Id))" />
+                                            <LmsButton Label="Add Passkey" Icon="check" OnClick="@(() => EnrollPasskeyAsync(user))" />
+                                            <LmsButton Label="@(user.IsEnabled ? "Disable" : "Enable")"
+                                                       Icon="@(user.IsEnabled ? "disable" : "check")"
+                                                       OnClick="@(() => ToggleUserAsync(user))" />
+                                            <LmsButton Label="Reset OTP" Icon="refresh" OnClick="@(() => ResetUserOtpAsync(user))" />
+                                            <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => DeleteUserAsync(user))" />
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+                    </section>
+                </div>
+            }
+            else
+            {
+                <div class="security-tab-content">
+                    <section class="surface-subcard security-create-panel">
+                        <div class="security-section-heading">
+                            <div>
+                                <h3>Email delivery</h3>
+                                <p class="meta-text">Configure SMTP, Microsoft Graph, or a simple HTTPS email API. Secrets are protected under the add-on data root.</p>
+                            </div>
+                            <span class="security-status-pill @(page.Messaging.CanSendLoginSetupEmail ? "success" : "warning")">
+                                @(page.Messaging.CanSendLoginSetupEmail ? "Verified" : "Not verified")
+                            </span>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(messagingMessage))
+                        {
+                            <p class="callout @(messagingMessageIsError ? "warning" : "ready")">@messagingMessage</p>
+                        }
+
+                        <div class="edge-form-grid security-messaging-grid">
+                            <label class="security-checkbox-field">
+                                <input type="checkbox" @bind="messagingEditor.IsEnabled" />
+                                <span>Email enabled</span>
+                            </label>
+
+                            <label class="ui-field">
+                                <span class="ui-field-label">Provider</span>
+                                <select @bind="messagingEditor.Provider">
+                                    <option value="@MessagingEmailProvider.Disabled">Disabled</option>
+                                    <option value="@MessagingEmailProvider.Smtp">SMTP</option>
+                                    <option value="@MessagingEmailProvider.MicrosoftGraph">Microsoft Graph</option>
+                                    <option value="@MessagingEmailProvider.Resend">Resend</option>
+                                    <option value="@MessagingEmailProvider.Brevo">Brevo</option>
+                                    <option value="@MessagingEmailProvider.MailerSend">MailerSend</option>
+                                    <option value="@MessagingEmailProvider.Mailgun">Mailgun</option>
+                                </select>
+                            </label>
+
+                            <label class="ui-field">
+                                <span class="ui-field-label">Sender email</span>
+                                <input type="email" @bind="messagingEditor.SenderAddress" placeholder="serviceaccount@example.com" />
+                            </label>
+
+                            <label class="ui-field">
+                                <span class="ui-field-label">Sender name</span>
+                                <input @bind="messagingEditor.SenderDisplayName" placeholder="Linux Made Sane" />
+                            </label>
+                        </div>
+
+                        @if (messagingEditor.Provider == MessagingEmailProvider.Smtp)
+                        {
+                            <div class="edge-form-grid security-messaging-grid">
+                                <label class="ui-field">
+                                    <span class="ui-field-label">SMTP host</span>
+                                    <input @bind="messagingEditor.SmtpHost" placeholder="smtp.example.com" />
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">SMTP port</span>
+                                    <input type="number" min="1" max="65535" step="1" @bind="messagingEditor.SmtpPort" />
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">SMTP username</span>
+                                    <input @bind="messagingEditor.SmtpUsername" autocomplete="off" placeholder="serviceaccount@example.com" />
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">SMTP password</span>
+                                    <input type="password" @bind="messagingEditor.SmtpPassword" autocomplete="new-password" />
+                                    <span class="ui-field-helper">Leave blank to keep the stored password. Stored password: @(messagingEditor.HasSmtpPassword ? "yes" : "no").</span>
+                                </label>
+                                <label class="security-checkbox-field">
+                                    <input type="checkbox" @bind="messagingEditor.SmtpUseStartTls" />
+                                    <span>Use TLS</span>
+                                </label>
+                            </div>
+                        }
+                        else if (messagingEditor.Provider == MessagingEmailProvider.MicrosoftGraph)
+                        {
+                            <div class="edge-form-grid security-messaging-grid">
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Tenant ID</span>
+                                    <input @bind="messagingEditor.GraphTenantId" autocomplete="off" />
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Client ID</span>
+                                    <input @bind="messagingEditor.GraphClientId" autocomplete="off" />
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Client secret</span>
+                                    <input type="password" @bind="messagingEditor.GraphClientSecret" autocomplete="new-password" />
+                                    <span class="ui-field-helper">Leave blank to keep the stored secret. Stored secret: @(messagingEditor.HasGraphClientSecret ? "yes" : "no").</span>
+                                </label>
+                                <label class="security-checkbox-field">
+                                    <input type="checkbox" @bind="messagingEditor.GraphSaveToSentItems" />
+                                    <span>Save to Sent Items</span>
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Authority</span>
+                                    <input @bind="messagingEditor.GraphAuthority" placeholder="https://login.microsoftonline.com/" />
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Graph base URL</span>
+                                    <input @bind="messagingEditor.GraphBaseUrl" placeholder="https://graph.microsoft.com/v1.0" />
+                                </label>
+                            </div>
+                        }
+                        else if (IsApiProvider(messagingEditor.Provider))
+                        {
+                            <section class="surface-subcard security-provider-note">
+                                <strong>@FormatMessagingProvider(messagingEditor.Provider)</strong>
+                                <span>@GetProviderDescription(messagingEditor.Provider)</span>
+                                <span>@GetProviderFreeTierNote(messagingEditor.Provider)</span>
+                            </section>
+
+                            <div class="edge-form-grid security-messaging-grid">
+                                <label class="ui-field">
+                                    <span class="ui-field-label">@(messagingEditor.Provider == MessagingEmailProvider.MailerSend ? "API token" : "API key")</span>
+                                    <input type="password" @bind="messagingEditor.ApiKey" autocomplete="new-password" />
+                                    <span class="ui-field-helper">@GetApiKeyHelperText(messagingEditor.Provider) Stored key: @(messagingEditor.HasApiKey ? "yes" : "no").</span>
+                                </label>
+
+                                @if (messagingEditor.Provider == MessagingEmailProvider.Mailgun)
+                                {
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Mailgun domain</span>
+                                        <input @bind="messagingEditor.MailgunDomain" placeholder="mg.example.com" />
+                                    </label>
+
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Mailgun region</span>
+                                        <select @bind="messagingEditor.MailgunRegion">
+                                            <option value="@MailgunRegion.Us">US</option>
+                                            <option value="@MailgunRegion.Eu">EU</option>
+                                        </select>
+                                        <span class="ui-field-helper">US uses api.mailgun.net. EU uses api.eu.mailgun.net.</span>
+                                    </label>
+                                }
+                            </div>
+                        }
+
+                        <div class="toolbar-row security-toolbar">
+                            <LmsButton Label="@(isSavingMessaging ? "Saving..." : "Save messaging")"
+                                       Icon="save"
+                                       Primary="true"
+                                       Disabled="@isSavingMessaging"
+                                       OnClick="SaveMessagingAsync" />
+                            @if (messagingEditor.Provider == MessagingEmailProvider.MicrosoftGraph)
+                            {
+                                <LmsButton Label="Graph setup help" Icon="info" OnClick="@(() => showGraphHelpModal = true)" />
+                            }
+                        </div>
+                    </section>
+
+                    <section class="surface-subcard security-create-panel">
+                        <div class="security-section-heading">
+                            <div>
+                                <h3>Send test email</h3>
+                                <p class="meta-text">A successful test marks Messaging as verified for LMS account setup emails.</p>
+                            </div>
+                            @if (page.Messaging.LastVerifiedAtUtc is not null)
+                            {
+                                <span class="meta-text">Last verified @FormatTimestamp(page.Messaging.LastVerifiedAtUtc, "Never")</span>
+                            }
+                        </div>
+
+                        <div class="edge-form-grid security-test-grid">
+                            <label class="ui-field">
+                                <span class="ui-field-label">Test recipient</span>
+                                <input type="email" @bind="messagingTestRecipient" placeholder="you@example.com" />
+                            </label>
+                            <div class="security-test-action">
+                                <LmsButton Label="@(isSendingMessagingTest ? "Sending..." : "Send test")"
+                                           Icon="test"
+                                           Disabled="@isSendingMessagingTest"
+                                           OnClick="SendMessagingTestAsync" />
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            }
+        </section>
+    }
 </div>
+
+@if (showGraphHelpModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel security-graph-help-modal" role="dialog" aria-modal="true" aria-labelledby="graph-help-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Microsoft Graph email setup</p>
+                    <h2 id="graph-help-title">Create a dedicated Entra app</h2>
+                    <p class="meta-text">Use application permissions and restrict the sender mailbox where possible.</p>
+                </div>
+                <button class="edge-modal-close" type="button" @onclick="@(() => showGraphHelpModal = false)" aria-label="Close">x</button>
+            </header>
+            <div class="edge-modal-body security-graph-help-body">
+                <section class="surface-subcard">
+                    <h3>1. Create the app</h3>
+                    <ol class="plain-list">
+                        <li>Open Microsoft Entra admin center.</li>
+                        <li>Go to Applications, App registrations, New registration.</li>
+                        <li>Name it Linux Made Sane Mail and leave redirect URI blank.</li>
+                        <li>Copy Application client ID and Directory tenant ID.</li>
+                    </ol>
+                </section>
+                <section class="surface-subcard">
+                    <h3>2. Add Mail.Send</h3>
+                    <ol class="plain-list">
+                        <li>API permissions, Add a permission, Microsoft Graph.</li>
+                        <li>Choose Application permissions, add Mail.Send, then grant admin consent.</li>
+                    </ol>
+                </section>
+                <section class="surface-subcard">
+                    <h3>3. Create the secret</h3>
+                    <ol class="plain-list">
+                        <li>Certificates and secrets, Client secrets, New client secret.</li>
+                        <li>Copy the secret Value immediately, not the Secret ID.</li>
+                        <li>Paste it into the Graph client secret field and save Messaging.</li>
+                    </ol>
+                </section>
+                <section class="surface-subcard">
+                    <h3>Common failures</h3>
+                    <div class="security-help-grid">
+                        <div><strong>401</strong><span>Wrong tenant, client ID, expired secret, or Secret ID used instead of Value.</span></div>
+                        <div><strong>403</strong><span>Admin consent missing, delegated permission selected, or mailbox restriction blocks the sender.</span></div>
+                        <div><strong>404</strong><span>Sender email is not a valid Exchange Online mailbox in that tenant.</span></div>
+                    </div>
+                </section>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Close" Icon="close" OnClick="@(() => showGraphHelpModal = false)" />
+            </footer>
+        </section>
+    </div>
+}
+
+@code {
+    private SecuritySettingsPageViewModel page = new([], BuildDefaultMessagingViewModel(), EdgeGatewayLoginDesignSettings.Default);
+    private SecurityUserEditor userEditor = new();
+    private SecurityMessagingSettingsEditor messagingEditor = new();
+    private SecurityUserProvisioningViewModel? provisioningResult;
+    private bool isLoaded;
+    private bool isSavingUser;
+    private bool isSavingMessaging;
+    private bool isSendingMessagingTest;
+    private bool showGraphHelpModal;
+    private string activeTab = UsersTab;
+    private string? userMessage;
+    private bool userMessageIsError;
+    private string? messagingMessage;
+    private bool messagingMessageIsError;
+    private string messagingTestRecipient = string.Empty;
+
+    private const string UsersTab = "users";
+    private const string MessagingTab = "messaging";
+    private const int MinutesPerHour = 60;
+    private const int MinutesPerDay = 24 * MinutesPerHour;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        isLoaded = true;
+    }
+
+    private void SetTab(string tab) => activeTab = tab;
+
+    private async Task LoadAsync()
+    {
+        page = await SecurityService.GetPageAsync();
+        messagingEditor = await SecurityService.GetMessagingEditorAsync();
+    }
+
+    private async Task SaveUserFormAsync()
+    {
+        isSavingUser = true;
+        userMessage = null;
+        userMessageIsError = false;
+
+        try
+        {
+            if (userEditor.Id.HasValue)
+            {
+                await SecurityService.SaveUserAsync(userEditor);
+                userMessage = "LMS account saved.";
+                provisioningResult = null;
+            }
+            else
+            {
+                provisioningResult = await SecurityService.CreateUserAsync(userEditor, BuildLmsLoginUrl(userEditor.Email));
+                userMessage = "LMS account created. Finish authenticator setup in the authenticator app.";
+            }
+
+            userEditor = new SecurityUserEditor();
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            userMessage = exception.Message;
+            userMessageIsError = true;
+        }
+        finally
+        {
+            isSavingUser = false;
+        }
+    }
+
+    private async Task EditUserAsync(Guid userId)
+    {
+        userEditor = await SecurityService.GetUserEditorAsync(userId);
+        provisioningResult = null;
+    }
+
+    private Task CancelUserEdit()
+    {
+        userEditor = new SecurityUserEditor();
+        return Task.CompletedTask;
+    }
+
+    private async Task ToggleUserAsync(SecurityUserViewModel user)
+    {
+        try
+        {
+            await SecurityService.SetUserEnabledAsync(user.Id, !user.IsEnabled);
+            userMessage = user.IsEnabled ? "LMS account disabled." : "LMS account enabled.";
+            userMessageIsError = false;
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            userMessage = exception.Message;
+            userMessageIsError = true;
+        }
+    }
+
+    private async Task EnrollPasskeyAsync(SecurityUserViewModel user)
+    {
+        userMessage = null;
+        userMessageIsError = false;
+
+        try
+        {
+            var result = await JS.InvokeAsync<PasskeyJsResult>(
+                "lmsEdgePasskeys.enrollForUser",
+                user.Id.ToString("D"),
+                $"Passkey for {user.Email}");
+            userMessage = result.Message;
+            userMessageIsError = !result.Succeeded;
+            if (result.Succeeded)
+            {
+                await LoadAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            userMessage = exception.Message;
+            userMessageIsError = true;
+        }
+    }
+
+    private async Task ResetUserOtpAsync(SecurityUserViewModel user)
+    {
+        try
+        {
+            provisioningResult = await SecurityService.ResetUserOtpAsync(user.Id, BuildLmsLoginUrl(user.Email));
+            userMessage = "Authenticator secret rotated. Re-register it in the authenticator app.";
+            userMessageIsError = false;
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            userMessage = exception.Message;
+            userMessageIsError = true;
+        }
+    }
+
+    private async Task DeleteUserAsync(SecurityUserViewModel user)
+    {
+        try
+        {
+            await SecurityService.DeleteUserAsync(user.Id);
+            if (userEditor.Id == user.Id)
+            {
+                userEditor = new SecurityUserEditor();
+            }
+
+            if (provisioningResult?.UserId == user.Id)
+            {
+                provisioningResult = null;
+            }
+
+            userMessage = "LMS account deleted.";
+            userMessageIsError = false;
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            userMessage = exception.Message;
+            userMessageIsError = true;
+        }
+    }
+
+    private async Task SaveMessagingAsync()
+    {
+        isSavingMessaging = true;
+        messagingMessage = null;
+        messagingMessageIsError = false;
+        try
+        {
+            await SecurityService.SaveMessagingSettingsAsync(messagingEditor);
+            messagingMessage = "Messaging settings saved.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            messagingMessage = exception.Message;
+            messagingMessageIsError = true;
+        }
+        finally
+        {
+            isSavingMessaging = false;
+        }
+    }
+
+    private async Task SendMessagingTestAsync()
+    {
+        isSendingMessagingTest = true;
+        messagingMessage = null;
+        messagingMessageIsError = false;
+        try
+        {
+            var result = await SecurityService.SendMessagingTestAsync(messagingEditor, messagingTestRecipient);
+            messagingMessage = BuildMessagingResultMessage(result);
+            messagingMessageIsError = !result.Succeeded;
+            if (result.Succeeded)
+            {
+                await LoadAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            messagingMessage = exception.Message;
+            messagingMessageIsError = true;
+        }
+        finally
+        {
+            isSendingMessagingTest = false;
+        }
+    }
+
+    private string BuildLmsLoginUrl(string? email)
+    {
+        var loginUri = new Uri(new Uri(Navigation.BaseUri), "login");
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return loginUri.ToString();
+        }
+
+        var builder = new UriBuilder(loginUri)
+        {
+            Query = $"email={Uri.EscapeDataString(email.Trim())}"
+        };
+        return builder.Uri.ToString();
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value, string fallback) =>
+        value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? fallback;
+
+    private static string FormatSessionLifetimeMinutes(int minutes)
+    {
+        var normalizedMinutes = SecuritySessionPolicy.NormalizeSessionLifetimeMinutes(minutes);
+        var days = normalizedMinutes / MinutesPerDay;
+        var remainder = normalizedMinutes % MinutesPerDay;
+        var hours = remainder / MinutesPerHour;
+        var remainingMinutes = remainder % MinutesPerHour;
+        var parts = new List<string>(3);
+
+        if (days > 0)
+        {
+            parts.Add(days == 1 ? "1 day" : $"{days} days");
+        }
+
+        if (hours > 0)
+        {
+            parts.Add(hours == 1 ? "1 hour" : $"{hours} hours");
+        }
+
+        if (remainingMinutes > 0 || parts.Count == 0)
+        {
+            parts.Add(remainingMinutes == 1 ? "1 minute" : $"{remainingMinutes} minutes");
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private static SecurityMessagingSettingsViewModel BuildDefaultMessagingViewModel() =>
+        new(
+            false,
+            MessagingEmailProvider.Disabled,
+            string.Empty,
+            "Linux Made Sane",
+            string.Empty,
+            587,
+            true,
+            string.Empty,
+            false,
+            string.Empty,
+            string.Empty,
+            false,
+            "https://login.microsoftonline.com/",
+            "https://graph.microsoft.com/v1.0",
+            true,
+            false,
+            string.Empty,
+            MailgunRegion.Us,
+            null,
+            false);
+
+    private static bool IsApiProvider(MessagingEmailProvider provider) =>
+        provider is MessagingEmailProvider.Resend
+            or MessagingEmailProvider.Brevo
+            or MessagingEmailProvider.MailerSend
+            or MessagingEmailProvider.Mailgun;
+
+    private static string FormatMessagingProvider(MessagingEmailProvider provider) => provider switch
+    {
+        MessagingEmailProvider.MicrosoftGraph => "Microsoft Graph",
+        MessagingEmailProvider.MailerSend => "MailerSend",
+        _ => provider.ToString()
+    };
+
+    private static string GetProviderDescription(MessagingEmailProvider provider) => provider switch
+    {
+        MessagingEmailProvider.Resend => "Simple developer email API. Good default for LMS MFA emails.",
+        MessagingEmailProvider.Brevo => "Simple transactional email API with a generous daily free tier.",
+        MessagingEmailProvider.MailerSend => "Transactional email API with a small free monthly allowance.",
+        MessagingEmailProvider.Mailgun => "Powerful transactional email API. Requires a verified sending domain.",
+        _ => string.Empty
+    };
+
+    private static string GetProviderFreeTierNote(MessagingEmailProvider provider) => provider switch
+    {
+        MessagingEmailProvider.Resend => "Free tier: 3,000 emails/month.",
+        MessagingEmailProvider.Brevo => "Free tier: 300 emails/day.",
+        MessagingEmailProvider.MailerSend => "Free tier: 500 emails/month.",
+        MessagingEmailProvider.Mailgun => "Free tier: 100 emails/day.",
+        _ => string.Empty
+    };
+
+    private static string GetApiKeyHelperText(MessagingEmailProvider provider) => provider switch
+    {
+        MessagingEmailProvider.Brevo => "Use a Brevo API key, normally starting xkeysib-. Do not paste the Brevo SMTP key that starts xsmtpsib-. Leave blank to keep the stored key.",
+        MessagingEmailProvider.MailerSend => "Paste a MailerSend API token. Leave blank to keep the stored token.",
+        _ => "Leave blank to keep the stored key."
+    };
+
+    private static string BuildMessagingResultMessage(SecurityMessagingTestResult result)
+    {
+        var status = result.StatusCode.HasValue ? $" HTTP {result.StatusCode}." : string.Empty;
+        var provider = string.IsNullOrWhiteSpace(result.Provider) ? string.Empty : $" Provider: {result.Provider}.";
+        var messageId = string.IsNullOrWhiteSpace(result.ProviderMessageId)
+            ? string.Empty
+            : $" Message id: {result.ProviderMessageId}.";
+        return $"{result.Message}{status}{provider}{messageId}";
+    }
+
+    private sealed class PasskeyJsResult
+    {
+        public bool Succeeded { get; set; }
+        public string Message { get; set; } = string.Empty;
+    }
+}

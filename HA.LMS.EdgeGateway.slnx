@@ -5,4 +5,7 @@
     <Project Path="lms_edge_gateway/src/LMS.EdgeGateway.Core/LMS.EdgeGateway.Core.csproj" />
     <Project Path="lms_edge_gateway/src/LMS.Shared/LMS.Shared.csproj" />
   </Folder>
+  <Folder Name="/lms_edge_gateway/tests/">
+    <Project Path="lms_edge_gateway/tests/LMS.EdgeGateway.Core.Tests/LMS.EdgeGateway.Core.Tests.csproj" />
+  </Folder>
 </Solution>

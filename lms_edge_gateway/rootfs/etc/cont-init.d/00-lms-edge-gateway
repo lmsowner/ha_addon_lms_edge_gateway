@@ -12,7 +12,7 @@ if [[ ! -f /data/caddy/Caddyfile ]]; then
     }
 }
 
-:8080 {
+:18080 {
     respond /health "ok" 200
 }
 CADDY
@@ -20,4 +20,4 @@ fi
 
 caddy fmt --overwrite /data/caddy/Caddyfile >/dev/null 2>&1 || true
 
-bashio::log.info "LMS Edge Gateway add-on data prepared."
+bashio::log.info "Linux Made Sane - Edge Gateway add-on data prepared."

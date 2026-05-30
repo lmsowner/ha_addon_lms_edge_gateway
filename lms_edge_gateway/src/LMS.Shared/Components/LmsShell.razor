@@ -1,39 +1,62 @@
 @namespace LMS.Shared.Components
+@inject NavigationManager Navigation
 
-<div class="lms-shell">
-    <aside class="lms-sidebar">
-        <a class="lms-brand" href="">
-            <img src="images/lms-edge-gateway-icon.png" alt="" />
-            <span>
-                <strong>LMS Edge Gateway</strong>
+<div class="lms-app-shell">
+    <header class="lms-product-header">
+        <a class="lms-product-brand" href="">
+            <img class="lms-product-logo" src="images/lms-logo-192.png" alt="" />
+            <span class="lms-product-copy">
+                <strong>Linux Made Sane - Edge Gateway</strong>
                 <small>Home Assistant Add-on</small>
             </span>
         </a>
-        <nav aria-label="Primary navigation">
-            @foreach (var item in Items)
-            {
-                <NavLink class="lms-nav-row" href="@item.Href" Match="@GetMatch(item.Href)">
-                    <span aria-hidden="true">@item.Icon</span>
-                    <span>
-                        <strong>@item.Label</strong>
-                        <small>@item.Description</small>
-                    </span>
-                </NavLink>
-            }
+    </header>
+
+    <div class="tab-control page-tab-control edge-tabs">
+        <nav class="tab-control-bar" aria-label="Linux Made Sane - Edge Gateway sections">
+            <div class="tab-list" role="tablist">
+                @foreach (var item in Items)
+                {
+                    <a class="tab-trigger @(IsActive(item.Href) ? "active" : string.Empty)"
+                       href="@BuildHref(item.Href)"
+                       role="tab"
+                       aria-selected="@(IsActive(item.Href) ? "true" : "false")"
+                       title="@item.Description">
+                        <span class="tab-trigger-title">@item.Label</span>
+                    </a>
+                }
+            </div>
         </nav>
-        <div class="lms-sidebar-footer">
-            <span class="lms-sidebar-chip">Cloudflare + Caddy + MFA</span>
-        </div>
-    </aside>
-    <main class="lms-main">
-        @ChildContent
-    </main>
+
+        <main class="tab-panel page-tab-panel edge-tab-panel">
+            @ChildContent
+        </main>
+    </div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<NavigationItem> Items { get; set; } = [];
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private static NavLinkMatch GetMatch(string href) =>
-        href.Equals("/", StringComparison.Ordinal) ? NavLinkMatch.All : NavLinkMatch.Prefix;
+    private static string BuildHref(string href)
+    {
+        var target = href.Trim();
+        return target is "" or "/"
+            ? string.Empty
+            : target.TrimStart('/');
+    }
+
+    private bool IsActive(string href)
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
+        var target = href.Trim('/');
+
+        if (target.Length == 0)
+        {
+            return path.Length == 0 || path.Equals("applications", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return path.Equals(target, StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith($"{target}/", StringComparison.OrdinalIgnoreCase);
+    }
 }

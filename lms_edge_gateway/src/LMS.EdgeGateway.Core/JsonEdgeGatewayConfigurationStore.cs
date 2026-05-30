@@ -19,8 +19,8 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
         }
 
         await using var stream = File.OpenRead(path);
-        return await JsonSerializer.DeserializeAsync<EdgeGatewayConfiguration>(stream, jsonOptions, cancellationToken)
-            ?? EdgeGatewayConfiguration.Empty;
+        var configuration = await JsonSerializer.DeserializeAsync<EdgeGatewayConfiguration>(stream, jsonOptions, cancellationToken);
+        return Normalize(configuration);
     }
 
     public async Task SaveAsync(EdgeGatewayConfiguration configuration, CancellationToken cancellationToken = default)
@@ -40,4 +40,45 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
 
         return Path.Combine(root, "edge-gateway.json");
     }
+
+    private static EdgeGatewayConfiguration Normalize(EdgeGatewayConfiguration? configuration)
+    {
+        if (configuration is null)
+        {
+            return EdgeGatewayConfiguration.Empty;
+        }
+
+        return configuration with
+        {
+            Applications = configuration.Applications ?? [],
+            RelayZones = NormalizeRelayZones(configuration.RelayZones),
+            CloudflareTunnel = NormalizeTunnel(configuration.CloudflareTunnel)
+        };
+    }
+
+    private static CloudflareTunnelState NormalizeTunnel(CloudflareTunnelState? tunnel) =>
+        tunnel is null
+            ? new CloudflareTunnelState(string.Empty, string.Empty, string.Empty, false, null, string.Empty)
+            : tunnel with
+            {
+                TunnelName = tunnel.TunnelName ?? string.Empty,
+                AccountName = tunnel.AccountName ?? string.Empty,
+                TunnelId = tunnel.TunnelId ?? string.Empty,
+                AccountId = tunnel.AccountId ?? string.Empty
+            };
+
+    private static IReadOnlyList<EdgeGatewayRelayZone> NormalizeRelayZones(
+        IReadOnlyList<EdgeGatewayRelayZone>? relayZones) =>
+        relayZones?
+            .Select(relay => relay with
+            {
+                DomainName = relay.DomainName ?? string.Empty,
+                RelayHostname = relay.RelayHostname ?? string.Empty,
+                WildcardHostname = relay.WildcardHostname ?? string.Empty,
+                DnsTarget = relay.DnsTarget ?? string.Empty,
+                TunnelId = relay.TunnelId ?? string.Empty,
+                TunnelName = relay.TunnelName ?? string.Empty
+            })
+            .Where(relay => !string.IsNullOrWhiteSpace(relay.DomainName))
+            .ToArray() ?? [];
 }

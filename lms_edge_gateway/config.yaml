@@ -1,4 +1,4 @@
-name: LMS Edge Gateway
+name: Linux Made Sane - Edge Gateway
 version: "0.1.0"
 slug: lms_edge_gateway
 description: Secure application publishing and edge gateway for Home Assistant and self-hosted services.
@@ -13,11 +13,7 @@ ingress: true
 ingress_port: 5000
 ingress_stream: true
 panel_icon: mdi:cloud-lock
-panel_title: LMS Edge Gateway
-ports:
-  5000/tcp: 5000
-ports_description:
-  5000/tcp: LMS Edge Gateway web UI for standalone/local development.
+panel_title: Linux Made Sane - Edge Gateway
 map:
   - type: addon_config
     read_only: false
@@ -26,5 +22,13 @@ hassio_api: true
 homeassistant_api: true
 panel_admin: true
 watchdog: http://[HOST]:[PORT:5000]/healthz
-options: {}
-schema: {}
+options:
+  advanced_docker_discovery: false
+  expanded_lan_discovery: false
+  discovery_cidrs: ""
+  discovery_ports: ""
+schema:
+  advanced_docker_discovery: bool
+  expanded_lan_discovery: bool
+  discovery_cidrs: str
+  discovery_ports: str

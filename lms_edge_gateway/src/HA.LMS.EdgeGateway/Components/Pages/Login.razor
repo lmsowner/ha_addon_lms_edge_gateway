@@ -1,0 +1,320 @@
+@page "/login"
+@layout AuthLayout
+
+<PageTitle>LMS HA Add-On Login</PageTitle>
+
+<div class="auth-login-shell" data-auth-method="@InitialAuthMethod">
+    <section class="auth-login-showcase">
+        <img class="auth-reference-art" src="images/lms-ha-login-art.png" alt="LMS Edge Gateway for Home Assistant secure access artwork" />
+    </section>
+
+    <section class="auth-login-panel">
+        <div class="auth-login-card">
+            <div class="auth-login-heading">
+                <p class="eyebrow">LMS HA Add-On</p>
+                <h2>@(ShouldShowPasskeySetup ? "Save a passkey" : "Welcome back!")</h2>
+                <p>@(ShouldShowPasskeySetup ? "Use this device for faster MFA next time." : "Sign in to LMS Edge Gateway for Home Assistant")</p>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <p class="callout warning">@Error</p>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Notice))
+            {
+                <p class="callout ready">@Notice</p>
+            }
+
+            @if (ShouldShowPasskeySetup)
+            {
+                <section class="auth-passkey-setup-card"
+                         data-passkey-setup
+                         data-return-url="@NormalizedReturnUrl"
+                         data-email="@EmailValue">
+                    <div class="auth-method-hero">
+                        <span class="auth-method-hero-icon">PK</span>
+                    </div>
+                    <h3>Save this device as a passkey</h3>
+                    <p>After a successful MFA sign-in, this browser can save a passkey for quicker access.</p>
+                    <p class="callout auth-login-status" data-passkey-status hidden></p>
+                    <button class="lms-button lms-button-primary auth-login-submit" type="button" data-passkey-enroll>Save passkey</button>
+                    <a class="auth-login-link" href="@NormalizedReturnUrl">Skip for now</a>
+                </section>
+            }
+            else
+            {
+                <form method="post" action="/lmshaauth/login" class="stack-form auth-login-form">
+                    <input type="hidden" name="returnUrl" value="@NormalizedReturnUrl" />
+                    <input type="hidden" name="authMethod" value="@InitialAuthMethod" data-auth-method-input />
+
+                    <label class="auth-login-field-group">
+                        <span>Email</span>
+                        <span class="auth-input-shell">
+                            <span class="auth-input-icon">EM</span>
+                            <input name="email" type="email" value="@EmailValue" autocomplete="email" placeholder="you@example.com" required />
+                        </span>
+                    </label>
+
+                    <div class="auth-method-selector" role="tablist" aria-label="Choose a sign-in method">
+                        <button type="button" role="tab" data-auth-method-button="passkey">
+                            <span>PK</span>
+                            <strong>Passkey</strong>
+                        </button>
+                        <button type="button" role="tab" data-auth-method-button="authenticator">
+                            <span>OTP</span>
+                            <strong>Authenticator</strong>
+                        </button>
+                        <button type="button" role="tab" data-auth-method-button="email">
+                            <span>&#64;</span>
+                            <strong>Email code</strong>
+                        </button>
+                    </div>
+
+                    <section class="auth-method-panel" data-auth-panel="passkey">
+                        <div class="auth-method-hero">
+                            <span class="auth-method-hero-icon">PK</span>
+                        </div>
+                        <h3>Use your passkey to sign in</h3>
+                        <p>Scan your fingerprint, face, or use your security key to continue.</p>
+                        <p class="callout auth-login-status" data-passkey-status hidden></p>
+                        <button class="lms-button lms-button-primary auth-login-submit" type="button" data-passkey-login>Use passkey</button>
+                    </section>
+
+                    <section class="auth-method-panel" data-auth-panel="authenticator">
+                        <label class="auth-login-field-group">
+                            <span>Authenticator code</span>
+                            <input name="authenticatorCode"
+                                   type="text"
+                                   inputmode="numeric"
+                                   autocomplete="one-time-code"
+                                   maxlength="6"
+                                   pattern="[0-9]{6}"
+                                   placeholder="123456"
+                                   data-required-when-active />
+                        </label>
+                        <label class="auth-checkbox-row">
+                            <input type="checkbox" name="enrollPasskey" value="true" />
+                            <span>Offer to save a passkey after this MFA sign-in</span>
+                        </label>
+                        <button class="lms-button lms-button-primary auth-login-submit" type="submit">Sign in</button>
+                    </section>
+
+                    <section class="auth-method-panel" data-auth-panel="email">
+                        <p class="auth-method-copy">Send a short-lived code to the email address on this LMS account.</p>
+                        <button class="lms-button auth-login-submit"
+                                type="submit"
+                                formaction="/lmshaauth/email-otp"
+                                formmethod="post"
+                                formnovalidate>
+                            Send email code
+                        </button>
+                        <label class="auth-login-field-group">
+                            <span>Email code</span>
+                            <input name="emailCode"
+                                   type="text"
+                                   inputmode="numeric"
+                                   autocomplete="one-time-code"
+                                   maxlength="6"
+                                   pattern="[0-9]{6}"
+                                   placeholder="123456"
+                                   data-required-when-active />
+                        </label>
+                        <label class="auth-checkbox-row">
+                            <input type="checkbox" name="enrollPasskey" value="true" />
+                            <span>Offer to save a passkey after this email code sign-in</span>
+                        </label>
+                        <button class="lms-button lms-button-primary auth-login-submit" type="submit">Verify email code</button>
+                    </section>
+
+                    <div class="auth-login-divider"><span>or</span></div>
+                    <button class="auth-login-link" type="button" data-auth-method-button="authenticator">Use authenticator app instead</button>
+                    <p class="auth-login-footnote">LMS checks this local MFA session before proxying protected Edge Gateway routes.</p>
+                </form>
+            }
+        </div>
+    </section>
+</div>
+
+<script>
+(() => {
+    const shells = document.querySelectorAll(".auth-login-shell");
+    for (const shell of shells) {
+        const form = shell.querySelector(".auth-login-form");
+        const methodInput = shell.querySelector("[data-auth-method-input]");
+        const buttons = shell.querySelectorAll("[data-auth-method-button]");
+        const panels = shell.querySelectorAll("[data-auth-panel]");
+        const initialMethod = shell.getAttribute("data-auth-method") || "authenticator";
+
+        const setMethod = (method) => {
+            shell.setAttribute("data-auth-method", method);
+            if (methodInput instanceof HTMLInputElement) {
+                methodInput.value = method;
+            }
+
+            for (const button of buttons) {
+                const selected = button.getAttribute("data-auth-method-button") === method;
+                button.classList.toggle("selected", selected);
+                button.setAttribute("aria-selected", selected ? "true" : "false");
+            }
+
+            for (const panel of panels) {
+                const active = panel.getAttribute("data-auth-panel") === method;
+                panel.hidden = !active;
+                for (const input of panel.querySelectorAll("[data-required-when-active]")) {
+                    if (input instanceof HTMLInputElement) {
+                        input.required = active;
+                    }
+                }
+            }
+        };
+
+        for (const button of buttons) {
+            button.addEventListener("click", () => {
+                setMethod(button.getAttribute("data-auth-method-button") || "authenticator");
+            });
+        }
+
+        setMethod(initialMethod);
+
+        if (form instanceof HTMLFormElement) {
+            wirePasskeyLogin(form);
+        }
+    }
+
+    const setupPanel = document.querySelector("[data-passkey-setup]");
+    if (setupPanel instanceof HTMLElement) {
+        wirePasskeyEnrollment(setupPanel);
+    }
+
+    function wirePasskeyLogin(form) {
+        const passkeyButton = form.querySelector("[data-passkey-login]");
+        const status = form.querySelector("[data-passkey-status]");
+        const emailInput = form.querySelector("[name='email']");
+        const returnUrlInput = form.querySelector("[name='returnUrl']");
+        if (!(passkeyButton instanceof HTMLButtonElement) ||
+            !(emailInput instanceof HTMLInputElement) ||
+            !(returnUrlInput instanceof HTMLInputElement)) {
+            return;
+        }
+
+        passkeyButton.addEventListener("click", async () => {
+            if (!window.lmsEdgePasskeys?.login) {
+                setStatus(status, "Passkey support is still loading. Try again.", true);
+                return;
+            }
+
+            passkeyButton.disabled = true;
+            setStatus(status, "Waiting for device passkey...");
+            try {
+                const result = await window.lmsEdgePasskeys.login(emailInput.value, returnUrlInput.value || "/");
+                if (!result.succeeded) {
+                    setStatus(status, result.message || "Device passkey sign-in failed.", true);
+                }
+            } finally {
+                passkeyButton.disabled = false;
+            }
+        });
+    }
+
+    function wirePasskeyEnrollment(panel) {
+        const enrollButton = panel.querySelector("[data-passkey-enroll]");
+        const status = panel.querySelector("[data-passkey-status]");
+        const returnUrl = panel.getAttribute("data-return-url") || "/";
+        const email = panel.getAttribute("data-email") || "";
+        if (!(enrollButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        enrollButton.addEventListener("click", async () => {
+            if (!window.lmsEdgePasskeys?.enrollCurrentUser) {
+                setStatus(status, "Passkey support is still loading. Try again.", true);
+                return;
+            }
+
+            enrollButton.disabled = true;
+            setStatus(status, "Waiting for device passkey setup...");
+            try {
+                const label = email ? `LMS HA Add-On passkey for ${email}` : "LMS HA Add-On passkey";
+                const result = await window.lmsEdgePasskeys.enrollCurrentUser(label);
+                if (!result.succeeded) {
+                    setStatus(status, result.message || "Passkey setup failed.", true);
+                    enrollButton.disabled = false;
+                    return;
+                }
+
+                setStatus(status, result.message || "Passkey saved.");
+                window.location.assign(returnUrl);
+            } catch (error) {
+                setStatus(status, error instanceof Error ? error.message : "Passkey setup failed.", true);
+                enrollButton.disabled = false;
+            }
+        });
+    }
+
+    function setStatus(element, message, isError) {
+        if (!(element instanceof HTMLElement)) {
+            return;
+        }
+
+        element.hidden = !message;
+        element.textContent = message || "";
+        element.classList.toggle("warning", isError === true);
+        element.classList.toggle("ready", isError !== true);
+    }
+})();
+</script>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Notice { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Email { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Method { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? PasskeySetup { get; set; }
+
+    private string NormalizedReturnUrl => NormalizeReturnUrl(ReturnUrl);
+    private string EmailValue => Email?.Trim() ?? string.Empty;
+    private bool ShouldShowPasskeySetup => IsTruthy(PasskeySetup);
+    private string InitialAuthMethod => NormalizeAuthMethod(Method);
+
+    private static string NormalizeReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+        {
+            return "/";
+        }
+
+        var trimmed = returnUrl.Trim();
+        return trimmed.StartsWith("/", StringComparison.Ordinal) &&
+               !trimmed.StartsWith("//", StringComparison.Ordinal) &&
+               !trimmed.StartsWith("/\\", StringComparison.Ordinal)
+            ? trimmed
+            : "/";
+    }
+
+    private static string NormalizeAuthMethod(string? method)
+    {
+        var normalized = (method ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized is "passkey" or "email" or "authenticator"
+            ? normalized
+            : "authenticator";
+    }
+
+    private static bool IsTruthy(string? value) =>
+        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "on", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+}

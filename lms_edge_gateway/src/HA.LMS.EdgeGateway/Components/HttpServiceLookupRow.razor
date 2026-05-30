@@ -1,0 +1,73 @@
+@namespace HA.LMS.EdgeGateway.Components
+
+<section class="http-service-lookup-row" role="listitem" title="@DetailsTitle">
+    <div class="http-service-lookup-fact">
+        <span>Hostname</span>
+        <strong>@Service.Host</strong>
+    </div>
+    <div class="http-service-lookup-fact">
+        <span>IP:Port</span>
+        <strong>@IpPortLabel</strong>
+    </div>
+    <button class="http-service-lookup-use"
+            type="button"
+            title="@UseTitle"
+            disabled="@IsBlocked"
+            @onclick="HandleUseAsync">
+        <span>Select</span>
+    </button>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public LocalHttpServiceEndpoint Service { get; set; } = default!;
+    [Parameter] public EventCallback<LocalHttpServiceEndpoint> OnUse { get; set; }
+
+    private bool IsBlocked => Service.Exposure == DiscoveryExposure.UnsafeToExpose;
+
+    private string IpPortLabel =>
+        $"{FirstNonBlank(Service.IpAddress, Service.Host) ?? Service.Host}:{Service.Port}";
+
+    private string DetailsTitle
+    {
+        get
+        {
+            var evidence = Service.Evidence ?? [];
+            var parts = new List<string>
+            {
+                Service.Url,
+                $"Scheme: {Service.Scheme}",
+                $"Port: {Service.Port}"
+            };
+
+            AddIfPresent(parts, "Service", Service.ServiceName);
+            AddIfPresent(parts, "HTTP", Service.StatusCode > 0 ? Service.StatusCode.ToString() : null);
+            AddIfPresent(parts, "Title", Service.Title);
+            AddIfPresent(parts, "Server", Service.ServerHeader);
+            AddIfPresent(parts, "Scope", Service.Scope);
+            foreach (var item in evidence.Take(4))
+            {
+                AddIfPresent(parts, "Evidence", item);
+            }
+
+            return string.Join(" | ", parts);
+        }
+    }
+
+    private string UseTitle => IsBlocked
+        ? "Blocked by discovery policy."
+        : $"Select {Service.Url}";
+
+    private static void AddIfPresent(List<string> parts, string label, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            parts.Add($"{label}: {value.Trim()}");
+        }
+    }
+
+    private static string? FirstNonBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private Task HandleUseAsync() =>
+        IsBlocked ? Task.CompletedTask : OnUse.InvokeAsync(Service);
+}

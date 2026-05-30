@@ -28,7 +28,7 @@ LABEL \
   io.hass.version="${BUILD_VERSION}" \
   io.hass.type="addon" \
   io.hass.arch="${BUILD_ARCH}" \
-  org.opencontainers.image.title="LMS Edge Gateway Home Assistant Add-on" \
+  org.opencontainers.image.title="Linux Made Sane - Edge Gateway Home Assistant Add-on" \
   org.opencontainers.image.source="https://github.com/lmsowner/ha_addon_lms_edge_gateway"
 
 ENV \
@@ -38,7 +38,9 @@ ENV \
   EdgeGateway__DataRoot=/data/lms-edge-gateway \
   EdgeGateway__CaddyConfigPath=/data/caddy/Caddyfile \
   EdgeGateway__CloudflaredConfigDirectory=/data/cloudflared \
-  EdgeGateway__OptionsJsonPath=/data/options.json
+  EdgeGateway__OptionsJsonPath=/data/options.json \
+  EdgeGateway__CaddyLocalServiceUrl=http://localhost:18080 \
+  EdgeGateway__LmsForwardAuthPort=5000
 
 RUN \
   apk add --no-cache \
@@ -65,4 +67,4 @@ RUN \
   && chmod 0755 /etc/services.d/caddy/run \
   && chmod 0755 /etc/services.d/cloudflared/run
 
-EXPOSE 5000 8080
+EXPOSE 5000 18080

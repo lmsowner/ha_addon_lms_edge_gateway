@@ -52,10 +52,18 @@ public sealed class CloudflareZoneService(
     private static CloudflareZoneSummary ParseZone(JsonElement zone)
     {
         var accountName = string.Empty;
-        if (zone.TryGetProperty("account", out var account) &&
-            account.TryGetProperty("name", out var accountNameElement))
+        var accountId = string.Empty;
+        if (zone.TryGetProperty("account", out var account))
         {
-            accountName = accountNameElement.GetString() ?? string.Empty;
+            if (account.TryGetProperty("name", out var accountNameElement))
+            {
+                accountName = accountNameElement.GetString() ?? string.Empty;
+            }
+
+            if (account.TryGetProperty("id", out var accountIdElement))
+            {
+                accountId = accountIdElement.GetString() ?? string.Empty;
+            }
         }
 
         var nameServers = zone.TryGetProperty("name_servers", out var nameServersElement) &&
@@ -70,6 +78,7 @@ public sealed class CloudflareZoneService(
         return new CloudflareZoneSummary(
             GetString(zone, "id"),
             GetString(zone, "name"),
+            accountId,
             accountName,
             GetString(zone, "status"),
             GetString(zone, "type"),

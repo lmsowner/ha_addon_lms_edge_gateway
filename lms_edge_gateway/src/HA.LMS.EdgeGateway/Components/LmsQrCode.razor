@@ -1,0 +1,36 @@
+@using QRCoder
+
+<figure class="@CssClass">
+    @if (string.IsNullOrWhiteSpace(Payload))
+    {
+        <div class="lms-qr-placeholder">QR</div>
+    }
+    else
+    {
+        <img src="@DataUri" alt="@Alt" />
+    }
+    @if (!string.IsNullOrWhiteSpace(Caption))
+    {
+        <figcaption>@Caption</figcaption>
+    }
+</figure>
+
+@code {
+    [Parameter] public string Payload { get; set; } = string.Empty;
+    [Parameter] public string Alt { get; set; } = "Authenticator setup QR code";
+    [Parameter] public string? Caption { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass => string.IsNullOrWhiteSpace(Class) ? "lms-qr-code" : $"lms-qr-code {Class}";
+
+    private string DataUri
+    {
+        get
+        {
+            using var generator = new QRCodeGenerator();
+            using var data = generator.CreateQrCode(Payload.Trim(), QRCodeGenerator.ECCLevel.Q);
+            var qrCode = new PngByteQRCode(data);
+            return $"data:image/png;base64,{Convert.ToBase64String(qrCode.GetGraphic(8))}";
+        }
+    }
+}

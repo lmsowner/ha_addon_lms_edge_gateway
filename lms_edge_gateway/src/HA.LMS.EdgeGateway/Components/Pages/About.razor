@@ -1,0 +1,103 @@
+@page "/about"
+
+<PageTitle>About | Linux Made Sane - Edge Gateway</PageTitle>
+
+<div class="page-shell edge-gateway-page lms-about-page">
+    <section class="surface-card edge-card lms-about-hero">
+        <div class="lms-about-hero-copy">
+            <img class="lms-about-logo" src="images/lms-logo-192.png" alt="" />
+            <div>
+                <p class="eyebrow">About LMS</p>
+                <h2>Linux Made Sane Community Edition</h2>
+                <p class="meta-text">
+                    Linux Made Sane is a local-first Linux administration web app for managing hosts, terminals, files,
+                    services, shares, remote access, local Caddy reverse proxy routes, AI-assisted operations,
+                    media-library workflows, and local Linux desktop assistance.
+                </p>
+            </div>
+        </div>
+        <img class="lms-about-splash" src="images/lms-splash.png" alt="Linux Made Sane application splash artwork." />
+    </section>
+
+    <section class="surface-card edge-card lms-about-section">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Edge Gateway</p>
+                <h2>How this add-on fits LMS</h2>
+                <p class="meta-text">
+                    Edge Gateway publishes Home Assistant and LAN services through Cloudflare Tunnel and Caddy while LMS owns
+                    the authentication policy and operational workflow.
+                </p>
+            </div>
+        </div>
+
+        <div class="lms-about-feature-list">
+            <article>
+                <strong>Cloudflare publishing</strong>
+                <span>Creates the tunnel, DNS, and ingress path needed to expose selected internal services.</span>
+            </article>
+            <article>
+                <strong>Caddy routing</strong>
+                <span>Generates local reverse-proxy routes so each published app has a stable internal target.</span>
+            </article>
+            <article>
+                <strong>LMS access control</strong>
+                <span>Routes can use LMS policy decisions such as MFA, passkeys, and managed approval flows.</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="surface-card edge-card lms-about-section">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Community Edition</p>
+                <h2>Public LMS release details</h2>
+                <p class="meta-text">
+                    The public Community Edition repository includes the source subset, documentation, installer metadata,
+                    Desktop Assistant helper, and the web app projects needed to build the Community app.
+                </p>
+            </div>
+        </div>
+
+        <div class="lms-about-media-grid">
+            <figure class="lms-about-figure">
+                <img src="images/lms-auth-panel.png" alt="Linux Made Sane authentication panel." />
+                <figcaption>Authentication is a first-class part of the LMS user experience.</figcaption>
+            </figure>
+
+            <div class="lms-about-facts">
+                <div>
+                    <strong>Install target</strong>
+                    <span><code>/opt/linuxmadesane/ce</code> with data under <code>/var/lib/linuxmadesane/ce</code>.</span>
+                </div>
+                <div>
+                    <strong>Runtime model</strong>
+                    <span>Runs as the <code>linux-made-sane.service</code> systemd service on supported Linux builds.</span>
+                </div>
+                <div>
+                    <strong>Edge dependency</strong>
+                    <span>Can install and manage Caddy for local reverse proxy and Edge Gateway workflows.</span>
+                </div>
+                <div>
+                    <strong>Public boundary</strong>
+                    <span>The public repo excludes private manifests, license secrets, databases, credentials, and proprietary implementation details.</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="surface-card edge-card lms-about-section">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Links</p>
+                <h2>Project references</h2>
+                <p class="meta-text">These details were pulled from the public Linux Made Sane Community Edition repository.</p>
+            </div>
+        </div>
+        <div class="lms-about-links">
+            <a class="lms-button lms-button-primary" href="https://www.linuxmadesane.com" target="_blank" rel="noreferrer">Website</a>
+            <a class="lms-button" href="https://github.com/lmsowner/linuxmadesanerelease" target="_blank" rel="noreferrer">Community repo</a>
+            <a class="lms-button" href="https://github.com/lmsowner/linuxmadesanerelease/blob/main/docs/SECURITY.md" target="_blank" rel="noreferrer">Security model</a>
+        </div>
+    </section>
+</div>

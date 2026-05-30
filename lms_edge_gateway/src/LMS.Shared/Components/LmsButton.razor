@@ -22,15 +22,58 @@ else
     [Parameter] public string Type { get; set; } = "button";
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public bool Primary { get; set; }
+    [Parameter] public bool Danger { get; set; }
     [Parameter] public EventCallback OnClick { get; set; }
 
-    private string CssClass => Primary ? "lms-button lms-button-primary" : "lms-button";
+    private string CssClass
+    {
+        get
+        {
+            var classes = new List<string> { "lms-button" };
+            if (Primary)
+            {
+                classes.Add("lms-button-primary");
+            }
+
+            if (Danger)
+            {
+                classes.Add("lms-button-danger");
+            }
+
+            return string.Join(" ", classes);
+        }
+    }
 
     private RenderFragment ButtonContent => @<text>
         @if (!string.IsNullOrWhiteSpace(Icon))
         {
-            <span class="lms-button-icon" aria-hidden="true">@Icon</span>
+            <span class="lms-button-icon" aria-hidden="true">@IconContent</span>
         }
         <span>@Label</span>
     </text>;
+
+    private RenderFragment IconContent => builder =>
+    {
+        builder.AddMarkupContent(0, GetIconMarkup(Icon));
+    };
+
+    private static string GetIconMarkup(string? icon) => icon?.Trim().ToLowerInvariant() switch
+    {
+        "add" or "plus" => Svg("""<path d="M12 5v14" /><path d="M5 12h14" />"""),
+        "publish" or "connection" => Svg("""<path d="M5 7h14" /><path d="M5 12h14" /><path d="M5 17h14" /><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none" />"""),
+        "disable" or "stop" => Svg("""<rect x="7" y="7" width="10" height="10" rx="1.6" />"""),
+        "test" or "analyze" => Svg("""<path d="M4 19h16" /><path d="m7 15 3-4 3 2 4-7" /><path d="M17 6h3v3" />"""),
+        "edit" => Svg("""<path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" /><path d="m14 8 2 2" />"""),
+        "delete" => Svg("""<path d="M4 7h16" /><path d="M9.5 3.5h5l1 2.5h4" /><path d="M7 7.5 8 19a2 2 0 0 0 2 1.8h4a2 2 0 0 0 2-1.8l1-11.5" /><path d="M10 11v5" /><path d="M14 11v5" />"""),
+        "save" => Svg("""<path d="M5 4.5h11l3 3V19a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19Z" /><path d="M8 4.5v5h7v-5" /><path d="M8.5 15.5h7" />"""),
+        "refresh" => Svg("""<path d="M21 4v5h-5" /><path d="M3 20v-5h5" /><path d="M20.2 9A8.5 8.5 0 0 0 5.6 5.8L3 8" /><path d="M3.8 15A8.5 8.5 0 0 0 18.4 18.2L21 16" />"""),
+        "info" => Svg("""<circle cx="12" cy="12" r="8.5" /><path d="M12 11.5v5" /><path d="M12 7.5h.01" />"""),
+        "close" => Svg("""<path d="m7 7 10 10" /><path d="m17 7-10 10" />"""),
+        "search" => Svg("""<circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4 4" />"""),
+        "check" => Svg("""<path d="m5 12 4 4 10-10" />"""),
+        _ => icon ?? string.Empty
+    };
+
+    private static string Svg(string paths) =>
+        $"""<svg class="ui-glyph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">{paths}</svg>""";
 }

@@ -15,6 +15,7 @@ public sealed class ProcessStatusProbe : IProcessStatusProbe
             {
                 FileName = "pgrep",
                 ArgumentList = { "-f", processPattern },
+                WorkingDirectory = "/",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false

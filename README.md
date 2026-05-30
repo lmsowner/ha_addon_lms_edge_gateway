@@ -1,6 +1,6 @@
-# LMS Edge Gateway Home Assistant Add-on
+# Linux Made Sane - Edge Gateway Home Assistant Add-on
 
-LMS Edge Gateway is a Home Assistant Add-on for secure self-hosted application publishing.
+Linux Made Sane - Edge Gateway is a Home Assistant Add-on for secure self-hosted application publishing.
 
 It is designed to let Home Assistant users publish Home Assistant and other LAN applications through Cloudflare, Cloudflare Access, Cloudflare Tunnel, Caddy, and LMS authentication policy without hand-writing reverse proxy or Linux service configuration.
 
@@ -15,7 +15,7 @@ It is designed to let Home Assistant users publish Home Assistant and other LAN 
 https://github.com/lmsowner/ha_addon_lms_edge_gateway
 ```
 
-5. Install **LMS Edge Gateway**.
+5. Install **Linux Made Sane - Edge Gateway**.
 6. Start the add-on and open the web UI through Home Assistant ingress.
 
 ## Product shape
@@ -30,9 +30,9 @@ The add-on source is split into reusable layers:
 
 The Home Assistant folder is intentionally thin. HA-specific concerns are packaging, ingress, persistent `/data`, and add-on lifecycle.
 
-## Phase 1
+## Current scope
 
-The initial add-on includes:
+The add-on includes:
 
 - buildable Home Assistant add-on structure
 - Blazor UI through ingress
@@ -41,8 +41,13 @@ The initial add-on includes:
 - persistent add-on configuration under `/data`
 - local Rider and Docker Compose debugging
 - runtime status and diagnostics UI
+- Cloudflare token validation and relay setup for the selected zone
+- named Cloudflare Tunnel creation/reuse
+- proxied wildcard DNS for `*.ha-app-relay.<domain>`
+- cloudflared connector token persistence under `/data/lms-edge-gateway`
+- generated Caddy config for Edge Gateway traffic
 
-Phase 2 wires Cloudflare API automation, named tunnel lifecycle, Caddy route generation, LMS authentication policy, and rollback flows.
+Next wiring covers per-application publish, Cloudflare Access policy, LMS authentication policy, route rollback, and relay removal flows.
 
 ## Local development
 

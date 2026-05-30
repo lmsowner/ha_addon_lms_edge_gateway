@@ -23,23 +23,48 @@ public sealed record PublishedApplicationDefinition(
     string PublicHostname,
     string UpstreamUrl,
     string AccessPolicy,
-    bool IsEnabled);
+    bool IsEnabled,
+    string TargetPathPrefix = "",
+    string AllowKnownIps = "",
+    string AllowedUsers = "",
+    string AllowedGroups = "",
+    bool AllowLanOnly = false,
+    string Notes = "",
+    bool? UsePublicHostHeader = null,
+    bool? StripForwardedFor = null,
+    bool? SkipUpstreamTlsVerification = null);
 
 public sealed record CloudflareTunnelState(
     string TunnelName,
     string AccountName,
     string TunnelId,
     bool IsAuthenticated,
-    DateTimeOffset? LastVerifiedAtUtc);
+    DateTimeOffset? LastVerifiedAtUtc,
+    string AccountId = "");
+
+public sealed record EdgeGatewayRelayZone(
+    string DomainName,
+    string RelayHostname,
+    DateTimeOffset CreatedAtUtc,
+    string WildcardHostname = "",
+    string DnsTarget = "",
+    string TunnelId = "",
+    string TunnelName = "",
+    DateTimeOffset? ProvisionedAtUtc = null,
+    string TunnelStatus = "",
+    DateTimeOffset? LastValidatedAtUtc = null,
+    string LastValidationError = "");
 
 public sealed record EdgeGatewayConfiguration(
     IReadOnlyList<PublishedApplicationDefinition> Applications,
+    IReadOnlyList<EdgeGatewayRelayZone> RelayZones,
     CloudflareTunnelState CloudflareTunnel,
     DateTimeOffset UpdatedAtUtc)
 {
     public static EdgeGatewayConfiguration Empty { get; } = new(
         [],
-        new CloudflareTunnelState(string.Empty, string.Empty, string.Empty, false, null),
+        [],
+        new CloudflareTunnelState(string.Empty, string.Empty, string.Empty, false, null, string.Empty),
         DateTimeOffset.UtcNow);
 }
 

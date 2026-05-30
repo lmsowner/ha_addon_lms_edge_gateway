@@ -1,126 +1,1777 @@
 @page "/cloudflare"
 @rendermode InteractiveServer
+@implements IDisposable
+@using System.Net
+@using System.Text
 @inject IEdgeGatewayStatusService StatusService
+@inject ICloudflareApiTokenStore ApiTokenStore
 @inject ICloudflareZoneService ZoneService
+@inject IEdgeGatewayRelayProvisioningService RelayProvisioningService
+@inject ILocalHttpServiceDiscoveryService HttpServiceDiscovery
+@inject NavigationManager Navigation
 
-<PageTitle>Cloudflare Setup</PageTitle>
+<PageTitle>Setup | Linux Made Sane - Edge Gateway</PageTitle>
 
-<div class="page-stack">
-    <section class="page-header">
-        <div>
-            <p class="lms-eyebrow">Cloudflare</p>
-            <h1>Domains</h1>
-            <p>Choose the Cloudflare zone LMS Edge Gateway should use for tunnels, Access applications, and DNS records.</p>
+<div class="page-shell edge-gateway-page">
+    <section class="edge-card edge-setup-section edge-cloudflare-token-card">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Cloudflare token</p>
+                <h2>Connect Cloudflare to Edge Gateway</h2>
+                <p class="meta-text">Validate a scoped token here before setup. Edge Gateway will then list the Cloudflare zones that token can manage.</p>
+            </div>
+            <div class="edge-token-header-actions">
+                <LmsStatusPill Text="@(tokenState?.HasToken == true ? "Token saved" : "Token needed")" Tone="@(tokenState?.HasToken == true ? LmsStatusTone.Ready : LmsStatusTone.Warning)" />
+                <LmsButton Label="Setup Guide" Icon="info" OnClick="OpenTokenGuide" />
+            </div>
         </div>
-        <div class="page-actions">
-            <LmsStatusPill Text="Connected" Tone="LmsStatusTone.Ready" />
-        </div>
-    </section>
 
-    <LmsPanel Kicker="Zones" Title="Cloudflare domains">
-        <HeaderContent>
-            <LmsButton Label="Refresh" Href="/cloudflare" />
-        </HeaderContent>
-        <ChildContent>
-            @if (zonesResult is null)
-            {
-                <p class="muted">Loading domains from Cloudflare.</p>
-            }
-            else if (!string.IsNullOrWhiteSpace(zonesResult.Error))
-            {
-                <div class="empty-state">
-                    <strong>Could not load Cloudflare domains.</strong>
-                    <p>@zonesResult.Error</p>
-                    <p>If this is a permissions error, add <strong>Zone / Zone / Read</strong> to the API token so Cloudflare allows zone listing.</p>
-                </div>
-            }
-            else if (zonesResult.Zones.Count == 0)
-            {
-                <div class="empty-state">
-                    <strong>No Cloudflare domains found.</strong>
-                    <p>Add a domain to Cloudflare or widen the token's zone scope.</p>
-                </div>
-            }
-            else
-            {
-                <div class="zone-list">
-                    @foreach (var zone in zonesResult.Zones)
-                    {
-                        <article class="zone-card">
-                            <div>
-                                <h2>@zone.Name</h2>
-                                <p>@(string.IsNullOrWhiteSpace(zone.AccountName) ? "Cloudflare account" : zone.AccountName)</p>
-                            </div>
-                            <div class="zone-meta">
-                                <LmsStatusPill Text="@FormatStatus(zone.Status)" Tone="@GetZoneTone(zone.Status)" />
-                                <span>@FormatType(zone.Type)</span>
-                            </div>
-                            <div class="zone-nameservers">
-                                @if (zone.NameServers.Count > 0)
-                                {
-                                    @foreach (var nameServer in zone.NameServers)
-                                    {
-                                        <code>@nameServer</code>
-                                    }
-                                }
-                                else
-                                {
-                                    <span class="muted">No nameservers returned.</span>
-                                }
-                            </div>
-                            <div class="zone-actions">
-                                <LmsButton Label="Use domain" Href="/applications" Primary="true" />
-                            </div>
-                        </article>
-                    }
-                </div>
-            }
-        </ChildContent>
-    </LmsPanel>
-
-    <LmsPanel Kicker="Runtime" Title="Tunnel status">
-        @if (cloudflared is null)
+        @if (tokenState?.HasToken == true)
         {
-            <p class="muted">Checking cloudflared status.</p>
+            <div class="edge-token-ready">
+                <div>
+                    <strong>Cloudflare is connected.</strong>
+                    <span>Use the domain section below to set up this LMS host's relay namespace and prepare Caddy/cloudflared automatically.</span>
+                </div>
+                <form class="edge-token-reset-form" method="post" action="api/setup/reset-cloudflare-token">
+                    <button class="lms-button lms-button-danger" type="submit">
+                        <span class="lms-button-icon" aria-hidden="true">
+                            <svg class="ui-glyph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 7h16" />
+                                <path d="M9.5 3.5h5l1 2.5h4" />
+                                <path d="M7 7.5 8 19a2 2 0 0 0 2 1.8h4a2 2 0 0 0 2-1.8l1-11.5" />
+                                <path d="M10 11v5" />
+                                <path d="M14 11v5" />
+                            </svg>
+                        </span>
+                        <span>Reset settings</span>
+                    </button>
+                </form>
+            </div>
         }
         else
         {
-            <div class="status-line">
-                <LmsStatusPill Text="@cloudflared.State.ToString()" Tone="@GetTone(cloudflared.State)" />
-                <span>@cloudflared.Summary</span>
-            </div>
-            <p>@cloudflared.Detail</p>
+            <form class="edge-token-grid" method="post" action="api/setup/cloudflare-api-token">
+                <label class="ui-field">
+                    <span class="ui-field-label">Paste Cloudflare token</span>
+                    <input name="cloudflare_api_token" type="password" autocomplete="off" placeholder="Paste Cloudflare token" required />
+                </label>
+                <button class="lms-button lms-button-primary" type="submit">
+                    <span class="lms-button-icon" aria-hidden="true">
+                        <svg class="ui-glyph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 4.5h11l3 3V19a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19Z" />
+                            <path d="M8 4.5v5h7v-5" />
+                            <path d="M8.5 15.5h7" />
+                        </svg>
+                    </span>
+                    <span>Validate and Save token</span>
+                </button>
+            </form>
         }
-    </LmsPanel>
+    </section>
+
+    <section class="edge-card edge-setup-section edge-local-relays-card">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Configured zones</p>
+                <h2>Configured relay zones</h2>
+                <p class="meta-text">Shows every relay wildcard LMS can see for this add-on host. Domains without Cloudflare tunnel and DNS details still need Setup Relay.</p>
+            </div>
+                <LmsStatusPill Text="@BuildConfiguredRelayCountLabel()" Tone="@(ConfiguredRelayZones.Any(IsRelayReady) ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+        </div>
+
+        @if (zonesResult is null)
+        {
+            <p class="meta-text">Loading saved relay zones.</p>
+        }
+        else if (ConfiguredRelayZones.Count == 0)
+        {
+            <p class="meta-text">No relay wildcard is currently configured for these Cloudflare zones.</p>
+        }
+        else
+        {
+            <div class="edge-local-relay-list">
+                @foreach (var relay in ConfiguredRelayZones)
+                {
+                    var relayRoutes = GetRoutesForDomain(relay.DomainName);
+                    <div class="edge-local-relay-row">
+                        <div class="edge-local-relay-main">
+                            <strong>@relay.DomainName</strong>
+                            <span><code>@relay.RelayHostname</code></span>
+                            <LmsStatusPill Text="@BuildRelayProvisioningLabel(relay)" Tone="@GetRelayProvisioningTone(relay)" />
+                            <LmsButton Label="Add"
+                                       Icon="plus"
+                                       Primary="true"
+                                       Disabled="@(!HasRelayProvisioningData(relay) || isRelayActionBusy)"
+                                       OnClick="@(() => OpenAddAppModal(relay))" />
+                        </div>
+                        <div class="edge-local-relay-meta">
+                            <span>Local relay</span>
+                            @if (HasRelayProvisioningData(relay))
+                            {
+                                <span><code>@relay.WildcardHostname</code> -> <code>@relay.DnsTarget</code></span>
+                                <span>@BuildRelayHealthDetail(relay)</span>
+                            }
+                            else
+                            {
+                                <span>Cloudflare is not provisioned yet. Run Setup Relay for this domain.</span>
+                            }
+                            <span>@relayRoutes.Count app@(relayRoutes.Count == 1 ? string.Empty : "s")</span>
+                            @if (relayRoutes.Count > 0)
+                            {
+                                <div class="edge-local-relay-routes">
+                                    @foreach (var route in relayRoutes.Take(3))
+                                    {
+                                        <span><strong>@route.Name</strong> <code>@BuildExternalRouteUrl(route)</code></span>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <span>No published app routes on this zone yet.</span>
+                            }
+                        </div>
+                        <div class="edge-local-relay-actions">
+                            @if (HasRelayProvisioningData(relay) && !IsRelayReady(relay))
+                            {
+                                <LmsButton Label="@(IsRepairingRelay(relay.DomainName) ? "Repairing..." : "Repair")"
+                                           Icon="refresh"
+                                           Primary="true"
+                                           Disabled="@isRelayActionBusy"
+                                           OnClick="@(() => RepairRelayAsync(relay.DomainName))" />
+                            }
+                            <LmsButton Label="@(IsDeletingRelay(relay.DomainName) ? "Deleting..." : "Delete")"
+                                       Icon="delete"
+                                       Danger="true"
+                                       Disabled="@isRelayActionBusy"
+                                       OnClick="@(() => DeleteRelayAsync(relay.DomainName))" />
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <details class="edge-setup-section edge-relay-settings locked">
+        <summary class="edge-relay-settings-summary">
+            <div>
+                <span class="eyebrow">Relay namespace</span>
+                <strong>@RelayNamespace</strong>
+                <span class="meta-text">Example: <code>*.@BuildRelayHostname("example.com")</code></span>
+            </div>
+            <span class="edge-relay-summary-actions">
+                <LmsStatusPill Text="Locked" Tone="LmsStatusTone.Ready" />
+                <span class="edge-relay-toggle-text edge-relay-toggle-expand">Expand</span>
+                <span class="edge-relay-toggle-text edge-relay-toggle-collapse">Collapse</span>
+            </span>
+        </summary>
+
+        <div class="edge-relay-settings-body">
+            <p class="callout warning edge-relay-warning">
+                The relay namespace must be unique across your LMS landscape. Do not change it after apps are published unless you intentionally want to break those external app URLs and then republish the affected relay/routes.
+            </p>
+            <div class="edge-relay-settings-form-line">
+                <label class="ui-field">
+                    <span class="ui-field-label">Relay namespace</span>
+                    <input value="@RelayNamespace" readonly />
+                    <span class="ui-field-helper">Locked until namespace editing is wired for the add-on host.</span>
+                </label>
+                <div class="edge-readonly-field">
+                    <span class="ui-field-label">Example</span>
+                    <strong>*.@BuildRelayHostname("example.com")</strong>
+                    <span>Cloudflare wildcard DNS and tunnel ingress use this namespace.</span>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <section class="edge-card edge-setup-section edge-new-app-card">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Setup Relay</p>
+                <h2>Setup Relay</h2>
+                <p class="meta-text">Cloudflare domains loaded from the saved Edge Gateway token.</p>
+            </div>
+        </div>
+
+        @if (zonesResult is null)
+        {
+            <p class="meta-text">Loading Cloudflare domains from the saved Edge Gateway token.</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(zonesResult.Error))
+        {
+            <p class="meta-text">Cloudflare domains are not available until the saved token can list zones.</p>
+        }
+        else if (CloudflareZones.Count == 0)
+        {
+            <p class="meta-text">No Cloudflare zones are available from the saved token.</p>
+        }
+        else if (RelaySetupCloudflareDomains.Count == 0)
+        {
+            <p class="meta-text">Every available Cloudflare zone already has this LMS relay namespace configured. Use Configured zones above to add services or delete a relay before setting it up again.</p>
+        }
+        else
+        {
+            <div class="edge-domain-picker-grid">
+                <label class="ui-field">
+                    <span class="ui-field-label">Cloudflare domain</span>
+                    <select @bind="SelectedRelayDomainName">
+                        <option value="">Select a Cloudflare domain</option>
+                        @foreach (var domain in RelaySetupCloudflareDomains)
+                        {
+                            <option value="@domain.Name">@domain.Name (*.@BuildRelayHostname(domain.Name))</option>
+                        }
+                    </select>
+                    <span class="ui-field-helper">Only domains that still need this LMS relay namespace are listed.</span>
+                </label>
+                <div class="edge-domain-actions">
+                    <LmsButton Label="@(isSettingUpRelay ? "Setting up..." : "Setup Relay")"
+                               Icon="publish"
+                               Primary="true"
+                               Disabled="@isRelayActionBusy"
+                               OnClick="SetupRelayAsync" />
+                </div>
+            </div>
+
+            @if (SelectedRelayDomain is not null)
+            {
+                <p class="edge-domain-relay-preview">
+                    Setup Relay will create <code>@BuildRelayHostname(SelectedRelayDomain.Name)</code> with wildcard <code>*.@BuildRelayHostname(SelectedRelayDomain.Name)</code>.
+                </p>
+            }
+            else
+            {
+                <p class="edge-domain-relay-preview">
+                    Select a Cloudflare domain to preview the relay hostname and wildcard.
+                </p>
+            }
+        }
+
+        @if (!string.IsNullOrWhiteSpace(relaySetupMessage))
+        {
+            <p class="callout ready">@relaySetupMessage</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(relaySetupError))
+        {
+            <p class="callout warning">@relaySetupError</p>
+        }
+
+        @if (relaySetupRequiresDnsReplacement)
+        {
+            <div class="callout warning edge-provision-confirm">
+                <span>Replacing the existing wildcard DNS record will point <code>*.@BuildRelayHostname(SelectedRelayDomainName)</code> at this Edge Gateway tunnel.</span>
+                <LmsButton Label="Replace wildcard DNS"
+                           Icon="publish"
+                           Danger="true"
+                           Disabled="@isRelayActionBusy"
+                           OnClick="ReplaceRelayDnsAsync" />
+            </div>
+        }
+
+        @if (relaySetupSteps.Count > 0)
+        {
+            <div class="edge-provision-log">
+                <strong>Setup steps</strong>
+                <ul class="plain-list">
+                    @foreach (var step in relaySetupSteps)
+                    {
+                        <li>@step</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @if (relaySetupWarnings.Count > 0)
+        {
+            <div class="edge-provision-log warning">
+                <strong>Warnings</strong>
+                <ul class="plain-list">
+                    @foreach (var warning in relaySetupWarnings)
+                    {
+                        <li>@warning</li>
+                    }
+                </ul>
+            </div>
+        }
+    </section>
+
+    @if (isTokenGuideOpen)
+    {
+        <div class="edge-modal-backdrop" role="presentation">
+            <section class="edge-modal-panel edge-token-guide-modal"
+                     role="dialog"
+                     aria-modal="true"
+                     aria-labelledby="cloudflare-token-guide-title"
+                     @onclick:stopPropagation="true">
+                <header class="edge-modal-header">
+                    <div>
+                        <p class="eyebrow">Setup Guide</p>
+                        <h2 id="cloudflare-token-guide-title">Get a Cloudflare API token</h2>
+                        <p class="meta-text">Create a scoped custom token in Cloudflare with the account and zone permissions shown below, then paste the generated token into the Cloudflare token field.</p>
+                    </div>
+                    <button class="edge-modal-close" type="button" aria-label="Close setup guide" @onclick="CloseTokenGuide">x</button>
+                </header>
+
+                <div class="edge-modal-body">
+                    <div class="permission-panel">
+                        <img class="permission-screenshot"
+                             src="images/cloudflare-api-token-permissions.png"
+                             alt="Cloudflare token permissions: Account Cloudflare Tunnel Edit, Account Access Apps and Policies Edit, Zone DNS Edit." />
+                    </div>
+
+                    <div class="edge-token-guide-grid">
+                        <section>
+                            <h3>Create the token</h3>
+                            <ol class="numbered-list">
+                                <li>Open <strong>My Profile</strong>, then <strong>API Tokens</strong>.</li>
+                                <li>Create a custom token.</li>
+                                <li>Add the three permission rows shown in the screenshot.</li>
+                                <li>Scope the token to the Cloudflare account and zone this Edge Gateway should manage.</li>
+                                <li>Copy the generated token and paste it into the Cloudflare token field.</li>
+                            </ol>
+                        </section>
+
+                        <section>
+                            <h3>Required permission rows</h3>
+                            <ul class="plain-list">
+                                <li><code>Account</code> / <code>Cloudflare Tunnel</code> / <code>Edit</code></li>
+                                <li><code>Account</code> / <code>Access: Apps and Policies</code> / <code>Edit</code></li>
+                                <li><code>Zone</code> / <code>DNS</code> / <code>Edit</code></li>
+                            </ul>
+                        </section>
+                    </div>
+                </div>
+
+                <footer class="edge-modal-footer">
+                    <a class="lms-button lms-button-primary" href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">Open Cloudflare API Tokens</a>
+                    <button class="lms-button" type="button" @onclick="CloseTokenGuide">Close</button>
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (addAppRelay is not null)
+    {
+        <div class="edge-modal-backdrop" role="presentation">
+            <section class="edge-modal-panel edge-route-modal"
+                     role="dialog"
+                     aria-modal="true"
+                     aria-labelledby="edge-add-app-title"
+                     @onclick:stopPropagation="true">
+                <header class="edge-modal-header">
+                    <div>
+                        <h2 id="edge-add-app-title">New route</h2>
+                        <p class="meta-text">Save creates a local LMS service record.</p>
+                    </div>
+                    <button class="edge-modal-close" type="button" aria-label="Close add app" @onclick="CloseAddAppModal">x</button>
+                </header>
+
+                <div class="edge-modal-body">
+                    <div class="edge-route-form">
+                        @if (!string.IsNullOrWhiteSpace(routeTargetCheckMessage))
+                        {
+                            <p class="edge-target-check-message @(routeTargetCheckIsError ? "error" : "success")">@routeTargetCheckMessage</p>
+                        }
+
+                        <div class="edge-form-grid edge-route-main-grid">
+                            <label class="ui-field">
+                                <span class="ui-field-label">Display name</span>
+                                <input @bind="addAppName" placeholder="Home Assistant" />
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Hostname / subdomain</span>
+                                <input @bind="addAppHostLabel" placeholder="hassio" />
+                                <span class="ui-field-helper">Use hassio or a full hostname inside the selected Edge Gateway namespace.</span>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Auth mode</span>
+                                <select @bind="addAppAccessPolicy">
+                                    <option value="MFA/Passkey">MFA/Passkey</option>
+                                    <option value="Pass Through">Pass through</option>
+                                    <option value="Blocked">Blocked</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div class="edge-form-grid edge-form-grid-target">
+                            <label class="ui-field">
+                                <span class="ui-field-label">URL path prefix</span>
+                                <input @bind="addAppTargetPathPrefix" placeholder="/plex" />
+                                <span class="ui-field-helper">Optional. /plex makes only hostname/plex route to this backend. Caddy strips the prefix before proxying.</span>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Scheme</span>
+                                <select @bind="addAppTargetScheme">
+                                    <option value="http">http</option>
+                                    <option value="https">https</option>
+                                </select>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Target host</span>
+                                <input @bind="addAppTargetHost" placeholder="homeassistant or 192.168.1.50" />
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Port</span>
+                                <input type="number" min="1" max="65535" @bind="addAppTargetPort" />
+                            </label>
+                            <div class="edge-target-actions">
+                                <LmsButton Label="@(isCheckingRouteTarget ? "Checking..." : "Check Target")"
+                                           Icon="test"
+                                           Primary="true"
+                                           Disabled="@isCheckingRouteTarget"
+                                           OnClick="CheckRouteTargetAsync" />
+                                <LmsButton Label="Find HTTP/S"
+                                           Icon="search"
+                                           Disabled="@isAddingApp"
+                                           OnClick="OpenHttpServicePickerAsync" />
+                            </div>
+                        </div>
+
+                        <details class="edge-advanced-settings edge-publish-details">
+                            <summary>
+                                <span>Public route</span>
+                                <small>DNS, tunnel and Caddy preview</small>
+                            </summary>
+                            <div class="edge-publish-details-body">
+                                <div class="edge-publish-preview">
+                                    <div>
+                                        <strong>@BuildAddAppPublishHeadline()</strong>
+                                        <span>@BuildAddAppPublishDetail()</span>
+                                    </div>
+                                    <LmsStatusPill Text="@BuildAddAppAccessLabel()" Tone="@GetAddAppAccessTone()" />
+                                </div>
+                                <p class="callout ready edge-publish-required">Add creates the Cloudflare DNS record, tunnel ingress, and Caddy route immediately. Disable it later from Published Apps if needed.</p>
+                            </div>
+                        </details>
+
+                        <div class="edge-form-flags">
+                            <label class="edge-checkbox-field">
+                                <input type="checkbox" @bind="addAppEnabled" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+
+                        <details class="edge-advanced-settings">
+                            <summary>
+                                <span>Advanced settings</span>
+                                <small>Proxy headers and upstream TLS</small>
+                            </summary>
+                            <div class="edge-advanced-settings-body">
+                                <label class="edge-checkbox-field">
+                                    <input type="checkbox" @bind="addAppUsePublicHostHeader" />
+                                    <span>Send public Host header</span>
+                                </label>
+                                <label class="edge-checkbox-field">
+                                    <input type="checkbox" @bind="addAppStripForwardedFor" />
+                                    <span>Strip X-Forwarded-For</span>
+                                </label>
+                                <label class="edge-checkbox-field">
+                                    <input type="checkbox" @bind="addAppSkipUpstreamTlsVerification" />
+                                    <span>Skip upstream TLS verification</span>
+                                </label>
+                            </div>
+                        </details>
+
+                    </div>
+                </div>
+
+                <footer class="edge-modal-footer">
+                    <LmsButton Label="@(isAddingApp ? "Adding..." : "Add service")"
+                               Icon="save"
+                               Primary="true"
+                               Disabled="@isAddingApp"
+                               OnClick="AddAppAsync" />
+                    <LmsButton Label="Cancel"
+                               Icon="close"
+                               Disabled="@isAddingApp"
+                               OnClick="CloseAddAppModal" />
+                </footer>
+            </section>
+        </div>
+    }
+
+    @if (isHttpServicePickerOpen)
+    {
+        <div class="edge-modal-backdrop" role="presentation">
+            <section class="edge-modal-panel edge-http-service-modal"
+                     role="dialog"
+                     aria-modal="true"
+                     aria-labelledby="edge-http-service-title"
+                     @onclick:stopPropagation="true">
+                <header class="edge-modal-header">
+                    <div>
+                        <h2 id="edge-http-service-title">HTTP/S service lookup</h2>
+                        <p class="meta-text">Scans Home Assistant plus the local IPv4 subnet on approved HTTP/S ports.</p>
+                    </div>
+                    <button class="edge-modal-close" type="button" aria-label="Close HTTP/S service lookup" @onclick="CloseHttpServicePicker">x</button>
+                </header>
+
+                <div class="edge-modal-body">
+                    <div class="edge-http-service-picker">
+                        <div class="table-header edge-http-service-picker-header">
+                            <div>
+                                <strong>Local subnet scan</strong>
+                                <p class="meta-text">Cached results are shown first. Scan refreshes localhost and every address in the detected local IPv4 subnet.</p>
+                            </div>
+                            <div class="edge-http-service-actions">
+                                <LmsButton Label="@(isDiscoveringHttpServices ? "Scanning..." : "Scan")"
+                                           Icon="search"
+                                           Primary="true"
+                                           Disabled="@isDiscoveringHttpServices"
+                                           OnClick="ScanHttpServicesAsync" />
+                            </div>
+                        </div>
+
+                        @if (isDiscoveringHttpServices)
+                        {
+                            <section class="surface-subcard edge-http-service-scanning" role="status" aria-live="polite">
+                                <span class="edge-http-service-progress">
+                                    <span class="edge-http-service-progress-fill"></span>
+                                </span>
+                                <span>@BuildHttpScanSummary()</span>
+                            </section>
+                        }
+
+                        @if (httpServiceSuggestions.Count == 0)
+                        {
+                            <section class="empty-state edge-http-service-empty">
+                                <h3>No HTTP/S services shown</h3>
+                                <p>@(httpServiceDiscoveryMessage ?? "Click Scan to search Home Assistant, localhost, and the local IPv4 subnet.")</p>
+                            </section>
+                        }
+                        else
+                        {
+                            <div class="edge-http-service-list" role="list">
+                                @foreach (var service in httpServiceSuggestions)
+                                {
+                                    <HttpServiceLookupRow Service="service" OnUse="SelectHttpServiceAsync" />
+                                }
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(httpServiceDiscoveryMessage) && httpServiceSuggestions.Count > 0)
+                        {
+                            <p class="meta-text edge-http-service-message">@httpServiceDiscoveryMessage</p>
+                        }
+                    </div>
+                </div>
+
+                <footer class="edge-modal-footer">
+                    <LmsButton Label="Close"
+                               Icon="close"
+                               OnClick="CloseHttpServicePicker" />
+                </footer>
+            </section>
+        </div>
+    }
 </div>
 
 @code {
-    private EdgeGatewayComponentStatus? cloudflared;
+    private EdgeGatewayRuntimeStatus? status;
+    private CloudflareApiTokenState? tokenState;
     private CloudflareZoneListResult? zonesResult;
+    private bool isTokenGuideOpen;
+    private bool isSettingUpRelay;
+    private bool isAddingApp;
+    private bool isCheckingRouteTarget;
+    private bool isHttpServicePickerOpen;
+    private bool isDiscoveringHttpServices;
+    private bool isValidatingCachedHttpServices;
+    private bool isRefreshingRelayHealth;
+    private EdgeGatewayRelayZone? addAppRelay;
+    private string addAppName = "Home Assistant";
+    private string addAppHostLabel = "hassio";
+    private string addAppTargetScheme = "http";
+    private string addAppTargetHost = "homeassistant";
+    private int addAppTargetPort = 8123;
+    private string addAppAccessPolicy = "MFA/Passkey";
+    private string addAppTargetPathPrefix = string.Empty;
+    private string addAppAllowKnownIps = string.Empty;
+    private string addAppAllowedUsers = string.Empty;
+    private string addAppAllowedGroups = string.Empty;
+    private string addAppNotes = string.Empty;
+    private bool addAppEnabled = true;
+    private bool addAppAllowLanOnly;
+    private bool addAppUsePublicHostHeader = true;
+    private bool addAppStripForwardedFor = true;
+    private bool addAppSkipUpstreamTlsVerification;
+    private string routeTargetCheckMessage = string.Empty;
+    private bool routeTargetCheckIsError;
+    private IReadOnlyList<LocalHttpServiceEndpoint> httpServiceSuggestions = [];
+    private string? httpServiceDiscoveryMessage;
+    private string httpServiceDiscoveryStatus = string.Empty;
+    private int httpServiceScanFoundCount;
+    private int httpServiceScanProbedCount;
+    private int httpServiceScanTotalCount;
+    private CancellationTokenSource? httpServiceScanCancellation;
+    private CancellationTokenSource? httpServiceValidationCancellation;
+    private string deletingRelayDomainName = string.Empty;
+    private string repairingRelayDomainName = string.Empty;
+    private string selectedRelayDomainName = string.Empty;
+    private string? relaySetupMessage;
+    private string? relaySetupError;
+    private bool relaySetupRequiresDnsReplacement;
+    private IReadOnlyList<string> relaySetupSteps = [];
+    private IReadOnlyList<string> relaySetupWarnings = [];
+    private const string RelayNamespace = "ha-app-relay";
+    private bool isRelayActionBusy => isSettingUpRelay ||
+        isAddingApp ||
+        isRefreshingRelayHealth ||
+        !string.IsNullOrWhiteSpace(deletingRelayDomainName) ||
+        !string.IsNullOrWhiteSpace(repairingRelayDomainName);
+
+    private IReadOnlyList<CloudflareZoneSummary> CloudflareZones => zonesResult?.Zones ?? [];
+
+    private IReadOnlyList<EdgeGatewayRelayZone> ConfiguredRelayZones =>
+        status?.Configuration.RelayZones
+            .OrderBy(relay => relay.DomainName, StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
+
+    private IReadOnlyList<CloudflareZoneSummary> RelaySetupCloudflareDomains =>
+        CloudflareZones
+            .Where(domain => !ConfiguredRelayZones.Any(configured =>
+                configured.DomainName.Equals(domain.Name, StringComparison.OrdinalIgnoreCase) &&
+                HasRelayProvisioningData(configured)))
+            .OrderBy(domain => domain.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private string SelectedRelayDomainName
+    {
+        get => selectedRelayDomainName;
+        set
+        {
+            selectedRelayDomainName = value;
+            relaySetupMessage = null;
+            relaySetupError = null;
+            relaySetupRequiresDnsReplacement = false;
+            relaySetupSteps = [];
+            relaySetupWarnings = [];
+        }
+    }
+
+    private CloudflareZoneSummary? SelectedRelayDomain =>
+        RelaySetupCloudflareDomains.FirstOrDefault(domain =>
+            domain.Name.Equals(SelectedRelayDomainName, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
-        var status = await StatusService.GetStatusAsync();
-        cloudflared = status.Components.SingleOrDefault(item => item.Id == "cloudflared");
+        tokenState = await ApiTokenStore.GetStateAsync();
+        status = await StatusService.GetStatusAsync();
         zonesResult = await ZoneService.ListZonesAsync();
+        await RefreshConfiguredRelayHealthAsync();
+        ClearSelectedRelayDomain();
+        OpenAddAppModalFromQuery();
     }
 
-    private static LmsStatusTone GetTone(EdgeGatewayComponentState state) => state switch
+    private void OpenTokenGuide()
     {
-        EdgeGatewayComponentState.Ready => LmsStatusTone.Ready,
-        EdgeGatewayComponentState.Warning or EdgeGatewayComponentState.Starting => LmsStatusTone.Warning,
-        EdgeGatewayComponentState.Error => LmsStatusTone.Critical,
-        _ => LmsStatusTone.Neutral
-    };
+        isTokenGuideOpen = true;
+    }
 
-    private static LmsStatusTone GetZoneTone(string status) =>
-        status.Equals("active", StringComparison.OrdinalIgnoreCase)
+    private void CloseTokenGuide()
+    {
+        isTokenGuideOpen = false;
+    }
+
+    private async Task RefreshConfiguredRelayHealthAsync()
+    {
+        if (tokenState?.HasToken != true || status is null)
+        {
+            return;
+        }
+
+        var relays = status.Configuration.RelayZones
+            .Where(HasRelayProvisioningData)
+            .ToArray();
+        if (relays.Length == 0)
+        {
+            return;
+        }
+
+        isRefreshingRelayHealth = true;
+        try
+        {
+            foreach (var relay in relays)
+            {
+                await RelayProvisioningService.ValidateRelayAsync(relay.DomainName);
+            }
+
+            status = await StatusService.GetStatusAsync();
+        }
+        finally
+        {
+            isRefreshingRelayHealth = false;
+        }
+    }
+
+    private string BuildConfiguredRelayCountLabel() =>
+        ConfiguredRelayZones.Count(HasRelayProvisioningData) == 0
+            ? "None"
+            : ConfiguredRelayZones.Count(HasRelayProvisioningData) == 1 ? "1 zone" : $"{ConfiguredRelayZones.Count(HasRelayProvisioningData)} zones";
+
+    private static bool HasRelayProvisioningData(EdgeGatewayRelayZone relay) =>
+        !string.IsNullOrWhiteSpace(relay.TunnelId) &&
+        !string.IsNullOrWhiteSpace(relay.DnsTarget) &&
+        !string.IsNullOrWhiteSpace(relay.WildcardHostname);
+
+    private static bool IsRelayReady(EdgeGatewayRelayZone relay) =>
+        HasRelayProvisioningData(relay) &&
+        NormalizeTunnelStatus(relay.TunnelStatus).Equals("healthy", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildRelayProvisioningLabel(EdgeGatewayRelayZone relay) =>
+        IsRelayReady(relay)
+            ? "Tunnel healthy"
+            : HasRelayProvisioningData(relay)
+                ? $"Tunnel {NormalizeTunnelStatus(relay.TunnelStatus)}"
+                : "Not provisioned";
+
+    private static LmsStatusTone GetRelayProvisioningTone(EdgeGatewayRelayZone relay) =>
+        IsRelayReady(relay)
             ? LmsStatusTone.Ready
-            : LmsStatusTone.Warning;
+            : HasRelayProvisioningData(relay)
+                ? LmsStatusTone.Critical
+                : LmsStatusTone.Warning;
 
-    private static string FormatStatus(string status) =>
-        string.IsNullOrWhiteSpace(status) ? "Unknown" : status;
+    private static string BuildRelayHealthDetail(EdgeGatewayRelayZone relay)
+    {
+        var status = NormalizeTunnelStatus(relay.TunnelStatus);
+        if (status.Equals("healthy", StringComparison.OrdinalIgnoreCase))
+        {
+            return relay.LastValidatedAtUtc is null
+                ? "Cloudflare reports this tunnel as healthy."
+                : $"Cloudflare reports this tunnel as healthy. Checked {relay.LastValidatedAtUtc.Value.ToLocalTime():g}.";
+        }
 
-    private static string FormatType(string type) =>
-        string.IsNullOrWhiteSpace(type) ? "Zone" : type;
+        var detail = string.IsNullOrWhiteSpace(relay.LastValidationError)
+            ? $"Cloudflare reports this tunnel as {status}. Caddy routes can still be saved; external access waits for the connector."
+            : relay.LastValidationError;
+        return relay.LastValidatedAtUtc is null
+            ? detail
+            : $"{detail} Checked {relay.LastValidatedAtUtc.Value.ToLocalTime():g}.";
+    }
+
+    private static string NormalizeTunnelStatus(string status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "unknown"
+            : status.Trim().ToLowerInvariant();
+
+    private async Task SetupRelayAsync()
+    {
+        await ProvisionRelayAsync(replaceExistingDnsRecord: false);
+    }
+
+    private async Task ReplaceRelayDnsAsync()
+    {
+        await ProvisionRelayAsync(replaceExistingDnsRecord: true);
+    }
+
+    private async Task RepairRelayAsync(string domainName)
+    {
+        if (isRelayActionBusy)
+        {
+            return;
+        }
+
+        repairingRelayDomainName = domainName;
+        relaySetupError = null;
+        relaySetupMessage = null;
+        relaySetupRequiresDnsReplacement = false;
+        relaySetupSteps = [];
+        relaySetupWarnings = [];
+
+        try
+        {
+            var result = await RelayProvisioningService.RepairRelayAsync(domainName);
+            relaySetupSteps = result.Steps;
+            relaySetupWarnings = result.Warnings;
+            status = await StatusService.GetStatusAsync();
+
+            if (!result.Success)
+            {
+                relaySetupError = result.Summary;
+                return;
+            }
+
+            relaySetupMessage = result.Summary;
+        }
+        catch (Exception exception)
+        {
+            relaySetupError = $"Could not repair the relay: {exception.Message}";
+        }
+        finally
+        {
+            repairingRelayDomainName = string.Empty;
+        }
+    }
+
+    private async Task DeleteRelayAsync(string domainName)
+    {
+        if (isRelayActionBusy)
+        {
+            return;
+        }
+
+        deletingRelayDomainName = domainName;
+        relaySetupError = null;
+        relaySetupMessage = null;
+        relaySetupRequiresDnsReplacement = false;
+        relaySetupSteps = [];
+        relaySetupWarnings = [];
+
+        try
+        {
+            var result = await RelayProvisioningService.RemoveRelayAsync(domainName);
+            relaySetupSteps = result.Steps;
+            relaySetupWarnings = result.Warnings;
+
+            if (!result.Success)
+            {
+                relaySetupError = result.Summary;
+                return;
+            }
+
+            status = await StatusService.GetStatusAsync();
+            zonesResult = await ZoneService.ListZonesAsync();
+            relaySetupMessage = result.Summary;
+        }
+        catch (Exception exception)
+        {
+            relaySetupError = $"Could not delete the relay: {exception.Message}";
+        }
+        finally
+        {
+            deletingRelayDomainName = string.Empty;
+        }
+    }
+
+    private void OpenAddAppModal(EdgeGatewayRelayZone relay)
+    {
+        addAppRelay = relay;
+        addAppName = "Home Assistant";
+        addAppHostLabel = "hassio";
+        addAppTargetScheme = "http";
+        addAppTargetHost = "homeassistant";
+        addAppTargetPort = 8123;
+        addAppAccessPolicy = "MFA/Passkey";
+        addAppTargetPathPrefix = string.Empty;
+        addAppAllowKnownIps = string.Empty;
+        addAppAllowedUsers = string.Empty;
+        addAppAllowedGroups = string.Empty;
+        addAppNotes = string.Empty;
+        addAppEnabled = true;
+        addAppAllowLanOnly = false;
+        addAppUsePublicHostHeader = true;
+        addAppStripForwardedFor = true;
+        addAppSkipUpstreamTlsVerification = false;
+        routeTargetCheckMessage = string.Empty;
+        routeTargetCheckIsError = false;
+        relaySetupError = null;
+        relaySetupMessage = null;
+        relaySetupSteps = [];
+        relaySetupWarnings = [];
+    }
+
+    private void OpenAddAppModalFromQuery()
+    {
+        var domainName = GetQueryValue("addDomain");
+        if (string.IsNullOrWhiteSpace(domainName))
+        {
+            return;
+        }
+
+        var relay = ConfiguredRelayZones.FirstOrDefault(item =>
+            item.DomainName.Equals(domainName, StringComparison.OrdinalIgnoreCase));
+        if (relay is null)
+        {
+            relaySetupError = $"No configured relay was found for {domainName}.";
+            return;
+        }
+
+        OpenAddAppModal(relay);
+    }
+
+    private string? GetQueryValue(string name)
+    {
+        var query = Navigation.ToAbsoluteUri(Navigation.Uri).Query.TrimStart('?');
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            var key = Uri.UnescapeDataString(parts[0].Replace("+", " "));
+            if (!key.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return parts.Length == 1
+                ? string.Empty
+                : Uri.UnescapeDataString(parts[1].Replace("+", " "));
+        }
+
+        return null;
+    }
+
+    private void CloseAddAppModal()
+    {
+        if (isAddingApp)
+        {
+            return;
+        }
+
+        addAppRelay = null;
+    }
+
+    private async Task AddAppAsync()
+    {
+        if (addAppRelay is null)
+        {
+            return;
+        }
+
+        isAddingApp = true;
+        relaySetupError = null;
+        relaySetupMessage = null;
+        relaySetupSteps = [];
+        relaySetupWarnings = [];
+
+        try
+        {
+            var result = await RelayProvisioningService.AddApplicationAsync(
+                addAppRelay.DomainName,
+                addAppName,
+                addAppHostLabel,
+                addAppTargetScheme,
+                addAppTargetHost,
+                addAppTargetPort,
+                addAppAccessPolicy,
+                targetPathPrefix: addAppTargetPathPrefix,
+                isEnabled: addAppEnabled,
+                allowKnownIps: addAppAllowKnownIps,
+                allowedUsers: addAppAllowedUsers,
+                allowedGroups: addAppAllowedGroups,
+                allowLanOnly: addAppAllowLanOnly,
+                notes: addAppNotes,
+                usePublicHostHeader: addAppUsePublicHostHeader,
+                stripForwardedFor: addAppStripForwardedFor,
+                skipUpstreamTlsVerification: addAppSkipUpstreamTlsVerification);
+            relaySetupSteps = result.Steps;
+            relaySetupWarnings = result.Warnings;
+            if (!result.Success)
+            {
+                status = await StatusService.GetStatusAsync();
+                relaySetupError = result.Summary;
+                return;
+            }
+
+            status = await StatusService.GetStatusAsync();
+            relaySetupMessage = result.Summary;
+            addAppRelay = null;
+        }
+        catch (Exception exception)
+        {
+            relaySetupError = $"Could not add the app: {exception.Message}";
+        }
+        finally
+        {
+            isAddingApp = false;
+        }
+    }
+
+    private async Task ProvisionRelayAsync(bool replaceExistingDnsRecord)
+    {
+        var domain = SelectedRelayDomain;
+        if (domain is null)
+        {
+            relaySetupError = "Select a Cloudflare domain before setting up the relay.";
+            return;
+        }
+
+        isSettingUpRelay = true;
+        relaySetupError = null;
+        relaySetupMessage = null;
+        relaySetupRequiresDnsReplacement = false;
+        relaySetupSteps = [];
+        relaySetupWarnings = [];
+
+        try
+        {
+            var result = await RelayProvisioningService.ProvisionRelayAsync(domain.Name, replaceExistingDnsRecord);
+            relaySetupSteps = result.Steps;
+            relaySetupWarnings = result.Warnings;
+
+            if (result.RequiresDnsReplacement)
+            {
+                relaySetupRequiresDnsReplacement = true;
+                relaySetupError = result.Summary;
+                return;
+            }
+
+            if (!result.Success)
+            {
+                status = await StatusService.GetStatusAsync();
+                zonesResult = await ZoneService.ListZonesAsync();
+                relaySetupError = result.Summary;
+                return;
+            }
+
+            status = await StatusService.GetStatusAsync();
+            relaySetupMessage = result.Summary;
+            ClearSelectedRelayDomain();
+        }
+        catch (Exception exception)
+        {
+            relaySetupError = $"Could not provision the relay: {exception.Message}";
+        }
+        finally
+        {
+            isSettingUpRelay = false;
+        }
+    }
+
+    private bool IsDeletingRelay(string domainName) =>
+        deletingRelayDomainName.Equals(domainName, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsRepairingRelay(string domainName) =>
+        repairingRelayDomainName.Equals(domainName, StringComparison.OrdinalIgnoreCase);
+
+    private async Task CheckRouteTargetAsync()
+    {
+        if (isCheckingRouteTarget)
+        {
+            return;
+        }
+
+        isCheckingRouteTarget = true;
+        routeTargetCheckMessage = "Checking target with http and https...";
+        routeTargetCheckIsError = false;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var host = NormalizeTargetHost(addAppTargetHost);
+            var port = Math.Clamp(addAppTargetPort, 1, 65535);
+            var currentScheme = NormalizeScheme(addAppTargetScheme);
+            var probes = await ProbeRouteTargetSchemesAsync(host, port);
+            var workingProbes = probes.Where(static probe => probe.Success).ToArray();
+
+            if (workingProbes.Length == 0)
+            {
+                routeTargetCheckIsError = true;
+                routeTargetCheckMessage = $"No HTTP/S response from {host}:{port}. {BuildRouteTargetProbeFailureSummary(probes)}";
+                return;
+            }
+
+            var selectedProbe = workingProbes.FirstOrDefault(probe => probe.Scheme.Equals(currentScheme, StringComparison.OrdinalIgnoreCase)) ??
+                                workingProbes.First();
+            addAppTargetScheme = selectedProbe.Scheme;
+            addAppSkipUpstreamTlsVerification = selectedProbe.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+            routeTargetCheckMessage = selectedProbe.Scheme.Equals(currentScheme, StringComparison.OrdinalIgnoreCase)
+                ? $"Target OK using {selectedProbe.Scheme}. {selectedProbe.Summary}"
+                : $"Switched scheme to {selectedProbe.Scheme}. {selectedProbe.Summary}";
+        }
+        catch (Exception exception)
+        {
+            routeTargetCheckIsError = true;
+            routeTargetCheckMessage = exception.Message;
+        }
+        finally
+        {
+            isCheckingRouteTarget = false;
+        }
+    }
+
+    private async Task OpenHttpServicePickerAsync()
+    {
+        CancelHttpServiceLookup();
+        isHttpServicePickerOpen = true;
+        await LoadCachedHttpServicesAsync();
+    }
+
+    private void CloseHttpServicePicker()
+    {
+        CancelHttpServiceLookup();
+        isHttpServicePickerOpen = false;
+    }
+
+    private async Task LoadCachedHttpServicesAsync()
+    {
+        httpServiceSuggestions = SortHttpServiceSuggestions(
+            (await HttpServiceDiscovery.GetCachedAsync()).Where(IsLocalHttpServiceCandidate));
+        httpServiceDiscoveryMessage = httpServiceSuggestions.Count == 0
+            ? "No cached service candidates yet. Run Scan to search the local IPv4 subnet."
+            : $"Showing {httpServiceSuggestions.Count} cached service candidate(s). Checking they still respond.";
+        httpServiceDiscoveryStatus = httpServiceSuggestions.Count == 0 ? string.Empty : "Checking cached service candidates...";
+        httpServiceScanFoundCount = 0;
+        httpServiceScanProbedCount = 0;
+        httpServiceScanTotalCount = 0;
+
+        if (httpServiceSuggestions.Count > 0)
+        {
+            CancelHttpServiceValidation();
+            httpServiceValidationCancellation = new CancellationTokenSource();
+            _ = ValidateCachedHttpServicesAsync(httpServiceValidationCancellation.Token);
+        }
+    }
+
+    private Task ScanHttpServicesAsync()
+    {
+        if (isDiscoveringHttpServices)
+        {
+            return Task.CompletedTask;
+        }
+
+        isDiscoveringHttpServices = true;
+        CancelHttpServiceValidation();
+        httpServiceDiscoveryMessage = "Scan running. Cached candidates stay visible while fresh results update.";
+        httpServiceDiscoveryStatus = "Starting local subnet scan...";
+        httpServiceScanFoundCount = 0;
+        httpServiceScanProbedCount = 0;
+        httpServiceScanTotalCount = 0;
+
+        var request = new LocalHttpServiceDiscoveryRequest(
+            IncludeLocalhost: true,
+            IncludeLan: true,
+            IncludeTailnet: false,
+            IncludeDocker: false);
+        httpServiceScanCancellation = new CancellationTokenSource();
+        _ = RunHttpServicesScanAsync(request, httpServiceScanCancellation.Token);
+        return Task.CompletedTask;
+    }
+
+    private async Task RunHttpServicesScanAsync(LocalHttpServiceDiscoveryRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Yield();
+            var progress = new Progress<LocalHttpServiceDiscoveryProgressUpdate>(update =>
+            {
+                _ = InvokeAsync(() =>
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    ApplyHttpServiceProgress(update);
+                    StateHasChanged();
+                });
+            });
+
+            var results = await HttpServiceDiscovery.DiscoverAsync(request, progress, cancellationToken);
+            await InvokeAsync(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                httpServiceSuggestions = SortHttpServiceSuggestions(results.Where(IsLocalHttpServiceCandidate));
+                httpServiceDiscoveryMessage = httpServiceSuggestions.Count == 0
+                    ? "No service candidates responded in the latest scan."
+                    : $"{httpServiceSuggestions.Count} service candidate(s) found in the latest scan.";
+                isDiscoveringHttpServices = false;
+                StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            await InvokeAsync(() =>
+            {
+                if (!isHttpServicePickerOpen)
+                {
+                    return;
+                }
+
+                isDiscoveringHttpServices = false;
+                httpServiceDiscoveryStatus = string.Empty;
+                StateHasChanged();
+            });
+        }
+        catch (Exception exception)
+        {
+            await InvokeAsync(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                httpServiceDiscoveryMessage = $"HTTP/S lookup failed: {exception.Message}";
+                httpServiceDiscoveryStatus = "HTTP/S lookup failed.";
+                isDiscoveringHttpServices = false;
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task ValidateCachedHttpServicesAsync(CancellationToken cancellationToken)
+    {
+        if (isValidatingCachedHttpServices || isDiscoveringHttpServices)
+        {
+            return;
+        }
+
+        isValidatingCachedHttpServices = true;
+        try
+        {
+            var progress = new Progress<LocalHttpServiceDiscoveryProgressUpdate>(update =>
+            {
+                _ = InvokeAsync(() =>
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    if (!isDiscoveringHttpServices)
+                    {
+                        httpServiceDiscoveryStatus = update.Message;
+                        httpServiceScanProbedCount = update.ProbedCount;
+                        httpServiceScanTotalCount = update.TotalProbeCount;
+                        httpServiceScanFoundCount = update.FoundCount;
+
+                        if (update.FoundEndpoint is not null && IsLocalHttpServiceCandidate(update.FoundEndpoint))
+                        {
+                            MergeHttpServiceSuggestion(update.FoundEndpoint);
+                        }
+                    }
+
+                    StateHasChanged();
+                });
+            });
+
+            var results = await HttpServiceDiscovery.ValidateCachedAsync(progress, cancellationToken);
+            await InvokeAsync(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                isValidatingCachedHttpServices = false;
+                if (!isDiscoveringHttpServices)
+                {
+                    httpServiceSuggestions = SortHttpServiceSuggestions(results.Where(IsLocalHttpServiceCandidate));
+                    httpServiceDiscoveryMessage = httpServiceSuggestions.Count == 0
+                        ? "No cached service candidates are still responding. Run Scan to search the local IPv4 subnet."
+                        : $"{httpServiceSuggestions.Count} cached service candidate(s) still responding.";
+                    httpServiceDiscoveryStatus = string.Empty;
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            await InvokeAsync(() =>
+            {
+                isValidatingCachedHttpServices = false;
+                if (!isDiscoveringHttpServices)
+                {
+                    httpServiceDiscoveryStatus = string.Empty;
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (Exception exception)
+        {
+            await InvokeAsync(() =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                isValidatingCachedHttpServices = false;
+                if (!isDiscoveringHttpServices)
+                {
+                    httpServiceDiscoveryMessage = $"Cached service check failed: {exception.Message}";
+                    httpServiceDiscoveryStatus = string.Empty;
+                    StateHasChanged();
+                }
+            });
+        }
+    }
+
+    private void CancelHttpServiceLookup()
+    {
+        CancelHttpServiceValidation();
+        CancelHttpServiceScan();
+        httpServiceDiscoveryStatus = string.Empty;
+    }
+
+    private void CancelHttpServiceScan()
+    {
+        httpServiceScanCancellation?.Cancel();
+        httpServiceScanCancellation = null;
+        isDiscoveringHttpServices = false;
+    }
+
+    private void CancelHttpServiceValidation()
+    {
+        httpServiceValidationCancellation?.Cancel();
+        httpServiceValidationCancellation = null;
+        isValidatingCachedHttpServices = false;
+    }
+
+    private void ApplyHttpServiceProgress(LocalHttpServiceDiscoveryProgressUpdate update)
+    {
+        httpServiceDiscoveryStatus = update.Message;
+        httpServiceScanProbedCount = update.ProbedCount;
+        httpServiceScanTotalCount = update.TotalProbeCount;
+        httpServiceScanFoundCount = update.FoundCount;
+
+        if (update.FoundEndpoint is not null)
+        {
+            MergeHttpServiceSuggestion(update.FoundEndpoint);
+        }
+
+        if (update.IsCompleted)
+        {
+            isDiscoveringHttpServices = false;
+        }
+    }
+
+    private void MergeHttpServiceSuggestion(LocalHttpServiceEndpoint endpoint)
+    {
+        httpServiceSuggestions = SortHttpServiceSuggestions(
+            httpServiceSuggestions
+                .Where(service => !BuildHttpServiceKey(service).Equals(BuildHttpServiceKey(endpoint), StringComparison.OrdinalIgnoreCase))
+                .Append(endpoint));
+    }
+
+    private Task SelectHttpServiceAsync(LocalHttpServiceEndpoint service)
+    {
+        CancelHttpServiceLookup();
+        addAppTargetScheme = service.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            ? Uri.UriSchemeHttps
+            : Uri.UriSchemeHttp;
+        addAppTargetHost = service.Host;
+        addAppTargetPort = service.Port;
+        addAppName = BuildRouteNameFromDiscoveredService(service);
+        addAppHostLabel = BuildRouteHostLabelFromDiscoveredService(service);
+        addAppAccessPolicy = service.Exposure == DiscoveryExposure.UnsafeToExpose
+            ? "Blocked"
+            : "MFA/Passkey";
+        addAppUsePublicHostHeader = IsHomeAssistantCandidate(addAppName, addAppHostLabel, service.Port);
+        addAppStripForwardedFor = true;
+        addAppSkipUpstreamTlsVerification = addAppTargetScheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        routeTargetCheckIsError = false;
+        routeTargetCheckMessage = $"Selected {service.Url}.";
+        isHttpServicePickerOpen = false;
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        var scanCancellation = httpServiceScanCancellation;
+        var validationCancellation = httpServiceValidationCancellation;
+        CancelHttpServiceLookup();
+        scanCancellation?.Dispose();
+        validationCancellation?.Dispose();
+    }
+
+    private string BuildHttpScanSummary()
+    {
+        var status = string.IsNullOrWhiteSpace(httpServiceDiscoveryStatus)
+            ? "Scanning HTTP/S services..."
+            : httpServiceDiscoveryStatus;
+
+        var progress = httpServiceScanTotalCount > 0
+            ? $"{httpServiceScanProbedCount}/{httpServiceScanTotalCount} checked"
+            : "Preparing";
+
+        return $"{status} {progress}, {httpServiceScanFoundCount} service(s). You can close this dialog and come back.";
+    }
+
+    private static IReadOnlyList<LocalHttpServiceEndpoint> SortHttpServiceSuggestions(IEnumerable<LocalHttpServiceEndpoint> services) =>
+        services
+            .DistinctBy(BuildHttpServiceKey, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(service => service.Exposure switch
+            {
+                DiscoveryExposure.Publishable => 0,
+                DiscoveryExposure.RequiresManualConfirmation => 1,
+                DiscoveryExposure.InternalOnly => 2,
+                DiscoveryExposure.UnsafeToExpose => 3,
+                _ => 4
+            })
+            .ThenByDescending(service => service.Confidence)
+            .ThenBy(service => service.Scope switch
+            {
+                "Home Assistant" => 0,
+                "Localhost" => 0,
+                "Docker" => 1,
+                "LAN" => 2,
+                "Tailnet" => 3,
+                _ => 4
+            })
+            .ThenBy(service => service.Host, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(service => service.Port)
+            .ThenBy(service => service.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ToArray();
+
+    private static bool IsLocalHttpServiceCandidate(LocalHttpServiceEndpoint service) =>
+        !service.Scope.Equals("Docker", StringComparison.OrdinalIgnoreCase) &&
+        !service.Scope.Equals("Tailnet", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildHttpServiceKey(LocalHttpServiceEndpoint service) =>
+        $"{service.Scheme}|{FirstNonBlank(service.IpAddress, service.Host)}|{service.Port}|{service.Fingerprint}";
+
+    private static string BuildRouteNameFromDiscoveredService(LocalHttpServiceEndpoint service)
+    {
+        var name = FirstNonBlank(
+            service.ServiceKind.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ? null : service.ServiceName,
+            service.ServiceName,
+            service.Title,
+            "Published Service");
+        return name ?? "Published Service";
+    }
+
+    private static string BuildRouteHostLabelFromDiscoveredService(LocalHttpServiceEndpoint service)
+    {
+        var source = FirstNonBlank(
+            service.ServiceKind.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ? null : service.ServiceKind,
+            service.ServiceName,
+            service.Title,
+            service.Host);
+        return SlugifyHostLabel(source ?? "service");
+    }
+
+    private static string? FirstNonBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string SlugifyHostLabel(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        var lastWasDash = false;
+        foreach (var character in value.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(character);
+                lastWasDash = false;
+            }
+            else if (!lastWasDash)
+            {
+                builder.Append('-');
+                lastWasDash = true;
+            }
+        }
+
+        var label = builder.ToString().Trim('-');
+        return string.IsNullOrWhiteSpace(label) ? "service" : label;
+    }
+
+    private string BuildAddAppPreviewPublicHost()
+    {
+        var label = NormalizePreviewHostLabel(addAppHostLabel);
+        if (addAppRelay is null)
+        {
+            return label;
+        }
+
+        if (label.EndsWith($".{addAppRelay.DomainName}", StringComparison.OrdinalIgnoreCase))
+        {
+            return label;
+        }
+
+        return $"{label}.{addAppRelay.DomainName}";
+    }
+
+    private string BuildAddAppPreviewRelayHost()
+    {
+        var label = GetPreviewRelativeHostLabel();
+        return addAppRelay is null ? $"{label}.ha-app-relay.example.com" : $"{label}.{addAppRelay.RelayHostname}";
+    }
+
+    private string BuildAddAppPreviewRoute()
+    {
+        var scheme = string.IsNullOrWhiteSpace(addAppTargetScheme)
+            ? "http"
+            : addAppTargetScheme.Trim().ToLowerInvariant();
+        var host = string.IsNullOrWhiteSpace(addAppTargetHost)
+            ? "homeassistant"
+            : NormalizeTargetHost(addAppTargetHost);
+        var port = Math.Clamp(addAppTargetPort, 1, 65535);
+        return $"{BuildAddAppPreviewExternalUrl()} -> {BuildAddAppPreviewRelayHost()} -> {scheme}://{host}:{port}";
+    }
+
+    private string BuildAddAppPublishHeadline() =>
+        $"{BuildAddAppPreviewExternalUrl()} -> {BuildAddAppTargetUrl()}";
+
+    private string BuildAddAppPublishDetail()
+    {
+        var auth = addAppAccessPolicy.Contains("through", StringComparison.OrdinalIgnoreCase)
+            ? "Caddy will proxy this straight to the backend."
+            : addAppAccessPolicy.Contains("block", StringComparison.OrdinalIgnoreCase)
+                ? "Caddy will keep this route blocked until the auth mode is changed."
+                : $"Policy: {BuildAddAppAccessLabel()}.";
+        var path = NormalizeRoutePathPrefix(addAppTargetPathPrefix);
+        var routing = string.IsNullOrWhiteSpace(path)
+            ? "This is the default route for the hostname."
+            : $"Only {path} and anything under it will route here; Caddy strips that prefix before proxying.";
+        return $"{auth} {routing} DNS publishes as {BuildAddAppPreviewPublicHost()} -> {BuildAddAppPreviewRelayHost()}.";
+    }
+
+    private string BuildAddAppAccessLabel() =>
+        string.IsNullOrWhiteSpace(addAppAccessPolicy) ? "MFA/Passkey" : addAppAccessPolicy.Trim();
+
+    private LmsStatusTone GetAddAppAccessTone() =>
+        BuildAddAppAccessLabel().Contains("block", StringComparison.OrdinalIgnoreCase)
+            ? LmsStatusTone.Critical
+            : BuildAddAppAccessLabel().Contains("pass", StringComparison.OrdinalIgnoreCase)
+                ? LmsStatusTone.Warning
+                : LmsStatusTone.Ready;
+
+    private string BuildAddAppPreviewExternalUrl()
+    {
+        var path = NormalizeRoutePathPrefix(addAppTargetPathPrefix);
+        return string.IsNullOrWhiteSpace(path)
+            ? $"https://{BuildAddAppPreviewPublicHost()}"
+            : $"https://{BuildAddAppPreviewPublicHost()}{path}";
+    }
+
+    private string BuildAddAppTargetUrl()
+    {
+        var scheme = NormalizeScheme(addAppTargetScheme);
+        var host = string.IsNullOrWhiteSpace(addAppTargetHost)
+            ? "homeassistant"
+            : addAppTargetHost.Trim();
+        var port = Math.Clamp(addAppTargetPort, 1, 65535);
+        return $"{scheme}://{FormatHostForUrl(host)}:{port}";
+    }
+
+    private string GetPreviewRelativeHostLabel()
+    {
+        var label = NormalizePreviewHostLabel(addAppHostLabel);
+        if (addAppRelay is null)
+        {
+            return label;
+        }
+
+        var suffix = $".{addAppRelay.DomainName}";
+        if (label.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return label[..^suffix.Length];
+        }
+
+        return label;
+    }
+
+    private static string NormalizePreviewHostLabel(string value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value)
+            ? "hassio"
+            : value.Trim().Trim('.').ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(normalized) ? "hassio" : normalized;
+    }
+
+    private static string NormalizeRoutePathPrefix(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized == "/")
+        {
+            return string.Empty;
+        }
+
+        return normalized.StartsWith("/", StringComparison.Ordinal)
+            ? normalized.TrimEnd('/')
+            : $"/{normalized.TrimEnd('/')}";
+    }
+
+    private static string NormalizeScheme(string value) =>
+        value.Trim().Equals("https", StringComparison.OrdinalIgnoreCase) ? "https" : "http";
+
+    private static string NormalizeTargetHost(string value)
+    {
+        var host = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            throw new InvalidOperationException("Enter a target host before checking it.");
+        }
+
+        if (Uri.TryCreate(host, UriKind.Absolute, out var uri))
+        {
+            return uri.Host;
+        }
+
+        return host.Trim('[', ']');
+    }
+
+    private static string FormatHostForUrl(string host)
+    {
+        var normalized = host.Trim();
+        return normalized.Contains(':', StringComparison.Ordinal) &&
+               IPAddress.TryParse(normalized.Trim('[', ']'), out var address) &&
+               address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+            ? $"[{normalized.Trim('[', ']')}]"
+            : normalized;
+    }
+
+    private static async Task<IReadOnlyList<RouteTargetProbeResult>> ProbeRouteTargetSchemesAsync(string host, int port)
+    {
+        using var handler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseProxy = false,
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+        using var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        var probes = new[]
+        {
+            ProbeRouteTargetAsync(client, host, port, "https"),
+            ProbeRouteTargetAsync(client, host, port, "http")
+        };
+        return await Task.WhenAll(probes);
+    }
+
+    private static async Task<RouteTargetProbeResult> ProbeRouteTargetAsync(
+        HttpClient client,
+        string host,
+        int port,
+        string scheme)
+    {
+        var targetUrl = $"{scheme}://{FormatHostForUrl(host)}:{port}";
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{targetUrl}/");
+            request.Headers.UserAgent.ParseAdd("LinuxMadeSane-edge-target-check");
+
+            using var response = await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                timeout.Token);
+            var snippet = await TryReadProbeSnippetAsync(response, timeout.Token);
+            if (scheme.Equals("http", StringComparison.OrdinalIgnoreCase) && IsLikelyHttpsRequiredResponse(snippet))
+            {
+                return new RouteTargetProbeResult(
+                    scheme,
+                    false,
+                    "http reached the port, but the response says this endpoint expects https.");
+            }
+
+            var reason = string.IsNullOrWhiteSpace(response.ReasonPhrase)
+                ? string.Empty
+                : $" {response.ReasonPhrase.Trim()}";
+            return new RouteTargetProbeResult(
+                scheme,
+                true,
+                $"{scheme} responded with HTTP {(int)response.StatusCode}{reason}.");
+        }
+        catch (TaskCanceledException)
+        {
+            return new RouteTargetProbeResult(scheme, false, $"{scheme} timed out.");
+        }
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException)
+        {
+            return new RouteTargetProbeResult(scheme, false, $"{scheme} failed: {exception.Message}");
+        }
+    }
+
+    private static async Task<string> TryReadProbeSnippetAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if ((int)response.StatusCode is not 400 and not 421 and not 426)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var buffer = new byte[4096];
+            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            return read <= 0 ? string.Empty : Encoding.UTF8.GetString(buffer, 0, read);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool IsLikelyHttpsRequiredResponse(string snippet)
+    {
+        if (string.IsNullOrWhiteSpace(snippet))
+        {
+            return false;
+        }
+
+        var text = snippet.ToLowerInvariant();
+        return text.Contains("plain http request was sent to https port", StringComparison.Ordinal) ||
+               text.Contains("client sent an http request to an https server", StringComparison.Ordinal) ||
+               text.Contains("requires tls", StringComparison.Ordinal) ||
+               text.Contains("requires https", StringComparison.Ordinal);
+    }
+
+    private static bool IsHomeAssistantCandidate(string name, string hostLabel, int port) =>
+        name.Contains("home assistant", StringComparison.OrdinalIgnoreCase) ||
+        hostLabel.Equals("hassio", StringComparison.OrdinalIgnoreCase) ||
+        hostLabel.Equals("homeassistant", StringComparison.OrdinalIgnoreCase) ||
+        hostLabel.Equals("home-assistant", StringComparison.OrdinalIgnoreCase) ||
+        port == 8123;
+
+    private static string BuildRouteTargetProbeFailureSummary(IEnumerable<RouteTargetProbeResult> probes) =>
+        string.Join(" ", probes.Select(static probe => probe.Summary));
+
+    private sealed record RouteTargetProbeResult(
+        string Scheme,
+        bool Success,
+        string Summary);
+
+    private void ClearSelectedRelayDomain()
+    {
+        selectedRelayDomainName = string.Empty;
+    }
+
+    private IReadOnlyList<PublishedApplicationDefinition> GetRoutesForDomain(string domainName) =>
+        status?.Configuration.Applications
+            .Where(route => GetDomainName(route).Equals(domainName, StringComparison.OrdinalIgnoreCase))
+            .ToArray() ?? [];
+
+    private static string BuildRelayHostname(string domainName) => $"{RelayNamespace}.{domainName}";
+
+    private static string BuildExternalRouteUrl(PublishedApplicationDefinition route)
+    {
+        var path = NormalizeRoutePathPrefix(route.TargetPathPrefix);
+        var baseUrl = route.PublicHostname.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                      route.PublicHostname.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? route.PublicHostname
+            : $"https://{route.PublicHostname}";
+
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            return $"{baseUrl.TrimEnd('/')}{path}";
+        }
+
+        return baseUrl;
+    }
+
+    private static string GetDomainName(PublishedApplicationDefinition route)
+    {
+        var host = route.PublicHostname;
+        if (Uri.TryCreate(route.PublicHostname, UriKind.Absolute, out var uri))
+        {
+            host = uri.Host;
+        }
+        else
+        {
+            host = host.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? host;
+        }
+
+        host = host.Trim().TrimEnd('.');
+        var parts = host.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[^2]}.{parts[^1]}"
+            : host;
+    }
+
 }

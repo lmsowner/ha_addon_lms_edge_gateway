@@ -1,79 +1,707 @@
 @page "/"
 @rendermode InteractiveServer
 @inject IEdgeGatewayStatusService StatusService
+@inject IEdgeGatewayRelayProvisioningService RelayProvisioningService
 
-<PageTitle>LMS Edge Gateway</PageTitle>
+<PageTitle>Published Apps | Linux Made Sane - Edge Gateway</PageTitle>
 
-<div class="page-stack">
-    <section class="page-header">
-        <div>
-            <p class="lms-eyebrow">Dashboard</p>
-            <h1>LMS Edge Gateway</h1>
-            <p>Runtime status for the add-on control plane, Caddy, Cloudflare Tunnel, and published LAN applications.</p>
-        </div>
-        <div class="page-actions">
-            <LmsButton Label="Open onboarding" Href="/cloudflare" Primary="true" />
-            <LmsButton Label="View diagnostics" Href="/diagnostics" />
-        </div>
-    </section>
-
+<div class="page-shell edge-gateway-page">
     @if (status is null)
     {
-        <LmsPanel Title="Checking runtime">
-            <p class="muted">Reading add-on status from the LMS Edge Gateway control plane.</p>
-        </LmsPanel>
+        <section class="surface-card edge-loading-card" aria-busy="true">
+            <span class="edge-loading-progress">
+                <span class="edge-loading-progress-fill"></span>
+            </span>
+            <p class="meta-text">Loading Edge Gateway...</p>
+        </section>
     }
     else
     {
-        <section class="status-grid">
-            @foreach (var component in status.Components)
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Services</p>
+                    <h2>Apps and hosts exposed through Edge Gateway</h2>
+                    <p class="meta-text">Adding a service from Setup creates the Cloudflare DNS record, tunnel ingress, and Caddy route.</p>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(routeActionMessage))
             {
-                <article class="status-card">
-                    <header>
-                        <span>@component.Name</span>
-                        <LmsStatusPill Text="@component.State.ToString()" Tone="@GetTone(component.State)" />
-                    </header>
-                    <strong>@component.Summary</strong>
-                    <p>@component.Detail</p>
-                </article>
+                <p class="callout @(routeActionIsError ? "warning" : "ready")">@routeActionMessage</p>
+            }
+
+            @if (routeActionSteps.Count > 0)
+            {
+                <div class="edge-provision-log">
+                    <strong>Last action steps</strong>
+                    <ul class="plain-list">
+                        @foreach (var step in routeActionSteps)
+                        {
+                            <li>@step</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (routeActionWarnings.Count > 0)
+            {
+                <div class="edge-provision-log warning">
+                    <strong>Warnings</strong>
+                    <ul class="plain-list">
+                        @foreach (var warning in routeActionWarnings)
+                        {
+                            <li>@warning</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (status.Configuration.Applications.Count == 0)
+            {
+                <p class="meta-text">No services yet. Use Setup to prepare a relay and add a service.</p>
+            }
+            else
+            {
+                <div class="edge-route-list">
+                    @foreach (var domainGroup in RouteDomainGroups)
+                    {
+                        <section class="edge-route-domain-group">
+                            <div class="edge-route-domain-header" aria-expanded="true">
+                                <button class="edge-route-domain-toggle" type="button">
+                                    <span class="edge-route-domain-chevron expanded" aria-hidden="true"></span>
+                                    <span class="edge-route-domain-copy">
+                                        <strong>@domainGroup.DomainName</strong>
+                                        <span>@BuildRouteDomainSummary(domainGroup.DomainName)</span>
+                                    </span>
+                                </button>
+                                <span class="edge-route-domain-pills">
+                                    <span class="edge-route-domain-pill">@domainGroup.Routes.Count app@(domainGroup.Routes.Count == 1 ? string.Empty : "s")</span>
+                                    <span class="edge-route-domain-pill">@domainGroup.EnabledCount enabled</span>
+                                    <LmsButton Label="Add App"
+                                               Icon="plus"
+                                               Primary="true"
+                                               Disabled="@(!IsRelayConfigured(domainGroup.DomainName) || isRouteActionBusy)"
+                                               OnClick="@(() => OpenAddAppModal(domainGroup.DomainName))" />
+                                </span>
+                            </div>
+
+                            <div class="edge-route-domain-apps">
+                                @foreach (var route in domainGroup.Routes)
+                                {
+                                    <article class="surface-subcard edge-route-card">
+                                        <div class="edge-route-card-header">
+                                            <div class="edge-route-title">
+                                                <h3>@route.Name</h3>
+                                                <LmsStatusPill Text="@(route.IsEnabled ? "Enabled" : "Disabled")" Tone="@(route.IsEnabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+                                                <LmsStatusPill Text="@BuildAccessLabel(route)" Tone="@GetAccessTone(route)" />
+                                                <LmsStatusPill Text="@GetRouteTestLabel(route.Id)" Tone="@GetRouteTestTone(route.Id)" />
+                                            </div>
+                                            <div class="edge-route-actions">
+                                                <LmsButton Label="@(IsRouteBusy(route.Id, RouteToggleAction) ? "Saving..." : route.IsEnabled ? "Disable" : "Enable")"
+                                                           Icon="@(route.IsEnabled ? "disable" : "publish")"
+                                                           Danger="@route.IsEnabled"
+                                                           Primary="@(!route.IsEnabled)"
+                                                           Disabled="@isRouteActionBusy"
+                                                           OnClick="@(() => ToggleRouteAsync(route.Id, route.IsEnabled))" />
+                                                <LmsButton Label="@(IsRouteBusy(route.Id, RouteTestAction) ? "Testing..." : "Test")"
+                                                           Icon="test"
+                                                           Disabled="@isRouteActionBusy"
+                                                           OnClick="@(() => TestRouteAsync(route.Id))" />
+                                                <LmsButton Label="Edit"
+                                                           Icon="edit"
+                                                           Disabled="@isRouteActionBusy"
+                                                           OnClick="@(() => OpenEditRouteModal(route))" />
+                                                <LmsButton Label="@(IsRouteBusy(route.Id, RouteDeleteAction) ? "Deleting..." : "Delete")"
+                                                           Icon="delete"
+                                                           Danger="true"
+                                                           Disabled="@isRouteActionBusy"
+                                                           OnClick="@(() => DeleteRouteAsync(route.Id))" />
+                                            </div>
+                                        </div>
+                                        <div class="edge-route-links">
+                                            <span class="edge-route-link">
+                                                <span>External</span>
+                                                <a href="@BuildExternalRouteUrl(route)" target="_blank" rel="noopener noreferrer">@BuildExternalRouteUrl(route)</a>
+                                            </span>
+                                            <span class="edge-route-link">
+                                                <span>Internal</span>
+                                                <a href="@route.UpstreamUrl" target="_blank" rel="noopener noreferrer">@route.UpstreamUrl</a>
+                                            </span>
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        </section>
+                    }
+                </div>
             }
         </section>
 
-        <section class="two-column">
-            <LmsPanel Kicker="Flow" Title="Secure publishing path">
-                <ol class="flow-list">
-                    <li><span>1</span><strong>Cloudflare Access</strong><p>Put identity, MFA, passkeys, or email auth in front of the public hostname.</p></li>
-                    <li><span>2</span><strong>Cloudflare Tunnel</strong><p>Outbound-only tunnel from this add-on to Cloudflare.</p></li>
-                    <li><span>3</span><strong>Caddy</strong><p>Local reverse proxy generated and reloaded by LMS Edge Gateway.</p></li>
-                    <li><span>4</span><strong>LAN app</strong><p>Home Assistant or another LAN service stays private.</p></li>
-                </ol>
-            </LmsPanel>
+        @if (editingRoute is not null)
+        {
+            <div class="edge-modal-backdrop" role="presentation">
+                <section class="edge-modal-panel"
+                         role="dialog"
+                         aria-modal="true"
+                         aria-labelledby="edge-edit-app-title"
+                         @onclick:stopPropagation="true">
+                    <header class="edge-modal-header">
+                        <div>
+                            <p class="eyebrow">Edit app</p>
+                            <h2 id="edge-edit-app-title">@editingRoute.PublicHostname</h2>
+                            <p class="meta-text">Update the local Caddy target for this published host.</p>
+                        </div>
+                        <button class="edge-modal-close" type="button" aria-label="Close edit app" @onclick="CloseEditRouteModal">x</button>
+                    </header>
 
-            <LmsPanel Kicker="State" Title="Configuration storage">
-                <dl class="detail-list">
-                    <div><dt>Data root</dt><dd>@status.DataRoot</dd></div>
-                    <div><dt>Ingress</dt><dd>@(status.IsHomeAssistantIngress ? "Home Assistant ingress detected" : "Standalone/local mode")</dd></div>
-                    <div><dt>Published apps</dt><dd>@status.Configuration.Applications.Count</dd></div>
-                    <div><dt>Last check</dt><dd>@status.CheckedAtUtc.ToLocalTime().ToString("g")</dd></div>
-                </dl>
-            </LmsPanel>
-        </section>
+                    <div class="edge-modal-body">
+                        <div class="edge-token-guide-grid">
+                            <label class="ui-field">
+                                <span class="ui-field-label">App name</span>
+                                <input @bind="editAppName" placeholder="Home Assistant" />
+                            </label>
+                            <div class="edge-readonly-field">
+                                <span class="ui-field-label">Public host</span>
+                                <strong>@editingRoute.PublicHostname</strong>
+                                <span>Delete and add the app again if the public hostname needs to change.</span>
+                            </div>
+                            <label class="ui-field">
+                                <span class="ui-field-label">URL path prefix</span>
+                                <input @bind="editAppTargetPathPrefix" placeholder="/plex" />
+                                <span class="ui-field-helper">Optional. Caddy strips this prefix before proxying.</span>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Target scheme</span>
+                                <select @bind="editAppTargetScheme">
+                                    <option value="http">http</option>
+                                    <option value="https">https</option>
+                                </select>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Target host or container</span>
+                                <input @bind="editAppTargetHost" placeholder="homeassistant or 192.168.1.50" />
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Target port</span>
+                                <input type="number" min="1" max="65535" @bind="editAppTargetPort" />
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Access policy</span>
+                                <select @bind="editAppAccessPolicy">
+                                    <option value="MFA/Passkey">MFA/Passkey</option>
+                                    <option value="Pass Through">Pass through</option>
+                                    <option value="Blocked">Blocked</option>
+                                </select>
+                            </label>
+                            <div class="edge-readonly-field">
+                                <span class="ui-field-label">Route</span>
+                                <strong>@editingRoute.PublicHostname</strong>
+                                <span><code>@BuildEditRoutePreview()</code></span>
+                            </div>
+                            <details class="edge-advanced-settings">
+                                <summary>
+                                    <span>Advanced settings</span>
+                                    <small>Proxy headers and upstream TLS</small>
+                                </summary>
+                                <div class="edge-advanced-settings-body">
+                                    <label class="edge-checkbox-field">
+                                        <input type="checkbox" @bind="editAppUsePublicHostHeader" />
+                                        <span>Send public Host header</span>
+                                    </label>
+                                    <label class="edge-checkbox-field">
+                                        <input type="checkbox" @bind="editAppStripForwardedFor" />
+                                        <span>Strip X-Forwarded-For</span>
+                                    </label>
+                                    <label class="edge-checkbox-field">
+                                        <input type="checkbox" @bind="editAppSkipUpstreamTlsVerification" />
+                                        <span>Skip upstream TLS verification</span>
+                                    </label>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+
+                    <footer class="edge-modal-footer">
+                        <button class="lms-button" type="button" @onclick="CloseEditRouteModal">Cancel</button>
+                        <LmsButton Label="@(isSavingRouteEdit ? "Saving..." : "Save app")"
+                                   Icon="save"
+                                   Primary="true"
+                                   Disabled="@isSavingRouteEdit"
+                                   OnClick="SaveRouteEditAsync" />
+                    </footer>
+                </section>
+            </div>
+        }
+
+        @if (addAppRelay is not null)
+        {
+            <RouteAddModal Relay="addAppRelay"
+                           OnClose="CloseAddAppModal"
+                           OnSaved="HandleAddAppSavedAsync" />
+        }
     }
 </div>
 
 @code {
     private EdgeGatewayRuntimeStatus? status;
+    private const string RelayNamespace = "ha-app-relay";
+    private const string RouteToggleAction = "toggle";
+    private const string RouteTestAction = "test";
+    private const string RouteDeleteAction = "delete";
+    private const string RouteEditAction = "edit";
+    private bool isRouteActionBusy;
+    private bool routeActionIsError;
+    private bool isSavingRouteEdit;
+    private Guid? routeActionRouteId;
+    private string routeActionName = string.Empty;
+    private string routeActionMessage = string.Empty;
+    private IReadOnlyList<string> routeActionSteps = [];
+    private IReadOnlyList<string> routeActionWarnings = [];
+    private EdgeGatewayRelayZone? addAppRelay;
+    private PublishedApplicationDefinition? editingRoute;
+    private string editAppName = string.Empty;
+    private string editAppHostLabel = string.Empty;
+    private string editAppTargetScheme = "http";
+    private string editAppTargetHost = string.Empty;
+    private int editAppTargetPort = 80;
+    private string editAppAccessPolicy = "MFA/Passkey";
+    private string editAppTargetPathPrefix = string.Empty;
+    private string editAppAllowKnownIps = string.Empty;
+    private string editAppAllowedUsers = string.Empty;
+    private string editAppAllowedGroups = string.Empty;
+    private string editAppNotes = string.Empty;
+    private bool editAppAllowLanOnly;
+    private bool editAppUsePublicHostHeader;
+    private bool editAppStripForwardedFor = true;
+    private bool editAppSkipUpstreamTlsVerification;
+    private readonly Dictionary<Guid, string> routeTestLabels = [];
+    private readonly Dictionary<Guid, LmsStatusTone> routeTestTones = [];
+
+    private IReadOnlyList<RouteDomainGroup> RouteDomainGroups =>
+        status?.Configuration.Applications
+            .GroupBy(GetDomainName)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new RouteDomainGroup(
+                group.Key,
+                group.OrderBy(route => route.Name, StringComparer.OrdinalIgnoreCase).ToArray()))
+            .ToArray() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         status = await StatusService.GetStatusAsync();
     }
 
-    private static LmsStatusTone GetTone(EdgeGatewayComponentState state) => state switch
+    private bool IsRouteBusy(Guid routeId, string actionName) =>
+        isRouteActionBusy &&
+        routeActionRouteId == routeId &&
+        routeActionName.Equals(actionName, StringComparison.OrdinalIgnoreCase);
+
+    private string GetRouteTestLabel(Guid routeId) =>
+        routeTestLabels.TryGetValue(routeId, out var label) ? label : "Not tested";
+
+    private LmsStatusTone GetRouteTestTone(Guid routeId) =>
+        routeTestTones.TryGetValue(routeId, out var tone) ? tone : LmsStatusTone.Neutral;
+
+    private async Task ToggleRouteAsync(Guid routeId, bool isEnabled)
     {
-        EdgeGatewayComponentState.Ready => LmsStatusTone.Ready,
-        EdgeGatewayComponentState.Warning or EdgeGatewayComponentState.Starting => LmsStatusTone.Warning,
-        EdgeGatewayComponentState.Error => LmsStatusTone.Critical,
-        _ => LmsStatusTone.Neutral
-    };
+        await RunRouteSaveActionAsync(
+            routeId,
+            RouteToggleAction,
+            () => RelayProvisioningService.SetApplicationEnabledAsync(routeId, !isEnabled));
+    }
+
+    private async Task DeleteRouteAsync(Guid routeId)
+    {
+        await RunRouteSaveActionAsync(
+            routeId,
+            RouteDeleteAction,
+            () => RelayProvisioningService.RemoveApplicationAsync(routeId));
+    }
+
+    private async Task TestRouteAsync(Guid routeId)
+    {
+        if (isRouteActionBusy)
+        {
+            return;
+        }
+
+        BeginRouteAction(routeId, RouteTestAction);
+        try
+        {
+            var result = await RelayProvisioningService.TestApplicationAsync(routeId);
+            routeActionMessage = result.Summary;
+            routeActionIsError = !result.Success;
+            routeActionSteps = result.Checks;
+            routeActionWarnings = result.Warnings;
+            routeTestLabels[routeId] = result.Success ? "Test passed" : "Test failed";
+            routeTestTones[routeId] = result.Success ? LmsStatusTone.Ready : LmsStatusTone.Warning;
+        }
+        catch (Exception exception)
+        {
+            routeActionMessage = $"Route test failed: {exception.Message}";
+            routeActionIsError = true;
+            routeTestLabels[routeId] = "Test failed";
+            routeTestTones[routeId] = LmsStatusTone.Warning;
+        }
+        finally
+        {
+            EndRouteAction();
+        }
+    }
+
+    private async Task RunRouteSaveActionAsync(
+        Guid routeId,
+        string actionName,
+        Func<Task<EdgeGatewayApplicationSaveResult>> action)
+    {
+        if (isRouteActionBusy)
+        {
+            return;
+        }
+
+        BeginRouteAction(routeId, actionName);
+
+        try
+        {
+            var result = await action();
+            routeActionMessage = result.Summary;
+            routeActionIsError = !result.Success;
+            routeActionSteps = result.Steps;
+            routeActionWarnings = result.Warnings;
+
+            if (result.Success)
+            {
+                status = await StatusService.GetStatusAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            routeActionMessage = $"Route action failed: {exception.Message}";
+            routeActionIsError = true;
+        }
+        finally
+        {
+            EndRouteAction();
+        }
+    }
+
+    private void BeginRouteAction(Guid routeId, string actionName)
+    {
+        isRouteActionBusy = true;
+        routeActionRouteId = routeId;
+        routeActionName = actionName;
+        routeActionMessage = string.Empty;
+        routeActionSteps = [];
+        routeActionWarnings = [];
+        routeActionIsError = false;
+    }
+
+    private void EndRouteAction()
+    {
+        isRouteActionBusy = false;
+        routeActionName = string.Empty;
+    }
+
+    private void OpenAddAppModal(string domainName)
+    {
+        if (isRouteActionBusy || status is null)
+        {
+            return;
+        }
+
+        var relay = status.Configuration.RelayZones.FirstOrDefault(item =>
+            item.DomainName.Equals(domainName, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(item.TunnelId) &&
+            !string.IsNullOrWhiteSpace(item.DnsTarget) &&
+            !string.IsNullOrWhiteSpace(item.WildcardHostname));
+        if (relay is null)
+        {
+            routeActionMessage = $"Setup Relay must complete for {domainName} before adding apps.";
+            routeActionSteps = [];
+            routeActionWarnings = [];
+            routeActionIsError = true;
+            return;
+        }
+
+        routeActionMessage = string.Empty;
+        routeActionSteps = [];
+        routeActionWarnings = [];
+        routeActionIsError = false;
+        addAppRelay = relay;
+    }
+
+    private void CloseAddAppModal()
+    {
+        addAppRelay = null;
+    }
+
+    private async Task HandleAddAppSavedAsync(string summary)
+    {
+        routeActionMessage = summary;
+        routeActionSteps = [];
+        routeActionWarnings = [];
+        routeActionIsError = false;
+        status = await StatusService.GetStatusAsync();
+    }
+
+    private void OpenEditRouteModal(PublishedApplicationDefinition route)
+    {
+        if (isRouteActionBusy)
+        {
+            return;
+        }
+
+        editingRoute = route;
+        editAppName = route.Name;
+        editAppHostLabel = GetHostLabel(route);
+        editAppAccessPolicy = route.AccessPolicy;
+        editAppTargetPathPrefix = route.TargetPathPrefix;
+        editAppAllowKnownIps = route.AllowKnownIps;
+        editAppAllowedUsers = route.AllowedUsers;
+        editAppAllowedGroups = route.AllowedGroups;
+        editAppAllowLanOnly = route.AllowLanOnly;
+        editAppNotes = route.Notes;
+        editAppUsePublicHostHeader = route.UsePublicHostHeader ?? IsHomeAssistantRoute(route);
+        editAppStripForwardedFor = route.StripForwardedFor ?? true;
+        editAppSkipUpstreamTlsVerification = route.SkipUpstreamTlsVerification ?? IsHttpsUrl(route.UpstreamUrl);
+        routeActionMessage = string.Empty;
+        routeActionIsError = false;
+
+        if (Uri.TryCreate(route.UpstreamUrl, UriKind.Absolute, out var uri))
+        {
+            editAppTargetScheme = uri.Scheme;
+            editAppTargetHost = uri.Host;
+            editAppTargetPort = uri.Port;
+        }
+        else
+        {
+            editAppTargetScheme = "http";
+            editAppTargetHost = route.UpstreamUrl;
+            editAppTargetPort = 80;
+        }
+    }
+
+    private void CloseEditRouteModal()
+    {
+        if (isSavingRouteEdit)
+        {
+            return;
+        }
+
+        editingRoute = null;
+    }
+
+    private async Task SaveRouteEditAsync()
+    {
+        if (editingRoute is null || isSavingRouteEdit)
+        {
+            return;
+        }
+
+        isSavingRouteEdit = true;
+        BeginRouteAction(editingRoute.Id, RouteEditAction);
+        try
+        {
+            var result = await RelayProvisioningService.UpdateApplicationAsync(
+                editingRoute.Id,
+                editAppName,
+                editAppHostLabel,
+                editAppTargetScheme,
+                editAppTargetHost,
+                editAppTargetPort,
+                editAppAccessPolicy,
+                targetPathPrefix: editAppTargetPathPrefix,
+                allowKnownIps: editAppAllowKnownIps,
+                allowedUsers: editAppAllowedUsers,
+                allowedGroups: editAppAllowedGroups,
+                allowLanOnly: editAppAllowLanOnly,
+                notes: editAppNotes,
+                usePublicHostHeader: editAppUsePublicHostHeader,
+                stripForwardedFor: editAppStripForwardedFor,
+                skipUpstreamTlsVerification: editAppSkipUpstreamTlsVerification);
+            routeActionMessage = result.Summary;
+            routeActionIsError = !result.Success;
+            routeActionSteps = result.Steps;
+            routeActionWarnings = result.Warnings;
+
+            if (result.Success)
+            {
+                status = await StatusService.GetStatusAsync();
+                editingRoute = null;
+            }
+        }
+        catch (Exception exception)
+        {
+            routeActionMessage = $"Could not save the app: {exception.Message}";
+            routeActionIsError = true;
+        }
+        finally
+        {
+            isSavingRouteEdit = false;
+            EndRouteAction();
+        }
+    }
+
+    private static string BuildAccessLabel(PublishedApplicationDefinition route) =>
+        string.IsNullOrWhiteSpace(route.AccessPolicy)
+            ? "MFA/Passkey"
+            : route.AccessPolicy;
+
+    private static LmsStatusTone GetAccessTone(PublishedApplicationDefinition route) =>
+        BuildAccessLabel(route).Contains("block", StringComparison.OrdinalIgnoreCase)
+            ? LmsStatusTone.Critical
+            : BuildAccessLabel(route).Contains("straight", StringComparison.OrdinalIgnoreCase) ||
+        BuildAccessLabel(route).Contains("pass", StringComparison.OrdinalIgnoreCase)
+            ? LmsStatusTone.Warning
+            : LmsStatusTone.Ready;
+
+    private static string BuildExternalRouteUrl(PublishedApplicationDefinition route)
+    {
+        var path = NormalizeRoutePathPrefix(route.TargetPathPrefix);
+        var baseUrl = route.PublicHostname.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                      route.PublicHostname.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? route.PublicHostname
+            : $"https://{route.PublicHostname}";
+
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            return $"{baseUrl.TrimEnd('/')}{path}";
+        }
+
+        return baseUrl;
+    }
+
+    private static string BuildRelayHost(string domainName) =>
+        domainName.Equals("Local routes", StringComparison.OrdinalIgnoreCase)
+            ? "local relay"
+            : $"{RelayNamespace}.{domainName}";
+
+    private string BuildRouteDomainSummary(string domainName)
+    {
+        if (domainName.Equals("Local routes", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Local-only route record.";
+        }
+
+        var relay = GetConfiguredRelay(domainName);
+        return relay is not null
+            ? IsTunnelHealthy(relay.TunnelStatus)
+                ? $"Relay ready via {BuildRelayHost(domainName)}."
+                : $"Relay configured via {BuildRelayHost(domainName)}; tunnel status is {NormalizeTunnelStatus(relay.TunnelStatus)}."
+            : "Setup Relay before adding apps on this domain.";
+    }
+
+    private bool IsRelayConfigured(string domainName) =>
+        GetConfiguredRelay(domainName) is not null;
+
+    private EdgeGatewayRelayZone? GetConfiguredRelay(string domainName) =>
+        status?.Configuration.RelayZones.FirstOrDefault(relay =>
+            relay.DomainName.Equals(domainName, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(relay.TunnelId) &&
+            !string.IsNullOrWhiteSpace(relay.DnsTarget) &&
+            !string.IsNullOrWhiteSpace(relay.WildcardHostname));
+
+    private static bool IsTunnelHealthy(string status) =>
+        string.Equals(
+            NormalizeTunnelStatus(status),
+            "healthy",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeTunnelStatus(string status) =>
+        string.IsNullOrWhiteSpace(status) ? "unknown" : status.Trim().ToLowerInvariant();
+
+    private static string GetDomainName(PublishedApplicationDefinition route)
+    {
+        var host = route.PublicHostname;
+        if (Uri.TryCreate(route.PublicHostname, UriKind.Absolute, out var uri))
+        {
+            host = uri.Host;
+        }
+        else
+        {
+            host = host.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? host;
+        }
+
+        host = host.Trim().TrimEnd('.');
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return "Local routes";
+        }
+
+        var parts = host.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[^2]}.{parts[^1]}"
+            : host;
+    }
+
+    private static string GetHostLabel(PublishedApplicationDefinition route)
+    {
+        var host = NormalizeRouteHostname(route.PublicHostname);
+        var domainName = GetDomainName(route);
+        return host.EndsWith($".{domainName}", StringComparison.OrdinalIgnoreCase)
+            ? host[..^($".{domainName}".Length)].Trim('.')
+            : host;
+    }
+
+    private static string NormalizeRouteHostname(string value)
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return uri.Host.Trim().TrimEnd('.').ToLowerInvariant();
+        }
+
+        return (value ?? string.Empty)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()?
+            .Trim()
+            .TrimEnd('.')
+            .ToLowerInvariant() ?? string.Empty;
+    }
+
+    private static string NormalizeRoutePathPrefix(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized == "/")
+        {
+            return string.Empty;
+        }
+
+        return normalized.StartsWith("/", StringComparison.Ordinal)
+            ? normalized.TrimEnd('/')
+            : $"/{normalized.TrimEnd('/')}";
+    }
+
+    private static bool IsHttpsUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHomeAssistantRoute(PublishedApplicationDefinition route) =>
+        route.Name.Contains("home assistant", StringComparison.OrdinalIgnoreCase) ||
+        NormalizeRouteHostname(route.PublicHostname).StartsWith("hassio.", StringComparison.OrdinalIgnoreCase) ||
+        NormalizeRouteHostname(route.PublicHostname).StartsWith("homeassistant.", StringComparison.OrdinalIgnoreCase) ||
+        NormalizeRouteHostname(route.PublicHostname).StartsWith("home-assistant.", StringComparison.OrdinalIgnoreCase) ||
+        (Uri.TryCreate(route.UpstreamUrl, UriKind.Absolute, out var uri) && uri.Port == 8123);
+
+    private string BuildEditRoutePreview()
+    {
+        var scheme = string.IsNullOrWhiteSpace(editAppTargetScheme)
+            ? "http"
+            : editAppTargetScheme.Trim().ToLowerInvariant();
+        var host = string.IsNullOrWhiteSpace(editAppTargetHost)
+            ? "homeassistant"
+            : editAppTargetHost.Trim();
+        var port = Math.Clamp(editAppTargetPort, 1, 65535);
+        var path = NormalizeRoutePathPrefix(editAppTargetPathPrefix);
+        var hostname = editingRoute?.PublicHostname ?? "app.example.com";
+        var externalUrl = string.IsNullOrWhiteSpace(path)
+            ? hostname
+            : $"{hostname}{path}";
+        return $"{externalUrl} -> {scheme}://{host}:{port}";
+    }
+
+    private sealed record RouteDomainGroup(string DomainName, IReadOnlyList<PublishedApplicationDefinition> Routes)
+    {
+        public int EnabledCount => Routes.Count(route => route.IsEnabled);
+    }
 }
