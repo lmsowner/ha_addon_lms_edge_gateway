@@ -1058,6 +1058,19 @@ textarea {
     color: var(--color-danger);
 }
 
+.edge-ha-target-warning {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    grid-column: 1 / -1;
+    justify-content: space-between;
+}
+
+.edge-ha-target-warning > div {
+    display: grid;
+    gap: 0.15rem;
+}
+
 .edge-advanced-settings {
     background: rgba(255, 255, 255, 0.52);
     border: 1px solid var(--color-line);

@@ -1,5 +1,6 @@
 @page "/"
 @rendermode InteractiveServer
+@using System.Net
 @inject IEdgeGatewayStatusService StatusService
 @inject IEdgeGatewayRelayProvisioningService RelayProvisioningService
 
@@ -186,6 +187,18 @@
                                 <span class="ui-field-label">Target port</span>
                                 <input type="number" min="1" max="65535" @bind="editAppTargetPort" />
                             </label>
+                            @if (EditHomeAssistantTargetLooksExternal())
+                            {
+                                <div class="callout warning edge-ha-target-warning">
+                                    <div>
+                                        <strong>Home Assistant is targeting another public HTTPS host.</strong>
+                                        <span>Use the internal Home Assistant target to avoid OAuth/proxy loops.</span>
+                                    </div>
+                                    <LmsButton Label="Use internal target"
+                                               Icon="check"
+                                               OnClick="UseInternalHomeAssistantTarget" />
+                                </div>
+                            }
                             <label class="ui-field">
                                 <span class="ui-field-label">Access policy</span>
                                 <select @bind="editAppAccessPolicy">
@@ -462,7 +475,7 @@
         editAppAllowedGroups = route.AllowedGroups;
         editAppAllowLanOnly = route.AllowLanOnly;
         editAppNotes = route.Notes;
-        editAppUsePublicHostHeader = route.UsePublicHostHeader ?? IsHomeAssistantRoute(route);
+        editAppUsePublicHostHeader = ShouldUsePublicHostHeaderInEditor(route);
         editAppStripForwardedFor = route.StripForwardedFor ?? true;
         editAppSkipUpstreamTlsVerification = route.SkipUpstreamTlsVerification ?? IsHttpsUrl(route.UpstreamUrl);
         routeActionMessage = string.Empty;
@@ -490,6 +503,16 @@
         }
 
         editingRoute = null;
+    }
+
+    private void UseInternalHomeAssistantTarget()
+    {
+        editAppTargetScheme = "http";
+        editAppTargetHost = "homeassistant";
+        editAppTargetPort = 8123;
+        editAppUsePublicHostHeader = true;
+        editAppStripForwardedFor = true;
+        editAppSkipUpstreamTlsVerification = false;
     }
 
     private async Task SaveRouteEditAsync()
@@ -682,6 +705,65 @@
         NormalizeRouteHostname(route.PublicHostname).StartsWith("homeassistant.", StringComparison.OrdinalIgnoreCase) ||
         NormalizeRouteHostname(route.PublicHostname).StartsWith("home-assistant.", StringComparison.OrdinalIgnoreCase) ||
         (Uri.TryCreate(route.UpstreamUrl, UriKind.Absolute, out var uri) && uri.Port == 8123);
+
+    private bool EditHomeAssistantTargetLooksExternal() =>
+        editingRoute is not null &&
+        (editAppName.Contains("home assistant", StringComparison.OrdinalIgnoreCase) ||
+         NormalizeRouteHostname(editingRoute.PublicHostname).StartsWith("hassio.", StringComparison.OrdinalIgnoreCase) ||
+         NormalizeRouteHostname(editingRoute.PublicHostname).StartsWith("homeassistant.", StringComparison.OrdinalIgnoreCase) ||
+         NormalizeRouteHostname(editingRoute.PublicHostname).StartsWith("home-assistant.", StringComparison.OrdinalIgnoreCase) ||
+         editAppTargetPort == 8123) &&
+        editAppTargetPort != 8123 &&
+        !IsLocalOrPrivateTargetHost(editAppTargetHost);
+
+    private static bool ShouldUsePublicHostHeaderInEditor(PublishedApplicationDefinition route)
+    {
+        if (IsHomeAssistantRoute(route) &&
+            Uri.TryCreate(route.UpstreamUrl, UriKind.Absolute, out var upstream) &&
+            upstream.Port != 8123 &&
+            !IsLocalOrPrivateTargetHost(upstream.Host))
+        {
+            return false;
+        }
+
+        return route.UsePublicHostHeader ?? IsHomeAssistantRoute(route);
+    }
+
+    private static bool IsLocalOrPrivateTargetHost(string host)
+    {
+        var normalized = (host ?? string.Empty).Trim().Trim('[', ']').TrimEnd('.').ToLowerInvariant();
+        if (normalized is "homeassistant" or "localhost" or "127.0.0.1" or "::1")
+        {
+            return true;
+        }
+
+        if (normalized.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".localdomain", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".lan", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!IPAddress.TryParse(normalized, out var address))
+        {
+            return false;
+        }
+
+        if (IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            return false;
+        }
+
+        var bytes = address.GetAddressBytes();
+        return bytes[0] == 10 ||
+               bytes[0] == 192 && bytes[1] == 168 ||
+               bytes[0] == 172 && bytes[1] is >= 16 and <= 31;
+    }
 
     private string BuildEditRoutePreview()
     {

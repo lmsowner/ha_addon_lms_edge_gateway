@@ -193,6 +193,38 @@ public sealed class EdgeGatewayRouteAuthTests
     }
 
     [Fact]
+    public void Generated_caddyfile_for_home_assistant_public_https_upstream_uses_upstream_host_header()
+    {
+        var service = new EdgeGatewayRelayProvisioningService(
+            Options.Create(new EdgeGatewayCoreOptions
+            {
+                CaddyLocalServiceUrl = "http://localhost:18080",
+                LmsForwardAuthPort = 5299
+            }),
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!);
+        var configuration = Configuration(Route("Pass Through") with
+        {
+            PublicHostname = "hassio.gosmore.net",
+            UpstreamUrl = "https://hassio.kiernanfamily.co.uk:443",
+            UsePublicHostHeader = true
+        });
+        var method = typeof(EdgeGatewayRelayProvisioningService).GetMethod(
+            "GenerateCaddyfile",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        var caddyfile = Assert.IsType<string>(method!.Invoke(service, [configuration]));
+
+        Assert.Contains("reverse_proxy https://hassio.kiernanfamily.co.uk:443", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("header_up Host {upstream_hostport}", caddyfile, StringComparison.Ordinal);
+        Assert.DoesNotContain("header_up Host {host}", caddyfile, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Generated_caddyfile_honors_explicit_proxy_options()
     {
         var service = new EdgeGatewayRelayProvisioningService(

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- Prevents Home Assistant routes that target another public HTTPS host from sending the new public Host header upstream.
+- Adds an edit-screen repair action to switch Home Assistant routes back to the internal `homeassistant:8123` target.
+
 ## 0.1.3
 
 - Removes Home Assistant theme inheritance and returns the add-on UI to its fixed light styling.

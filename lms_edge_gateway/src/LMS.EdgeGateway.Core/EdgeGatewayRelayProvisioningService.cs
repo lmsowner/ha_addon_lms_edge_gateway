@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Extensions.Options;
@@ -874,6 +875,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 usePublicHostHeader,
                 stripForwardedFor,
                 skipUpstreamTlsVerification);
+            AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
             {
@@ -996,6 +998,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 StripForwardedFor = stripForwardedFor,
                 SkipUpstreamTlsVerification = skipUpstreamTlsVerification
             };
+            AddHomeAssistantUpstreamWarnings(updated, warnings);
 
             var updatedConfiguration = configuration with
             {
@@ -1958,14 +1961,78 @@ public sealed class EdgeGatewayRelayProvisioningService(
                upstream.Port == 8123;
     }
 
-    private static bool ShouldUsePublicHostHeader(PublishedApplicationDefinition route) =>
-        route.UsePublicHostHeader ?? IsHomeAssistantRoute(route);
+    private static bool ShouldUsePublicHostHeader(PublishedApplicationDefinition route)
+    {
+        if (IsHomeAssistantPublicHttpsUpstream(route))
+        {
+            return false;
+        }
+
+        return route.UsePublicHostHeader ?? IsHomeAssistantRoute(route);
+    }
+
+    private static bool IsHomeAssistantPublicHttpsUpstream(PublishedApplicationDefinition route)
+    {
+        if (!IsHomeAssistantRoute(route) ||
+            !Uri.TryCreate(route.UpstreamUrl, UriKind.Absolute, out var upstream))
+        {
+            return false;
+        }
+
+        return upstream.Port != 8123 && !IsLocalOrPrivateTargetHost(upstream.Host);
+    }
+
+    private static bool IsLocalOrPrivateTargetHost(string host)
+    {
+        var normalized = host.Trim().Trim('[', ']').TrimEnd('.').ToLowerInvariant();
+        if (normalized is "homeassistant" or "localhost" or "127.0.0.1" or "::1")
+        {
+            return true;
+        }
+
+        if (normalized.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".localdomain", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".lan", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!IPAddress.TryParse(normalized, out var address))
+        {
+            return false;
+        }
+
+        if (IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            return false;
+        }
+
+        var bytes = address.GetAddressBytes();
+        return bytes[0] == 10 ||
+               bytes[0] == 192 && bytes[1] == 168 ||
+               bytes[0] == 172 && bytes[1] is >= 16 and <= 31;
+    }
 
     private static bool ShouldStripForwardedFor(PublishedApplicationDefinition route) =>
         route.StripForwardedFor ?? true;
 
     private static bool ShouldSkipUpstreamTlsVerification(PublishedApplicationDefinition route) =>
         route.SkipUpstreamTlsVerification ?? IsHttpsUpstream(route.UpstreamUrl);
+
+    private static void AddHomeAssistantUpstreamWarnings(
+        PublishedApplicationDefinition route,
+        ICollection<string> warnings)
+    {
+        if (IsHomeAssistantPublicHttpsUpstream(route))
+        {
+            warnings.Add("Home Assistant is targeting another public HTTPS host. Edge Gateway will preserve that upstream Host header, but the internal target http://homeassistant:8123 is usually the cleaner route inside Home Assistant.");
+        }
+    }
 
     private async Task RemoveStaleApplicationCloudflareResourcesAsync(
         EdgeGatewayConfiguration currentConfiguration,
