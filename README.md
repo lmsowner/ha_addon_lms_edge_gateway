@@ -1,6 +1,6 @@
-# Linux Made Sane - Edge Gateway Home Assistant Add-on
+# LMS Edge Gateway for Home Assistant
 
-Linux Made Sane - Edge Gateway is a Home Assistant Add-on for secure self-hosted application publishing.
+LMS Edge Gateway for Home Assistant is a Home Assistant Add-on for secure self-hosted application publishing.
 
 It is designed to let Home Assistant users publish Home Assistant and other LAN applications through Cloudflare, Cloudflare Access, Cloudflare Tunnel, Caddy, and LMS authentication policy without hand-writing reverse proxy or Linux service configuration.
 
@@ -15,7 +15,7 @@ It is designed to let Home Assistant users publish Home Assistant and other LAN 
 https://github.com/lmsowner/ha_addon_lms_edge_gateway
 ```
 
-5. Install **Linux Made Sane - Edge Gateway**.
+5. Install **LMS Edge Gateway for Home Assistant**.
 6. Start the add-on and open the web UI through Home Assistant ingress.
 
 ## Product shape

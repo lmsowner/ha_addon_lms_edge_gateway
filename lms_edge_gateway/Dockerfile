@@ -1,5 +1,5 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
-ARG BUILD_VERSION=0.1.0
+ARG BUILD_VERSION=0.1.1
 ARG BUILD_ARCH=amd64
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
@@ -21,14 +21,15 @@ RUN \
       /p:UseAppHost=true
 
 FROM ${BUILD_FROM}
-ARG BUILD_VERSION=0.1.0
+ARG BUILD_VERSION=0.1.1
 ARG BUILD_ARCH=amd64
 
 LABEL \
   io.hass.version="${BUILD_VERSION}" \
   io.hass.type="addon" \
   io.hass.arch="${BUILD_ARCH}" \
-  org.opencontainers.image.title="Linux Made Sane - Edge Gateway Home Assistant Add-on" \
+  org.opencontainers.image.title="LMS Edge Gateway for Home Assistant" \
+  org.opencontainers.image.version="${BUILD_VERSION}" \
   org.opencontainers.image.source="https://github.com/lmsowner/ha_addon_lms_edge_gateway"
 
 ENV \

@@ -4,6 +4,7 @@ build_from:
 args:
   DOTNET_CONFIGURATION: Release
 labels:
-  org.opencontainers.image.title: Linux Made Sane - Edge Gateway Home Assistant Add-on
-  org.opencontainers.image.description: Secure Cloudflare, Caddy, MFA, and Linux Made Sane - Edge Gateway orchestration for Home Assistant.
+  org.opencontainers.image.title: LMS Edge Gateway for Home Assistant
+  org.opencontainers.image.version: "0.1.1"
+  org.opencontainers.image.description: Secure Cloudflare, Caddy, MFA, and LMS Edge Gateway orchestration for Home Assistant.
   org.opencontainers.image.source: https://github.com/lmsowner/ha_addon_lms_edge_gateway

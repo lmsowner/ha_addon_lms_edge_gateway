@@ -3,4 +3,4 @@ configuration:
     name: Cloudflare tunnel token
     description: Optional manual cloudflared tunnel token. Setup Relay normally writes this automatically.
 network:
-  5000/tcp: Linux Made Sane - Edge Gateway web UI
+  5000/tcp: LMS Edge Gateway for Home Assistant web UI
