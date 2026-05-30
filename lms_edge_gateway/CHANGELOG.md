@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Re-applies the saved theme after Blazor enhanced navigation so the toggle state persists between pages.
+- Stores the selected theme in both local storage and a cookie fallback.
+- Uses the parent Home Assistant frame theme as the default when no explicit add-on theme has been saved.
+
 ## 0.1.7
 
 - Adds a persisted Sun/Moon theme toggle to the app shell and login layout.

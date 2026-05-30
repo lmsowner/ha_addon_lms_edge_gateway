@@ -1,5 +1,5 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
-ARG BUILD_VERSION=0.1.7
+ARG BUILD_VERSION=0.1.8
 ARG BUILD_ARCH=amd64
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
@@ -21,7 +21,7 @@ RUN \
       /p:UseAppHost=true
 
 FROM ${BUILD_FROM}
-ARG BUILD_VERSION=0.1.7
+ARG BUILD_VERSION=0.1.8
 ARG BUILD_ARCH=amd64
 
 LABEL \
