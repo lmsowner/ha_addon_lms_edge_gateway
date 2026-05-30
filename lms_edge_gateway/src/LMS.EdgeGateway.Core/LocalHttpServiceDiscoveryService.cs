@@ -870,22 +870,10 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             using var client = BuildSupervisorClient(settings.SupervisorToken);
             var evidence = new List<DiscoveryEvidence>();
             var coreInfo = await ReadSupervisorJsonAsync(client, "/core/info", cancellationToken);
-            if (coreInfo is not null)
+            var coreEvidence = coreInfo is null ? null : BuildCoreEvidence(coreInfo.Value);
+            if (coreEvidence is not null)
             {
-                evidence.Add(new DiscoveryEvidence(
-                    Adapter: Name,
-                    Scope: "Home Assistant",
-                    Host: "homeassistant",
-                    Port: 8123,
-                    Scheme: Uri.UriSchemeHttp,
-                    ServiceName: "Home Assistant",
-                    ServiceKind: "home-assistant",
-                    Confidence: 96,
-                    Exposure: DiscoveryExposure.Publishable,
-                    Reachable: false,
-                    Fingerprint: "ha-supervisor-core",
-                    DisplayName: "Home Assistant Core",
-                    Notes: ["Supervisor API identified Home Assistant Core."]));
+                evidence.Add(coreEvidence);
             }
 
             var addons = await ReadSupervisorJsonAsync(client, "/addons", cancellationToken);
@@ -907,6 +895,41 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 evidence.Count,
                 evidence.Count));
             return evidence;
+        }
+
+        private static DiscoveryEvidence? BuildCoreEvidence(JsonElement payload)
+        {
+            var data = payload.TryGetProperty("data", out var infoData) ? infoData : payload;
+            var reportedPort = GetJsonInt(data, "port");
+            var port = reportedPort is > 0 and < 65536 ? reportedPort.Value : 8123;
+            var ssl = GetJsonBool(data, "ssl");
+            var scheme = ssl ? Uri.UriSchemeHttps : Uri.UriSchemeHttp;
+            var notes = new List<string>
+            {
+                "Supervisor API identified Home Assistant Core.",
+                $"Supervisor reports Home Assistant Core on {scheme}://homeassistant:{port}."
+            };
+
+            var internalIp = GetJsonString(data, "ip_address");
+            if (!string.IsNullOrWhiteSpace(internalIp))
+            {
+                notes.Add($"Supervisor internal Docker IP: {internalIp.Trim()}.");
+            }
+
+            return new DiscoveryEvidence(
+                Adapter: "Home Assistant discovery",
+                Scope: "Home Assistant",
+                Host: "homeassistant",
+                Port: port,
+                Scheme: scheme,
+                ServiceName: "Home Assistant",
+                ServiceKind: "home-assistant",
+                Confidence: 98,
+                Exposure: DiscoveryExposure.Publishable,
+                Reachable: false,
+                Fingerprint: $"ha-supervisor-core:{scheme}:{port}",
+                DisplayName: "Home Assistant Core",
+                Notes: notes);
         }
 
         private static IEnumerable<JsonElement> EnumerateSupervisorAddons(JsonElement? payload)

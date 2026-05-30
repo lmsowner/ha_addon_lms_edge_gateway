@@ -187,16 +187,22 @@
                                 <span class="ui-field-label">Target port</span>
                                 <input type="number" min="1" max="65535" @bind="editAppTargetPort" />
                             </label>
-                            @if (EditHomeAssistantTargetLooksExternal())
+                            @if (EditRouteLooksHomeAssistant())
                             {
-                                <div class="callout warning edge-ha-target-warning">
+                                <div class="callout @(EditHomeAssistantTargetLooksExternal() ? "warning" : "ready") edge-ha-target-warning">
                                     <div>
-                                        <strong>Home Assistant is targeting another public HTTPS host.</strong>
-                                        <span>Use the internal Home Assistant target to avoid OAuth/proxy loops.</span>
+                                        <strong>@BuildHomeAssistantTargetRepairTitle()</strong>
+                                        <span>@BuildHomeAssistantTargetRepairDetail()</span>
                                     </div>
-                                    <LmsButton Label="Use internal target"
-                                               Icon="check"
-                                               OnClick="UseInternalHomeAssistantTarget" />
+                                    <div class="edge-ha-target-actions">
+                                        <LmsButton Label="Internal HTTP"
+                                                   Icon="check"
+                                                   OnClick="@(() => UseInternalHomeAssistantTarget(Uri.UriSchemeHttp))" />
+                                        <LmsButton Label="Internal HTTPS"
+                                                   Icon="check"
+                                                   Primary="true"
+                                                   OnClick="@(() => UseInternalHomeAssistantTarget(Uri.UriSchemeHttps))" />
+                                    </div>
                                 </div>
                             }
                             <label class="ui-field">
@@ -505,14 +511,16 @@
         editingRoute = null;
     }
 
-    private void UseInternalHomeAssistantTarget()
+    private void UseInternalHomeAssistantTarget(string scheme)
     {
-        editAppTargetScheme = "http";
+        editAppTargetScheme = scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            ? Uri.UriSchemeHttps
+            : Uri.UriSchemeHttp;
         editAppTargetHost = "homeassistant";
         editAppTargetPort = 8123;
         editAppUsePublicHostHeader = true;
         editAppStripForwardedFor = true;
-        editAppSkipUpstreamTlsVerification = false;
+        editAppSkipUpstreamTlsVerification = editAppTargetScheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task SaveRouteEditAsync()
@@ -706,15 +714,28 @@
         NormalizeRouteHostname(route.PublicHostname).StartsWith("home-assistant.", StringComparison.OrdinalIgnoreCase) ||
         (Uri.TryCreate(route.UpstreamUrl, UriKind.Absolute, out var uri) && uri.Port == 8123);
 
-    private bool EditHomeAssistantTargetLooksExternal() =>
+    private bool EditRouteLooksHomeAssistant() =>
         editingRoute is not null &&
         (editAppName.Contains("home assistant", StringComparison.OrdinalIgnoreCase) ||
          NormalizeRouteHostname(editingRoute.PublicHostname).StartsWith("hassio.", StringComparison.OrdinalIgnoreCase) ||
          NormalizeRouteHostname(editingRoute.PublicHostname).StartsWith("homeassistant.", StringComparison.OrdinalIgnoreCase) ||
          NormalizeRouteHostname(editingRoute.PublicHostname).StartsWith("home-assistant.", StringComparison.OrdinalIgnoreCase) ||
-         editAppTargetPort == 8123) &&
+         editAppTargetPort == 8123);
+
+    private bool EditHomeAssistantTargetLooksExternal() =>
+        EditRouteLooksHomeAssistant() &&
         editAppTargetPort != 8123 &&
         !IsLocalOrPrivateTargetHost(editAppTargetHost);
+
+    private string BuildHomeAssistantTargetRepairTitle() =>
+        EditHomeAssistantTargetLooksExternal()
+            ? "Home Assistant is targeting another public HTTPS host."
+            : "Home Assistant internal target";
+
+    private string BuildHomeAssistantTargetRepairDetail() =>
+        EditHomeAssistantTargetLooksExternal()
+            ? "Use an internal target to avoid OAuth/proxy loops."
+            : "Use HTTP for default HA installs, or HTTPS when this HA instance has SSL enabled on 8123.";
 
     private static bool ShouldUsePublicHostHeaderInEditor(PublishedApplicationDefinition route)
     {

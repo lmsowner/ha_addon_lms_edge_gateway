@@ -78,6 +78,29 @@ public sealed class LocalHttpServiceDiscoveryTests
         Assert.Equal(["192.168.15.1", "192.168.15.2"], addresses.Select(address => address.ToString()));
     }
 
+    [Fact]
+    public void Supervisor_core_info_uses_reported_ssl_scheme_and_port()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "ssl": true,
+                "port": 8123,
+                "ip_address": "172.30.32.2"
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var evidence = BuildCoreEvidence(document.RootElement);
+
+        Assert.Equal("homeassistant", GetProperty<string>(evidence, "Host"));
+        Assert.Equal("https", GetProperty<string>(evidence, "Scheme"));
+        Assert.Equal(8123, GetProperty<int>(evidence, "Port"));
+        Assert.Null(GetProperty<string?>(evidence, "IpAddress"));
+    }
+
     private static IReadOnlyList<string> ExtractSupervisorLanCidrs(JsonElement payload)
     {
         var adapterType = typeof(LocalHttpServiceDiscoveryService)
@@ -99,5 +122,26 @@ public sealed class LocalHttpServiceDiscoveryTests
 
         var result = method.Invoke(null, [cidrs]);
         return Assert.IsAssignableFrom<IReadOnlyList<IPAddress>>(result);
+    }
+
+    private static object BuildCoreEvidence(JsonElement payload)
+    {
+        var adapterType = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("HomeAssistantDiscoveryAdapter", BindingFlags.NonPublic);
+        Assert.NotNull(adapterType);
+
+        var method = adapterType.GetMethod("BuildCoreEvidence", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method.Invoke(null, [payload]);
+        Assert.NotNull(result);
+        return result;
+    }
+
+    private static T? GetProperty<T>(object instance, string name)
+    {
+        var property = instance.GetType().GetProperty(name);
+        Assert.NotNull(property);
+        return (T?)property.GetValue(instance);
     }
 }

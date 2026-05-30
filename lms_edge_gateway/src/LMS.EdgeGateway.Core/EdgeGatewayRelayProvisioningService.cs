@@ -1535,9 +1535,10 @@ public sealed class EdgeGatewayRelayProvisioningService(
 
             if ((int)response.StatusCode >= 500)
             {
+                var homeAssistantHint = BuildHomeAssistantRouteCheckHint(application);
                 return new CaddyRouteCheck(
                     false,
-                    $"Caddy route check {hostname}{requestPath} via {ResolveCaddyServiceUrl()} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Upstream {application.UpstreamUrl} was not reachable from Caddy.");
+                    $"Caddy route check {hostname}{requestPath} via {ResolveCaddyServiceUrl()} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Upstream {application.UpstreamUrl} was not reachable from Caddy.{homeAssistantHint}");
             }
 
             if (IsBlockedAccessPolicy(application.AccessPolicy) &&
@@ -1575,6 +1576,19 @@ public sealed class EdgeGatewayRelayProvisioningService(
         {
             Timeout = timeout
         };
+    }
+
+    private static string BuildHomeAssistantRouteCheckHint(PublishedApplicationDefinition application)
+    {
+        if (!IsHomeAssistantRoute(application) ||
+            !Uri.TryCreate(application.UpstreamUrl, UriKind.Absolute, out var upstream) ||
+            upstream.Port != 8123 ||
+            !upstream.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        return " If this Home Assistant instance has SSL enabled, change the target scheme to https and leave upstream TLS verification disabled.";
     }
 
     private static async Task<string> TryReadResponseSnippetAsync(

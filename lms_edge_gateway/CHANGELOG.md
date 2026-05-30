@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Uses Supervisor Core info to detect whether Home Assistant should be reached as HTTP or HTTPS on its internal 8123 endpoint.
+- Adds separate internal HTTP and HTTPS repair actions for Home Assistant routes.
+- Adds a clearer Caddy 502 hint when Home Assistant likely needs HTTPS on port 8123.
+
 ## 0.1.4
 
 - Prevents Home Assistant routes that target another public HTTPS host from sending the new public Host header upstream.

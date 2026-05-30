@@ -1071,6 +1071,14 @@ textarea {
     gap: 0.15rem;
 }
 
+.edge-ha-target-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+}
+
 .edge-advanced-settings {
     background: rgba(255, 255, 255, 0.52);
     border: 1px solid var(--color-line);
