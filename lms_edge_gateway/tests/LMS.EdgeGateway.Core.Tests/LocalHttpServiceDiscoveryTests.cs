@@ -1,0 +1,103 @@
+using System.Net;
+using System.Reflection;
+using System.Text.Json;
+using LMS.EdgeGateway.Core;
+using Xunit;
+
+namespace LMS.EdgeGateway.Core.Tests;
+
+public sealed class LocalHttpServiceDiscoveryTests
+{
+    [Fact]
+    public void Supervisor_network_info_returns_host_lan_cidrs_and_ignores_internal_docker_networks()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "interfaces": [
+                  {
+                    "interface": "eth0",
+                    "primary": true,
+                    "enabled": true,
+                    "connected": true,
+                    "ipv4": {
+                      "method": "static",
+                      "ip_address": "192.168.15.3/24",
+                      "gateway": "192.168.15.1"
+                    }
+                  },
+                  {
+                    "interface": "hassio",
+                    "enabled": true,
+                    "connected": true,
+                    "ipv4": {
+                      "ip_address": "172.30.32.1/23"
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
+
+        Assert.Equal(["192.168.15.3/24"], cidrs);
+    }
+
+    [Fact]
+    public void Supervisor_network_info_supports_legacy_interface_object_shape()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "interfaces": {
+                  "enp3s0": {
+                    "ip_address": "10.20.30.40/24",
+                    "gateway": "10.20.30.1",
+                    "primary": true
+                  }
+                }
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
+
+        Assert.Equal(["10.20.30.40/24"], cidrs);
+    }
+
+    [Fact]
+    public void Cidr_expansion_treats_supervisor_host_address_as_network_member()
+    {
+        var addresses = ExpandCidrs(["192.168.15.2/30"]);
+
+        Assert.Equal(["192.168.15.1", "192.168.15.2"], addresses.Select(address => address.ToString()));
+    }
+
+    private static IReadOnlyList<string> ExtractSupervisorLanCidrs(JsonElement payload)
+    {
+        var adapterType = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("LanDiscoveryAdapter", BindingFlags.NonPublic);
+        Assert.NotNull(adapterType);
+
+        var method = adapterType.GetMethod("ExtractSupervisorLanCidrs", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method.Invoke(null, [payload]);
+        return Assert.IsAssignableFrom<IReadOnlyList<string>>(result);
+    }
+
+    private static IReadOnlyList<IPAddress> ExpandCidrs(IReadOnlyList<string> cidrs)
+    {
+        var method = typeof(LocalHttpServiceDiscoveryService)
+            .GetMethod("ExpandCidrs", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method.Invoke(null, [cidrs]);
+        return Assert.IsAssignableFrom<IReadOnlyList<IPAddress>>(result);
+    }
+}

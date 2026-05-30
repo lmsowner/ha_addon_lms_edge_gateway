@@ -6,8 +6,8 @@
         <strong>@Service.Host</strong>
     </div>
     <div class="http-service-lookup-fact">
-        <span>IP:Port</span>
-        <strong>@IpPortLabel</strong>
+        <span>Target</span>
+        <strong>@TargetLabel</strong>
     </div>
     <button class="http-service-lookup-use"
             type="button"
@@ -24,8 +24,8 @@
 
     private bool IsBlocked => Service.Exposure == DiscoveryExposure.UnsafeToExpose;
 
-    private string IpPortLabel =>
-        $"{FirstNonBlank(Service.IpAddress, Service.Host) ?? Service.Host}:{Service.Port}";
+    private string TargetLabel =>
+        $"{Service.Scheme}://{FirstNonBlank(Service.IpAddress, Service.Host) ?? Service.Host}:{Service.Port}";
 
     private string DetailsTitle
     {

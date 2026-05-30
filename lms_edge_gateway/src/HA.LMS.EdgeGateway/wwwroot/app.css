@@ -1,35 +1,40 @@
 :root {
-    color-scheme: light;
-    --color-panel-strong: rgba(255, 255, 255, 0.76);
-    --color-panel-soft: rgba(255, 255, 255, 0.48);
-    --color-line: rgba(60, 60, 67, 0.15);
-    --color-line-strong: rgba(60, 60, 67, 0.28);
-    --color-text: #1d1d1f;
-    --color-text-muted: #646a73;
-    --color-code: #0046a8;
-    --color-accent: #007aff;
-    --color-accent-rgb: 0, 122, 255;
-    --color-accent-bright: #006cff;
-    --color-success: #188544;
-    --color-warning: #a15c00;
-    --color-danger: #b42318;
-    --color-neutral-text: #747982;
-    --color-success-soft: rgba(31, 163, 90, 0.12);
-    --color-success-line: rgba(31, 163, 90, 0.26);
-    --color-warning-soft: rgba(255, 178, 43, 0.16);
-    --color-warning-line: rgba(186, 116, 0, 0.24);
-    --color-danger-soft: rgba(220, 38, 38, 0.1);
-    --color-danger-line: rgba(220, 38, 38, 0.22);
-    --color-neutral-soft: rgba(142, 142, 147, 0.12);
-    --color-neutral-line: rgba(142, 142, 147, 0.24);
-    --field-background: rgba(255, 255, 255, 0.7);
-    --surface-soft-1: rgba(255, 255, 255, 0.58);
-    --surface-soft-2: rgba(255, 255, 255, 0.72);
-    --surface-soft-3: rgba(255, 255, 255, 0.86);
-    --surface-elevated: rgba(255, 255, 255, 0.95);
-    --surface-glass:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.46)),
-        rgba(255, 255, 255, 0.68);
+    color-scheme: var(--lms-ha-color-scheme, light);
+    --ha-theme-background: var(--primary-background-color, #eef3f9);
+    --ha-theme-secondary-background: var(--secondary-background-color, #e9edf3);
+    --ha-theme-card: var(--ha-card-background, var(--card-background-color, rgba(255, 255, 255, 0.95)));
+    --ha-theme-divider: var(--divider-color, rgba(60, 60, 67, 0.15));
+    --ha-theme-primary: var(--primary-color, #007aff);
+    --ha-theme-accent: var(--accent-color, var(--ha-theme-primary));
+    --color-panel-strong: var(--ha-theme-card);
+    --color-panel-soft: color-mix(in srgb, var(--ha-theme-card) 70%, transparent);
+    --color-line: var(--ha-theme-divider);
+    --color-line-strong: color-mix(in srgb, var(--ha-theme-divider) 70%, var(--primary-text-color, #1d1d1f));
+    --color-text: var(--primary-text-color, #1d1d1f);
+    --color-text-muted: var(--secondary-text-color, #646a73);
+    --color-code: var(--ha-theme-accent);
+    --color-accent: var(--ha-theme-primary);
+    --color-accent-rgb: var(--lms-ha-primary-rgb, 0, 122, 255);
+    --color-accent-bright: var(--ha-theme-accent);
+    --color-success: var(--success-color, #188544);
+    --color-warning: var(--warning-color, #a15c00);
+    --color-danger: var(--error-color, #b42318);
+    --color-neutral-text: var(--secondary-text-color, #747982);
+    --color-success-soft: color-mix(in srgb, var(--color-success) 12%, transparent);
+    --color-success-line: color-mix(in srgb, var(--color-success) 28%, transparent);
+    --color-warning-soft: color-mix(in srgb, var(--color-warning) 14%, transparent);
+    --color-warning-line: color-mix(in srgb, var(--color-warning) 26%, transparent);
+    --color-danger-soft: color-mix(in srgb, var(--color-danger) 10%, transparent);
+    --color-danger-line: color-mix(in srgb, var(--color-danger) 24%, transparent);
+    --color-neutral-soft: color-mix(in srgb, var(--color-neutral-text) 12%, transparent);
+    --color-neutral-line: color-mix(in srgb, var(--color-neutral-text) 24%, transparent);
+    --field-background: color-mix(in srgb, var(--ha-theme-card) 88%, transparent);
+    --surface-soft-1: color-mix(in srgb, var(--ha-theme-card) 62%, transparent);
+    --surface-soft-2: color-mix(in srgb, var(--ha-theme-card) 78%, transparent);
+    --surface-soft-3: color-mix(in srgb, var(--ha-theme-card) 92%, transparent);
+    --surface-elevated: var(--ha-theme-card);
+    --surface-glass: var(--ha-theme-card);
+    --surface-glass: color-mix(in srgb, var(--ha-theme-card) 86%, transparent);
     --shadow-card:
         inset 0 1px 0 rgba(255, 255, 255, 0.72),
         0 14px 34px rgba(118, 124, 138, 0.14);
@@ -62,10 +67,9 @@ body {
 }
 
 body {
+    background: var(--ha-theme-background);
     background:
-        radial-gradient(circle at top left, rgba(255, 255, 255, 0.5), transparent 36%),
-        radial-gradient(circle at top center, rgba(205, 217, 232, 0.42), transparent 24%),
-        linear-gradient(180deg, #eef3f9 0%, #e9edf3 48%, #dde3ec 100%);
+        linear-gradient(180deg, color-mix(in srgb, var(--ha-theme-background) 88%, var(--ha-theme-card) 12%), var(--ha-theme-background));
     color: var(--color-text);
     font-family: var(--font-sans);
     font-size: 17px;
@@ -143,7 +147,7 @@ textarea {
 }
 
 select {
-    color-scheme: light;
+    color-scheme: var(--lms-ha-color-scheme, light);
 }
 
 input:focus,

@@ -720,7 +720,8 @@
 
     private static IReadOnlyList<LocalHttpServiceEndpoint> SortHttpServiceSuggestions(IEnumerable<LocalHttpServiceEndpoint> services) =>
         services
-            .DistinctBy(BuildHttpServiceKey, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(BuildHttpServiceKey, StringComparer.OrdinalIgnoreCase)
+            .Select(SelectPreferredHttpServiceEndpoint)
             .OrderBy(service => service.Exposure switch
             {
                 DiscoveryExposure.Publishable => 0,
@@ -749,7 +750,17 @@
         !service.Scope.Equals("Tailnet", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildHttpServiceKey(LocalHttpServiceEndpoint service) =>
-        $"{service.Scheme}|{FirstNonBlank(service.IpAddress, service.Host)}|{service.Port}|{service.Fingerprint}";
+        $"{NormalizeHttpServiceAddress(service)}|{service.Port}|{service.ServiceKind}|{service.Fingerprint}";
+
+    private static LocalHttpServiceEndpoint SelectPreferredHttpServiceEndpoint(IEnumerable<LocalHttpServiceEndpoint> services) =>
+        services
+            .OrderByDescending(service => service.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(service => service.Confidence)
+            .ThenByDescending(service => service.DiscoveredAtUtc ?? DateTimeOffset.MinValue)
+            .First();
+
+    private static string NormalizeHttpServiceAddress(LocalHttpServiceEndpoint service) =>
+        (FirstNonBlank(service.IpAddress, service.Host) ?? service.Host).Trim().TrimEnd('.').ToLowerInvariant();
 
     private static string BuildRouteNameFromDiscoveredService(LocalHttpServiceEndpoint service)
     {

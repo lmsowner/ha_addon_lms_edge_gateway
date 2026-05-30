@@ -321,10 +321,37 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     }
 
     private static string BuildEndpointKey(LocalHttpServiceEndpoint endpoint) =>
-        $"{endpoint.Scheme}|{FirstNonBlank(endpoint.IpAddress, endpoint.Host)}|{endpoint.Port}|{endpoint.Fingerprint}";
+        $"{endpoint.Scheme}|{FirstNonBlank(endpoint.IpAddress, endpoint.Host)}|{endpoint.Port}|{endpoint.ServiceKind}|{endpoint.Fingerprint}";
 
     private static string ResolvePath(string path) =>
         Path.IsPathRooted(path) ? path : Path.GetFullPath(path);
+
+    private static HttpClient BuildSupervisorClient(string token)
+    {
+        var client = new HttpClient { BaseAddress = new Uri("http://supervisor"), Timeout = TimeSpan.FromSeconds(5) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    private static async Task<JsonElement?> ReadSupervisorJsonAsync(HttpClient client, string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await client.GetAsync(path, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            return document.RootElement.Clone();
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private interface IDiscoveryAdapter
     {
@@ -575,8 +602,13 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         {
             var ports = BuildPortList(settings);
             var knownAddresses = await LoadLanNeighbourAddressesAsync(cancellationToken);
-            var addresses = settings.Cidrs.Count > 0
-                ? ExpandCidrs(settings.Cidrs)
+            var supervisorCidrs = await LoadSupervisorLanCidrsAsync(settings, cancellationToken);
+            var configuredCidrs = settings.Cidrs
+                .Concat(supervisorCidrs)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var addresses = configuredCidrs.Length > 0
+                ? ExpandCidrs(configuredCidrs)
                 : ExpandLocalInterfaceCidrs();
 
             return addresses
@@ -598,6 +630,112 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 })
                 .ToArray();
         }
+
+        private static async Task<IReadOnlyList<string>> LoadSupervisorLanCidrsAsync(DiscoverySettings settings, CancellationToken cancellationToken)
+        {
+            if (!settings.HasSupervisorToken)
+            {
+                return [];
+            }
+
+            using var client = BuildSupervisorClient(settings.SupervisorToken);
+            var networkInfo = await ReadSupervisorJsonAsync(client, "/network/info", cancellationToken);
+            return ExtractSupervisorLanCidrs(networkInfo);
+        }
+
+        private static IReadOnlyList<string> ExtractSupervisorLanCidrs(JsonElement? payload)
+        {
+            if (payload is null ||
+                !payload.Value.TryGetProperty("data", out var data) ||
+                !data.TryGetProperty("interfaces", out var interfaces))
+            {
+                return [];
+            }
+
+            var cidrs = interfaces.ValueKind switch
+            {
+                JsonValueKind.Array => interfaces.EnumerateArray()
+                    .SelectMany(item => ExtractSupervisorInterfaceCidrs(item, GetJsonString(item, "interface"))),
+                JsonValueKind.Object => interfaces.EnumerateObject()
+                    .SelectMany(property => ExtractSupervisorInterfaceCidrs(property.Value, property.Name)),
+                _ => []
+            };
+
+            return cidrs
+                .Where(IsPrivateCidr)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        private static IEnumerable<string> ExtractSupervisorInterfaceCidrs(JsonElement item, string? fallbackName)
+        {
+            var name = FirstNonBlank(GetJsonString(item, "interface"), fallbackName) ?? string.Empty;
+            if (IsContainerInterfaceName(name) ||
+                IsExplicitlyFalse(item, "enabled") ||
+                IsExplicitlyFalse(item, "connected"))
+            {
+                yield break;
+            }
+
+            if (item.TryGetProperty("ipv4", out var ipv4))
+            {
+                foreach (var cidr in ExtractIpv4Cidrs(ipv4))
+                {
+                    yield return cidr;
+                }
+            }
+
+            foreach (var cidr in ExtractIpv4Cidrs(item))
+            {
+                yield return cidr;
+            }
+        }
+
+        private static IEnumerable<string> ExtractIpv4Cidrs(JsonElement element)
+        {
+            foreach (var name in new[] { "ip_address", "address", "addresses" })
+            {
+                if (!element.TryGetProperty(name, out var property))
+                {
+                    continue;
+                }
+
+                if (property.ValueKind == JsonValueKind.String)
+                {
+                    var value = property.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        yield return value.Trim();
+                    }
+                }
+                else if (property.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in property.EnumerateArray())
+                    {
+                        var value = item.ValueKind == JsonValueKind.String ? item.GetString() : null;
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            yield return value.Trim();
+                        }
+                    }
+                }
+            }
+        }
+
+        private static bool IsExplicitlyFalse(JsonElement element, string name) =>
+            element.TryGetProperty(name, out var property) && property.ValueKind switch
+            {
+                JsonValueKind.False => true,
+                JsonValueKind.String => bool.TryParse(property.GetString(), out var value) && !value,
+                _ => false
+            };
+
+        private static bool IsContainerInterfaceName(string name) =>
+            name.StartsWith("docker", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("br-", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("veth", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("hassio", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("lo", StringComparison.OrdinalIgnoreCase);
 
         private static async Task<IReadOnlyList<ProbeHost>> BuildTailnetHostsAsync(CancellationToken cancellationToken)
         {
@@ -769,33 +907,6 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 evidence.Count,
                 evidence.Count));
             return evidence;
-        }
-
-        private static HttpClient BuildSupervisorClient(string token)
-        {
-            var client = new HttpClient { BaseAddress = new Uri("http://supervisor"), Timeout = TimeSpan.FromSeconds(5) };
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            return client;
-        }
-
-        private static async Task<JsonElement?> ReadSupervisorJsonAsync(HttpClient client, string path, CancellationToken cancellationToken)
-        {
-            try
-            {
-                using var response = await client.GetAsync(path, cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                {
-                    return null;
-                }
-
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-                return document.RootElement.Clone();
-            }
-            catch
-            {
-                return null;
-            }
         }
 
         private static IEnumerable<JsonElement> EnumerateSupervisorAddons(JsonElement? payload)
@@ -1104,6 +1215,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                         TlsSubject = match.TlsSubject,
                         FaviconHash = match.FaviconHash,
                         RedirectLocation = match.RedirectLocation,
+                        StatusCode = match.StatusCode,
+                        IpAddress = match.IpAddress,
                         Confidence = Math.Min(99, Math.Max(named.Confidence, match.Confidence) + 8),
                         Fingerprint = FirstNonBlank(match.Fingerprint, named.Fingerprint) ?? named.Fingerprint,
                         Notes = (named.Notes ?? [])
@@ -1753,7 +1866,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             }
 
             var hostCount = Math.Max(0, (1 << Math.Clamp(32 - prefixLength, 0, 16)) - 2);
-            var baseValue = AddressToUInt32(network);
+            var baseValue = AddressToUInt32(network) & MaskForPrefix(prefixLength);
             for (var offset = 1; offset <= hostCount; offset++)
             {
                 result.Add(UInt32ToAddress(baseValue + (uint)offset));
@@ -1761,6 +1874,16 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         }
 
         return result;
+    }
+
+    private static bool IsPrivateCidr(string cidr)
+    {
+        if (!TryParseCidr(cidr, out var address, out _))
+        {
+            return false;
+        }
+
+        return IsPrivateIPv4(address);
     }
 
     private static bool TryParseCidr(string cidr, out IPAddress network, out int prefixLength)
@@ -1781,6 +1904,9 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         prefixLength = parsedPrefixLength;
         return true;
     }
+
+    private static uint MaskForPrefix(int prefixLength) =>
+        prefixLength <= 0 ? 0 : uint.MaxValue << (32 - prefixLength);
 
     private static IReadOnlyList<LocalInterfaceSubnet> GetLocalIPv4Interfaces()
     {
