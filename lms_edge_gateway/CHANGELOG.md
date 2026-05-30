@@ -1,8 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Removes Home Assistant theme inheritance and returns the add-on UI to its fixed light styling.
+
 ## 0.1.2
 
-- Adopts Home Assistant theme variables inside ingress.
 - Uses Home Assistant Supervisor network information to scan the host LAN subnet, not only the add-on container network.
 - Collapses duplicate HTTP/S lookup candidates for the same discovered service.
 
