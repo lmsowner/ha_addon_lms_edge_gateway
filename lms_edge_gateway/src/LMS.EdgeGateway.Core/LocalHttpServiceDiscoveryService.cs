@@ -607,9 +607,15 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 .Concat(supervisorCidrs)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            var addresses = configuredCidrs.Length > 0
-                ? ExpandCidrs(configuredCidrs)
-                : ExpandLocalInterfaceCidrs();
+            var cidrAddresses = configuredCidrs.Length > 0 ? ExpandCidrs(configuredCidrs) : [];
+            var fallbackAddresses = cidrAddresses.Count == 0 ? ExpandLocalInterfaceCidrs() : [];
+            var neighbourAddresses = knownAddresses
+                .Select(value => IPAddress.TryParse(value, out var address) ? address : null)
+                .Where(address => address is not null)
+                .Cast<IPAddress>();
+            var addresses = cidrAddresses
+                .Concat(fallbackAddresses)
+                .Concat(neighbourAddresses);
 
             return addresses
                 .Distinct(IPAddressComparer.Instance)
@@ -693,6 +699,24 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
         private static IEnumerable<string> ExtractIpv4Cidrs(JsonElement element)
         {
+            if (element.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in element.EnumerateArray())
+                {
+                    foreach (var cidr in ExtractIpv4Cidrs(item))
+                    {
+                        yield return cidr;
+                    }
+                }
+
+                yield break;
+            }
+
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                yield break;
+            }
+
             foreach (var name in new[] { "ip_address", "address", "addresses" })
             {
                 if (!element.TryGetProperty(name, out var property))
@@ -702,24 +726,141 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
                 if (property.ValueKind == JsonValueKind.String)
                 {
-                    var value = property.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
+                    var cidr = BuildIpv4Cidr(property.GetString(), element);
+                    if (!string.IsNullOrWhiteSpace(cidr))
                     {
-                        yield return value.Trim();
+                        yield return cidr;
                     }
                 }
                 else if (property.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var item in property.EnumerateArray())
                     {
-                        var value = item.ValueKind == JsonValueKind.String ? item.GetString() : null;
-                        if (!string.IsNullOrWhiteSpace(value))
+                        if (item.ValueKind == JsonValueKind.String)
                         {
-                            yield return value.Trim();
+                            var cidr = BuildIpv4Cidr(item.GetString(), element);
+                            if (!string.IsNullOrWhiteSpace(cidr))
+                            {
+                                yield return cidr;
+                            }
+                        }
+                        else
+                        {
+                            foreach (var cidr in ExtractIpv4Cidrs(item))
+                            {
+                                yield return cidr;
+                            }
                         }
                     }
                 }
+                else if (property.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var cidr in ExtractIpv4Cidrs(property))
+                    {
+                        yield return cidr;
+                    }
+                }
             }
+        }
+
+        private static string? BuildIpv4Cidr(string? value, JsonElement context)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var trimmed = value.Trim();
+            if (TryParseCidr(trimmed, out _, out _))
+            {
+                return trimmed;
+            }
+
+            if (!IPAddress.TryParse(trimmed, out var address) ||
+                address.AddressFamily != AddressFamily.InterNetwork ||
+                !IsPrivateIPv4(address))
+            {
+                return null;
+            }
+
+            var prefixLength = ReadPrefixLength(context) ?? ReadNetmaskPrefixLength(context) ?? 24;
+            return $"{address}/{prefixLength}";
+        }
+
+        private static int? ReadPrefixLength(JsonElement element)
+        {
+            foreach (var name in new[] { "prefix", "prefix_length", "prefixLength", "subnet_prefix", "network_prefix", "cidr_prefix" })
+            {
+                if (!element.TryGetProperty(name, out var property))
+                {
+                    continue;
+                }
+
+                var prefixLength = property.ValueKind switch
+                {
+                    JsonValueKind.Number when property.TryGetInt32(out var value) => value,
+                    JsonValueKind.String when int.TryParse(property.GetString(), out var value) => value,
+                    _ => 0
+                };
+
+                if (prefixLength is > 0 and <= 32)
+                {
+                    return prefixLength;
+                }
+            }
+
+            return null;
+        }
+
+        private static int? ReadNetmaskPrefixLength(JsonElement element)
+        {
+            foreach (var name in new[] { "netmask", "subnet_mask", "mask" })
+            {
+                var mask = GetJsonString(element, name);
+                if (string.IsNullOrWhiteSpace(mask) || !IPAddress.TryParse(mask, out var address))
+                {
+                    continue;
+                }
+
+                var prefixLength = PrefixLengthFromNetmask(address);
+                if (prefixLength is not null)
+                {
+                    return prefixLength;
+                }
+            }
+
+            return null;
+        }
+
+        private static int? PrefixLengthFromNetmask(IPAddress address)
+        {
+            if (address.AddressFamily != AddressFamily.InterNetwork)
+            {
+                return null;
+            }
+
+            var value = AddressToUInt32(address);
+            var prefixLength = 0;
+            var seenZero = false;
+            for (var bit = 31; bit >= 0; bit--)
+            {
+                var isSet = (value & (1u << bit)) != 0;
+                if (isSet && seenZero)
+                {
+                    return null;
+                }
+
+                if (isSet)
+                {
+                    prefixLength++;
+                }
+                else
+                {
+                    seenZero = true;
+                }
+            }
+
+            return prefixLength is > 0 and <= 32 ? prefixLength : null;
         }
 
         private static bool IsExplicitlyFalse(JsonElement element, string name) =>

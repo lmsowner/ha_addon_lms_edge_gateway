@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Builds full LAN scan ranges when Supervisor reports Home Assistant host IPv4 details as address plus prefix or netmask.
+- Falls back bare private Supervisor host addresses to `/24` instead of scanning only the add-on container network.
+- Keeps known LAN neighbours in the scan target set even when CIDR discovery falls back.
+
 ## 0.1.5
 
 - Uses Supervisor Core info to detect whether Home Assistant should be reached as HTTP or HTTPS on its internal 8123 endpoint.

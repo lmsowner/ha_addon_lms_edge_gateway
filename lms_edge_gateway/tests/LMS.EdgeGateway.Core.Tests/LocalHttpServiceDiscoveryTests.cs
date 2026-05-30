@@ -71,6 +71,89 @@ public sealed class LocalHttpServiceDiscoveryTests
     }
 
     [Fact]
+    public void Supervisor_network_info_combines_address_with_separate_prefix()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "interfaces": [
+                  {
+                    "interface": "eth0",
+                    "enabled": true,
+                    "connected": true,
+                    "ipv4": {
+                      "address": "192.168.15.3",
+                      "prefix": 24
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
+
+        Assert.Equal(["192.168.15.3/24"], cidrs);
+    }
+
+    [Fact]
+    public void Supervisor_network_info_combines_address_with_netmask()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "interfaces": [
+                  {
+                    "interface": "enp3s0",
+                    "enabled": true,
+                    "connected": true,
+                    "ipv4": {
+                      "ip_address": "10.20.30.40",
+                      "subnet_mask": "255.255.254.0"
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
+
+        Assert.Equal(["10.20.30.40/23"], cidrs);
+    }
+
+    [Fact]
+    public void Supervisor_network_info_defaults_bare_private_address_to_24()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "interfaces": [
+                  {
+                    "interface": "eth0",
+                    "enabled": true,
+                    "connected": true,
+                    "ipv4": {
+                      "ip_address": "192.168.15.3"
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
+
+        Assert.Equal(["192.168.15.3/24"], cidrs);
+    }
+
+    [Fact]
     public void Cidr_expansion_treats_supervisor_host_address_as_network_member()
     {
         var addresses = ExpandCidrs(["192.168.15.2/30"]);
