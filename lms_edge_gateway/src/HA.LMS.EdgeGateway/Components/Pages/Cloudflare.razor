@@ -82,7 +82,12 @@
 
         @if (zonesResult is null)
         {
-            <p class="meta-text">Loading saved relay zones.</p>
+            <div class="edge-loading-card" aria-busy="true">
+                <span class="edge-loading-progress">
+                    <span class="edge-loading-progress-fill"></span>
+                </span>
+                <p class="meta-text">Loading saved relay zones.</p>
+            </div>
         }
         else if (ConfiguredRelayZones.Count == 0)
         {
@@ -196,7 +201,12 @@
 
         @if (zonesResult is null)
         {
-            <p class="meta-text">Loading Cloudflare domains from the saved Edge Gateway token.</p>
+            <div class="edge-loading-card" aria-busy="true">
+                <span class="edge-loading-progress">
+                    <span class="edge-loading-progress-fill"></span>
+                </span>
+                <p class="meta-text">Loading Cloudflare domains from the saved Edge Gateway token.</p>
+            </div>
         }
         else if (!string.IsNullOrWhiteSpace(zonesResult.Error))
         {

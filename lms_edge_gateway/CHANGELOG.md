@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.9
+
+- Adds immediate tab navigation feedback with a busy overlay while Blazor loads the next page.
+- Adds shared button spinners for long-running actions such as saving, scanning, testing, repairing, setup, and deletes.
+- Improves page loading states with a spinner and progress indicator on setup, apps, security, diagnostics, and Cloudflare data loads.
+
 ## 0.1.8
 
 - Re-applies the saved theme after Blazor enhanced navigation so the toggle state persists between pages.

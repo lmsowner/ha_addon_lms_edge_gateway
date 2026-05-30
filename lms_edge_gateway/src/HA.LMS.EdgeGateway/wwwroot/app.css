@@ -549,6 +549,21 @@ textarea {
     font-weight: 800;
 }
 
+.tab-trigger-pending {
+    border-color: rgba(var(--color-accent-rgb), 0.5);
+    color: var(--color-accent);
+}
+
+.tab-trigger-pending::before {
+    animation: lms-spinner-rotate 0.72s linear infinite;
+    border: 2px solid rgba(var(--color-accent-rgb), 0.22);
+    border-radius: 999px;
+    border-top-color: currentColor;
+    content: "";
+    height: 0.82rem;
+    width: 0.82rem;
+}
+
 .page-tab-panel {
     background: var(--surface-glass);
     border: 1px solid var(--color-line);
@@ -559,6 +574,56 @@ textarea {
     min-width: 0;
     overflow: auto;
     padding: 1rem;
+    position: relative;
+}
+
+:root[data-ui-busy="navigation"] .page-tab-panel::before {
+    background: rgba(247, 250, 253, 0.76);
+    backdrop-filter: blur(8px);
+    border-radius: inherit;
+    content: "";
+    inset: 0;
+    position: absolute;
+    z-index: 8;
+}
+
+:root[data-theme="dark"][data-ui-busy="navigation"] .page-tab-panel::before {
+    background: rgba(12, 17, 24, 0.7);
+}
+
+:root[data-ui-busy="navigation"] .page-tab-panel::after {
+    background: var(--surface-elevated);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    color: var(--color-text);
+    content: "Loading";
+    font-size: 0.82rem;
+    font-weight: 850;
+    left: 50%;
+    min-height: 3.1rem;
+    padding: 0.8rem 1rem 0.8rem 2.65rem;
+    position: absolute;
+    top: 45%;
+    transform: translate(-50%, -50%);
+    z-index: 9;
+}
+
+:root[data-ui-busy="navigation"] .tab-control::after {
+    animation: lms-spinner-rotate 0.72s linear infinite;
+    border: 2px solid rgba(var(--color-accent-rgb), 0.24);
+    border-radius: 999px;
+    border-top-color: var(--color-accent);
+    content: "";
+    height: 1.1rem;
+    left: 50%;
+    margin-left: -2.2rem;
+    margin-top: -0.55rem;
+    pointer-events: none;
+    position: fixed;
+    top: 50%;
+    width: 1.1rem;
+    z-index: 110;
 }
 
 .edge-gateway-page {
@@ -650,6 +715,7 @@ textarea {
     line-height: 1.1;
     min-height: 2.25rem;
     padding: 0.48rem 0.86rem;
+    position: relative;
     text-decoration: none;
     white-space: nowrap;
 }
@@ -662,6 +728,15 @@ textarea {
 .lms-button:disabled {
     cursor: default;
     opacity: 0.76;
+}
+
+.lms-button-busy,
+.lms-button-pending {
+    cursor: progress;
+}
+
+.lms-button-busy:disabled {
+    opacity: 0.92;
 }
 
 .lms-button-primary {
@@ -688,6 +763,7 @@ textarea {
 }
 
 .lms-button-icon,
+.lms-button-spinner,
 .ui-glyph-icon {
     align-items: center;
     display: inline-flex;
@@ -695,6 +771,20 @@ textarea {
     height: 1.05rem;
     justify-content: center;
     line-height: 0;
+    width: 1.05rem;
+}
+
+.lms-button-spinner,
+.lms-button-pending::before {
+    animation: lms-spinner-rotate 0.72s linear infinite;
+    border: 2px solid rgba(var(--color-accent-rgb), 0.24);
+    border-radius: 999px;
+    border-top-color: currentColor;
+}
+
+.lms-button-pending::before {
+    content: "";
+    height: 1.05rem;
     width: 1.05rem;
 }
 
@@ -743,9 +833,34 @@ textarea {
 }
 
 .edge-loading-card {
+    align-items: center;
     display: grid;
     gap: 0.55rem;
+    grid-template-columns: auto minmax(0, 1fr);
     padding: 0.8rem 0.9rem;
+}
+
+.edge-loading-card::before,
+.edge-http-service-scanning::before {
+    animation: lms-spinner-rotate 0.72s linear infinite;
+    border: 2px solid rgba(var(--color-accent-rgb), 0.24);
+    border-radius: 999px;
+    border-top-color: var(--color-accent);
+    content: "";
+    height: 1.1rem;
+    width: 1.1rem;
+}
+
+.edge-loading-card .edge-loading-progress,
+.edge-http-service-scanning .edge-http-service-progress {
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
+
+.edge-loading-card > p,
+.edge-http-service-scanning > span:last-child {
+    grid-column: 2;
+    grid-row: 1;
 }
 
 .edge-loading-progress,
@@ -776,6 +891,12 @@ textarea {
 
     100% {
         background-position: -90% 0;
+    }
+}
+
+@keyframes lms-spinner-rotate {
+    to {
+        transform: rotate(360deg);
     }
 }
 

@@ -9,8 +9,11 @@
 <div class="page-stack edge-security-page">
     @if (!isLoaded)
     {
-        <section class="surface-card edge-card">
-            <p class="muted">Loading LMS account settings...</p>
+        <section class="surface-card edge-loading-card" aria-busy="true">
+            <span class="edge-loading-progress">
+                <span class="edge-loading-progress-fill"></span>
+            </span>
+            <p class="meta-text">Loading LMS account settings...</p>
         </section>
     }
     else

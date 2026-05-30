@@ -5,8 +5,11 @@
 @if (tokenState is null)
 {
     <main class="setup-gate">
-        <section class="setup-card">
-            <p class="muted">Checking Cloudflare setup.</p>
+        <section class="setup-card edge-loading-card" aria-busy="true">
+            <span class="edge-loading-progress">
+                <span class="edge-loading-progress-fill"></span>
+            </span>
+            <p class="meta-text">Checking Cloudflare setup.</p>
         </section>
     </main>
 }
