@@ -8,6 +8,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="@BaseHref" />
+    <script>
+        (() => {
+            const key = "lms-edge-gateway-theme";
+            const root = document.documentElement;
+            let stored = null;
+            try {
+                stored = localStorage.getItem(key);
+            } catch {
+            }
+
+            const systemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+            const theme = stored === "dark" || stored === "light" ? stored : systemDark ? "dark" : "light";
+            root.dataset.theme = theme;
+            root.style.colorScheme = theme;
+        })();
+    </script>
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["HA.LMS.EdgeGateway.styles.css"]" />
@@ -18,6 +34,7 @@
 <body>
     <Routes />
     <ReconnectModal />
+    <script src="@Assets["scripts/theme.js"]"></script>
     <script src="@Assets["scripts/passkeys.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>

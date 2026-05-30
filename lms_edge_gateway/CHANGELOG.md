@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7
+
+- Adds a persisted Sun/Moon theme toggle to the app shell and login layout.
+- Adds a high-contrast dark palette for the app shell, cards, tables, forms, modals, status pills, and login flow.
+- Applies the saved theme before stylesheets load to avoid a light/dark flash.
+
 ## 0.1.6
 
 - Builds full LAN scan ranges when Supervisor reports Home Assistant host IPv4 details as address plus prefix or netmask.
