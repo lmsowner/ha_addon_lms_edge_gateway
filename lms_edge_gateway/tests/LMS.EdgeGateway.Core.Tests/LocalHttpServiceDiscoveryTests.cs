@@ -127,6 +127,62 @@ public sealed class LocalHttpServiceDiscoveryTests
     }
 
     [Fact]
+    public void Supervisor_network_info_uses_parent_interface_prefix_for_nested_ipv4_address()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "interfaces": [
+                  {
+                    "interface": "enp3s0",
+                    "enabled": true,
+                    "connected": true,
+                    "prefix": 20,
+                    "ipv4": {
+                      "ip_address": "192.168.15.3"
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
+
+        Assert.Equal(["192.168.15.3/20"], cidrs);
+    }
+
+    [Fact]
+    public void Supervisor_network_info_uses_parent_interface_netmask_for_nested_ipv4_address()
+    {
+        const string payload = """
+            {
+              "result": "ok",
+              "data": {
+                "interfaces": [
+                  {
+                    "interface": "enp3s0",
+                    "enabled": true,
+                    "connected": true,
+                    "netmask": "255.255.240.0",
+                    "ipv4": {
+                      "address": "192.168.15.3"
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+        using var document = JsonDocument.Parse(payload);
+        var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
+
+        Assert.Equal(["192.168.15.3/20"], cidrs);
+    }
+
+    [Fact]
     public void Supervisor_network_info_defaults_bare_private_address_to_24()
     {
         const string payload = """
@@ -151,6 +207,19 @@ public sealed class LocalHttpServiceDiscoveryTests
         var cidrs = ExtractSupervisorLanCidrs(document.RootElement);
 
         Assert.Equal(["192.168.15.3/24"], cidrs);
+    }
+
+    [Fact]
+    public void Cidr_expansion_scans_full_20_subnet()
+    {
+        var addresses = ExpandCidrs(["192.168.15.3/20"]);
+        var addressText = addresses.Select(address => address.ToString()).ToArray();
+
+        Assert.Equal(4094, addresses.Count);
+        Assert.Equal("192.168.15.1", addressText.First());
+        Assert.Equal("192.168.15.254", addressText[253]);
+        Assert.Contains("192.168.0.1", addressText);
+        Assert.Contains("192.168.8.40", addressText);
     }
 
     [Fact]

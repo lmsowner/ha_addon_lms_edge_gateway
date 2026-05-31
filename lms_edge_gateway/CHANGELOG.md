@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.10
+
+- Uses one shared add-route dialog across Setup and Apps instead of maintaining duplicate implementations.
+- Adds staged HTTP/S service discovery with ARP, SSDP, mDNS, WS-Discovery, Docker, and targeted LAN scan phases.
+- Improves large subnet discovery by prioritising known neighbours and the Home Assistant host's local /24 before the wider CIDR.
+- Fixes Supervisor network parsing so nested IPv4 addresses inherit parent prefix/netmask values.
+- Aligns new route dialog labels, controls, and helper text for a cleaner horizontal layout.
+
 ## 0.1.9
 
 - Adds immediate tab navigation feedback with a busy overlay while Blazor loads the next page.

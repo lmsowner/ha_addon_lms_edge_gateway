@@ -1298,13 +1298,44 @@ textarea {
     gap: 0.78rem;
 }
 
+.edge-route-main-grid,
+.edge-form-grid-target {
+    --edge-route-field-gap: 0.34rem;
+    --edge-route-field-label-row: 1.9rem;
+    --edge-route-field-control-row: 2.25rem;
+    align-items: stretch;
+}
+
 .edge-route-main-grid {
     grid-template-columns: minmax(11rem, 1fr) minmax(16rem, 1.35fr) minmax(10rem, 0.85fr);
 }
 
 .edge-form-grid-target {
-    align-items: end;
     grid-template-columns: minmax(11rem, 0.92fr) minmax(6.6rem, 0.42fr) minmax(12rem, 1fr) minmax(5.4rem, 0.34fr) auto;
+}
+
+.edge-route-main-grid > .ui-field,
+.edge-form-grid-target > .ui-field {
+    gap: var(--edge-route-field-gap);
+    grid-template-rows:
+        minmax(var(--edge-route-field-label-row), auto)
+        minmax(var(--edge-route-field-control-row), auto)
+        minmax(0, 1fr);
+    height: 100%;
+}
+
+.edge-route-main-grid > .ui-field > .ui-field-label,
+.edge-form-grid-target > .ui-field > .ui-field-label,
+.edge-route-main-grid > .ui-field > .ui-field-helper,
+.edge-form-grid-target > .ui-field > .ui-field-helper {
+    align-self: start;
+}
+
+.edge-route-main-grid > .ui-field > input,
+.edge-form-grid-target > .ui-field > input,
+.edge-route-main-grid > .ui-field > select,
+.edge-form-grid-target > .ui-field > select {
+    align-self: end;
 }
 
 .edge-form-grid-two {
@@ -1313,10 +1344,12 @@ textarea {
 
 .edge-target-actions {
     align-items: center;
+    align-self: start;
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
     min-width: max-content;
+    padding-top: calc(var(--edge-route-field-label-row, 1.9rem) + var(--edge-route-field-gap, 0.34rem));
 }
 
 .edge-target-check-message {
@@ -3062,6 +3095,16 @@ textarea {
     .auth-login-shell,
     .setup-reference {
         grid-template-columns: 1fr;
+    }
+
+    .edge-route-main-grid > .ui-field,
+    .edge-form-grid-target > .ui-field {
+        grid-template-rows: none;
+        height: auto;
+    }
+
+    .edge-target-actions {
+        padding-top: 0;
     }
 
     .auth-login-showcase {

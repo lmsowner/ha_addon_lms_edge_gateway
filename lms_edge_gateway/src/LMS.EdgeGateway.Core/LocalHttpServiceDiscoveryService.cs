@@ -208,7 +208,13 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     {
         var scopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (request.IncludeLocalhost) scopes.Add("Localhost");
-        if (request.IncludeLan) scopes.Add("LAN");
+        if (request.IncludeLan)
+        {
+            scopes.Add("LAN");
+            scopes.Add("SSDP");
+            scopes.Add("mDNS");
+            scopes.Add("WS-Discovery");
+        }
         if (request.IncludeTailnet) scopes.Add("Tailnet");
         if (request.IncludeDocker) scopes.Add("Docker");
         scopes.Add("Home Assistant");
@@ -368,6 +374,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         private const int MaxConcurrentHostChecks = 512;
         private const int MaxConcurrentTcpLivenessChecks = 2048;
         private const int MaxConcurrentProbes = 512;
+        private static readonly TimeSpan MulticastDiscoveryTimeout = TimeSpan.FromMilliseconds(1250);
         public string Name => "LAN discovery";
 
         public bool IsEnabled(LocalHttpServiceDiscoveryRequest request) => request.IncludeLocalhost || request.IncludeLan || request.IncludeTailnet;
@@ -377,49 +384,81 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
             CancellationToken cancellationToken)
         {
-            var hosts = new List<ProbeHost>();
+            var stages = new List<DiscoveryStage>();
+            var seenHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (request.IncludeLocalhost)
             {
-                hosts.AddRange(BuildLocalhostHosts());
+                AddStage(stages, seenHosts, "Localhost", BuildLocalhostHosts());
             }
 
             if (request.IncludeLan)
             {
-                hosts.AddRange(await BuildLanHostsAsync(settings, cancellationToken));
+                var scanPlan = await BuildLanScanPlanAsync(settings, cancellationToken);
+                AddStage(stages, seenHosts, "ARP cache", scanPlan.KnownHosts);
+                AddStage(stages, seenHosts, "SSDP discovery", await DiscoverSsdpHostsAsync(progress, cancellationToken));
+                AddStage(stages, seenHosts, "mDNS discovery", await DiscoverMdnsHostsAsync(progress, cancellationToken));
+                AddStage(stages, seenHosts, "WS-Discovery", await DiscoverWsDiscoveryHostsAsync(progress, cancellationToken));
+                AddStage(stages, seenHosts, "Targeted LAN scan", scanPlan.ScanHosts);
             }
 
             if (request.IncludeTailnet)
             {
-                hosts.AddRange(await BuildTailnetHostsAsync(cancellationToken));
+                AddStage(stages, seenHosts, "Tailnet", await BuildTailnetHostsAsync(cancellationToken));
             }
 
-            var distinctHosts = hosts
-                .DistinctBy(host => $"{host.Scope}|{host.ProbeAddressName}", StringComparer.OrdinalIgnoreCase)
-                .ToArray();
             var portCount = BuildPortList(settings).Count;
-            var progressState = new HostDiscoveryProgressState(distinctHosts.Length);
+            var totalHosts = stages.Sum(stage => stage.Hosts.Count);
+            var progressState = new HostDiscoveryProgressState(totalHosts);
             progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                distinctHosts.Length == 0 ? "No local subnet scan targets." : $"Checking {distinctHosts.Length} local address(es); live hosts are scanned across {portCount} approved HTTP/S port(s) immediately.",
+                totalHosts == 0 ? "No local discovery targets." : $"Checking {totalHosts} staged local discovery target(s); discovered hosts are probed before the wider LAN scan.",
                 0,
-                distinctHosts.Length,
+                totalHosts,
                 0));
 
             var results = new ConcurrentBag<DiscoveryEvidence>();
             using var hostConcurrency = new SemaphoreSlim(MaxConcurrentHostChecks);
             using var tcpConcurrency = new SemaphoreSlim(MaxConcurrentTcpLivenessChecks);
             using var serviceConcurrency = new SemaphoreSlim(MaxConcurrentProbes);
-            await Task.WhenAll(distinctHosts.Select(host => ProbeHostWhenReachableAsync(
-                host,
-                settings,
-                hostConcurrency,
-                tcpConcurrency,
-                serviceConcurrency,
-                results,
-                progressState,
-                progress,
-                cancellationToken)));
+            foreach (var stage in stages)
+            {
+                progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
+                    $"{stage.Name}: checking {stage.Hosts.Count} target(s) across {portCount} approved HTTP/S port(s).",
+                    progressState.CheckedCount,
+                    progressState.TotalHostCount,
+                    progressState.FoundCount));
+
+                await Task.WhenAll(stage.Hosts.Select(host => ProbeHostWhenReachableAsync(
+                    host,
+                    settings,
+                    hostConcurrency,
+                    tcpConcurrency,
+                    serviceConcurrency,
+                    results,
+                    progressState,
+                    progress,
+                    cancellationToken)));
+            }
+
             return results.ToArray();
         }
+
+        private static void AddStage(
+            ICollection<DiscoveryStage> stages,
+            ISet<string> seenHosts,
+            string name,
+            IEnumerable<ProbeHost> hosts)
+        {
+            var distinctHosts = hosts
+                .Where(host => seenHosts.Add(BuildProbeHostKey(host)))
+                .ToArray();
+            if (distinctHosts.Length > 0)
+            {
+                stages.Add(new DiscoveryStage(name, distinctHosts));
+            }
+        }
+
+        private static string BuildProbeHostKey(ProbeHost host) =>
+            $"{host.ProbeAddressName}|{host.TargetHost}|{string.Join(",", host.KnownPorts.Order())}";
 
         private static async Task ProbeHostWhenReachableAsync(
             ProbeHost host,
@@ -462,7 +501,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 return;
             }
 
-            var liveCount = progressState.IncrementLiveCount();
+            progressState.IncrementLiveCount();
             var ports = host.KnownPorts.Count > 0 ? host.KnownPorts : BuildPortList(settings);
             progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
                 $"Live host {host.ProbeAddressName}; scanning {ports.Count} HTTP/S port(s).",
@@ -598,7 +637,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 : [new ProbeHost("localhost", IPAddress.Loopback, "localhost", "Localhost", "127.0.0.1", "Local host", true, true, ports)];
         }
 
-        private static async Task<IReadOnlyList<ProbeHost>> BuildLanHostsAsync(DiscoverySettings settings, CancellationToken cancellationToken)
+        private static async Task<LanScanPlan> BuildLanScanPlanAsync(DiscoverySettings settings, CancellationToken cancellationToken)
         {
             var ports = BuildPortList(settings);
             var knownAddresses = await LoadLanNeighbourAddressesAsync(cancellationToken);
@@ -613,11 +652,11 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 .Select(value => IPAddress.TryParse(value, out var address) ? address : null)
                 .Where(address => address is not null)
                 .Cast<IPAddress>();
-            var addresses = cidrAddresses
-                .Concat(fallbackAddresses)
-                .Concat(neighbourAddresses);
+            var addresses = neighbourAddresses
+                .Concat(cidrAddresses)
+                .Concat(fallbackAddresses);
 
-            return addresses
+            var hosts = addresses
                 .Distinct(IPAddressComparer.Instance)
                 .Select(address =>
                 {
@@ -635,6 +674,419 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                         ports);
                 })
                 .ToArray();
+
+            return new LanScanPlan(
+                hosts.Where(host => host.IsKnownLive).ToArray(),
+                hosts.Where(host => !host.IsKnownLive).ToArray());
+        }
+
+        private static async Task<IReadOnlyList<ProbeHost>> DiscoverSsdpHostsAsync(
+            IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
+            CancellationToken cancellationToken)
+        {
+            progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate("SSDP discovery: listening for HTTP service advertisements.", 0, 0, 0));
+            const string request = "M-SEARCH * HTTP/1.1\r\n" +
+                                   "HOST: 239.255.255.250:1900\r\n" +
+                                   "MAN: \"ssdp:discover\"\r\n" +
+                                   "MX: 1\r\n" +
+                                   "ST: ssdp:all\r\n" +
+                                   "USER-AGENT: LinuxMadeSane/1.0 EdgeGateway/1.0\r\n\r\n";
+
+            try
+            {
+                using var client = CreateUdpDiscoveryClient();
+                var payload = Encoding.ASCII.GetBytes(request);
+                await client.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900));
+                var responses = await ReceiveUdpResponsesAsync(client, MulticastDiscoveryTimeout, cancellationToken);
+                return responses
+                    .SelectMany(response => ParseSsdpProbeHosts(response.Buffer))
+                    .DistinctBy(BuildProbeHostKey, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        private static IEnumerable<ProbeHost> ParseSsdpProbeHosts(byte[] payload)
+        {
+            var text = Encoding.UTF8.GetString(payload);
+            var location = ReadHeaderValue(text, "LOCATION");
+            if (string.IsNullOrWhiteSpace(location))
+            {
+                yield break;
+            }
+
+            var displayName = FirstNonBlank(ReadHeaderValue(text, "SERVER"), ReadHeaderValue(text, "ST"), "SSDP device");
+            var host = TryBuildProbeHostFromUrl(location, "SSDP", displayName);
+            if (host is not null)
+            {
+                yield return host;
+            }
+        }
+
+        private static async Task<IReadOnlyList<ProbeHost>> DiscoverMdnsHostsAsync(
+            IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
+            CancellationToken cancellationToken)
+        {
+            progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate("mDNS discovery: querying local HTTP service records.", 0, 0, 0));
+            try
+            {
+                using var client = CreateUdpDiscoveryClient();
+                var payload = BuildMdnsQuery(
+                    "_http._tcp.local",
+                    "_https._tcp.local",
+                    "_home-assistant._tcp.local",
+                    "_hap._tcp.local");
+                await client.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Parse("224.0.0.251"), 5353));
+                var responses = await ReceiveUdpResponsesAsync(client, MulticastDiscoveryTimeout, cancellationToken);
+                return responses
+                    .SelectMany(response => ParseMdnsProbeHosts(response.Buffer))
+                    .DistinctBy(BuildProbeHostKey, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        private static async Task<IReadOnlyList<ProbeHost>> DiscoverWsDiscoveryHostsAsync(
+            IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
+            CancellationToken cancellationToken)
+        {
+            progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate("WS-Discovery: probing network devices for HTTP addresses.", 0, 0, 0));
+            var messageId = Guid.NewGuid();
+            var request = $$"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope"
+                            xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+                            xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery">
+                  <e:Header>
+                    <w:MessageID>uuid:{{messageId}}</w:MessageID>
+                    <w:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To>
+                    <w:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action>
+                  </e:Header>
+                  <e:Body>
+                    <d:Probe />
+                  </e:Body>
+                </e:Envelope>
+                """;
+
+            try
+            {
+                using var client = CreateUdpDiscoveryClient();
+                var payload = Encoding.UTF8.GetBytes(request);
+                await client.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Parse("239.255.255.250"), 3702));
+                var responses = await ReceiveUdpResponsesAsync(client, MulticastDiscoveryTimeout, cancellationToken);
+                return responses
+                    .SelectMany(response => ParseWsDiscoveryProbeHosts(response.Buffer))
+                    .DistinctBy(BuildProbeHostKey, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        private static IEnumerable<ProbeHost> ParseWsDiscoveryProbeHosts(byte[] payload)
+        {
+            var text = Encoding.UTF8.GetString(payload);
+            foreach (var url in ExtractHttpUrls(text))
+            {
+                var host = TryBuildProbeHostFromUrl(url, "WS-Discovery", "WS-Discovery device");
+                if (host is not null)
+                {
+                    yield return host;
+                }
+            }
+        }
+
+        private static UdpClient CreateUdpDiscoveryClient()
+        {
+            var client = new UdpClient(AddressFamily.InterNetwork);
+            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            client.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 2);
+            return client;
+        }
+
+        private static async Task<IReadOnlyList<UdpReceiveResult>> ReceiveUdpResponsesAsync(
+            UdpClient client,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            var responses = new List<UdpReceiveResult>();
+            var deadline = DateTimeOffset.UtcNow + timeout;
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    break;
+                }
+
+                using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutSource.CancelAfter(remaining);
+                try
+                {
+                    responses.Add(await client.ReceiveAsync(timeoutSource.Token));
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+
+            return responses;
+        }
+
+        private static string? ReadHeaderValue(string text, string name)
+        {
+            foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var separatorIndex = line.IndexOf(':', StringComparison.Ordinal);
+                if (separatorIndex <= 0 ||
+                    !line[..separatorIndex].Trim().Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return line[(separatorIndex + 1)..].Trim();
+            }
+
+            return null;
+        }
+
+        private static IEnumerable<string> ExtractHttpUrls(string text)
+        {
+            foreach (Match match in Regex.Matches(text, @"https?://[^\s<>'""]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                yield return match.Value.TrimEnd('.', ',', ';', ')', ']', '"', '\'');
+            }
+        }
+
+        private static ProbeHost? TryBuildProbeHostFromUrl(string value, string scope, string? displayName)
+        {
+            if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) ||
+                uri.Scheme is not "http" and not "https" ||
+                string.IsNullOrWhiteSpace(uri.Host))
+            {
+                return null;
+            }
+
+            var port = uri.IsDefaultPort ? uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? 443 : 80 : uri.Port;
+            if (port is <= 0 or > 65535)
+            {
+                return null;
+            }
+
+            var host = uri.Host.Trim('[', ']');
+            var address = IPAddress.TryParse(host, out var parsedAddress) && parsedAddress.AddressFamily == AddressFamily.InterNetwork
+                ? parsedAddress
+                : null;
+            return new ProbeHost(
+                host,
+                address,
+                host,
+                scope,
+                address?.ToString(),
+                displayName,
+                false,
+                true,
+                [port]);
+        }
+
+        private static byte[] BuildMdnsQuery(params string[] names)
+        {
+            var bytes = new List<byte>(512);
+            WriteUInt16(bytes, 0);
+            WriteUInt16(bytes, 0);
+            WriteUInt16(bytes, (ushort)names.Length);
+            WriteUInt16(bytes, 0);
+            WriteUInt16(bytes, 0);
+            WriteUInt16(bytes, 0);
+            foreach (var name in names)
+            {
+                foreach (var label in name.Trim('.').Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var labelBytes = Encoding.ASCII.GetBytes(label);
+                    bytes.Add((byte)Math.Min(labelBytes.Length, 63));
+                    bytes.AddRange(labelBytes.Take(63));
+                }
+
+                bytes.Add(0);
+                WriteUInt16(bytes, 12);
+                WriteUInt16(bytes, 0x8001);
+            }
+
+            return bytes.ToArray();
+        }
+
+        private static IEnumerable<ProbeHost> ParseMdnsProbeHosts(byte[] payload)
+        {
+            if (payload.Length < 12)
+            {
+                yield break;
+            }
+
+            var offset = 4;
+            var questionCount = ReadUInt16(payload, ref offset);
+            var answerCount = ReadUInt16(payload, ref offset);
+            var authorityCount = ReadUInt16(payload, ref offset);
+            var additionalCount = ReadUInt16(payload, ref offset);
+            for (var index = 0; index < questionCount && offset < payload.Length; index++)
+            {
+                _ = ReadDnsName(payload, ref offset);
+                offset += 4;
+            }
+
+            var srvRecords = new Dictionary<string, MdnsSrvRecord>(StringComparer.OrdinalIgnoreCase);
+            var addresses = new Dictionary<string, IPAddress>(StringComparer.OrdinalIgnoreCase);
+            var recordCount = answerCount + authorityCount + additionalCount;
+            for (var index = 0; index < recordCount && offset < payload.Length; index++)
+            {
+                var name = ReadDnsName(payload, ref offset);
+                if (string.IsNullOrWhiteSpace(name) || offset + 10 > payload.Length)
+                {
+                    yield break;
+                }
+
+                var type = ReadUInt16(payload, ref offset);
+                _ = ReadUInt16(payload, ref offset);
+                offset += 4;
+                var dataLength = ReadUInt16(payload, ref offset);
+                var dataStart = offset;
+                var dataEnd = Math.Min(payload.Length, dataStart + dataLength);
+                if (dataEnd < dataStart)
+                {
+                    yield break;
+                }
+
+                if (type == 1 && dataLength == 4)
+                {
+                    var address = new IPAddress(payload.AsSpan(dataStart, 4));
+                    if (IsPrivateIPv4(address))
+                    {
+                        addresses[name.TrimEnd('.')] = address;
+                    }
+                }
+                else if (type == 33 && dataLength >= 6)
+                {
+                    var srvOffset = dataStart + 4;
+                    var port = ReadUInt16(payload, ref srvOffset);
+                    var target = ReadDnsName(payload, ref srvOffset).TrimEnd('.');
+                    if (port is > 0 and <= 65535 && !string.IsNullOrWhiteSpace(target))
+                    {
+                        srvRecords[name.TrimEnd('.')] = new MdnsSrvRecord(target, port);
+                    }
+                }
+
+                offset = dataEnd;
+            }
+
+            foreach (var record in srvRecords)
+            {
+                var serviceName = record.Key;
+                var target = record.Value.Target.TrimEnd('.');
+                var address = addresses.GetValueOrDefault(target);
+                var host = address?.ToString() ?? target;
+                var probeHost = new ProbeHost(
+                    host,
+                    address,
+                    host,
+                    "mDNS",
+                    address?.ToString(),
+                    CleanMdnsServiceName(serviceName),
+                    false,
+                    true,
+                    [record.Value.Port]);
+                yield return probeHost;
+            }
+        }
+
+        private static string ReadDnsName(byte[] payload, ref int offset)
+        {
+            var labels = new List<string>();
+            var position = offset;
+            var jumped = false;
+            var guard = 0;
+            while (position < payload.Length && guard++ < 64)
+            {
+                var length = payload[position++];
+                if (length == 0)
+                {
+                    if (!jumped)
+                    {
+                        offset = position;
+                    }
+
+                    break;
+                }
+
+                if ((length & 0xC0) == 0xC0)
+                {
+                    if (position >= payload.Length)
+                    {
+                        break;
+                    }
+
+                    var pointer = ((length & 0x3F) << 8) | payload[position++];
+                    if (!jumped)
+                    {
+                        offset = position;
+                    }
+
+                    position = pointer;
+                    jumped = true;
+                    continue;
+                }
+
+                if (position + length > payload.Length)
+                {
+                    break;
+                }
+
+                labels.Add(Encoding.UTF8.GetString(payload, position, length));
+                position += length;
+            }
+
+            return string.Join('.', labels);
+        }
+
+        private static ushort ReadUInt16(byte[] payload, ref int offset)
+        {
+            if (offset + 2 > payload.Length)
+            {
+                offset = payload.Length;
+                return 0;
+            }
+
+            var value = (ushort)((payload[offset] << 8) | payload[offset + 1]);
+            offset += 2;
+            return value;
+        }
+
+        private static void WriteUInt16(ICollection<byte> bytes, int value)
+        {
+            bytes.Add((byte)(value >> 8));
+            bytes.Add((byte)value);
+        }
+
+        private static string CleanMdnsServiceName(string value)
+        {
+            var name = value.TrimEnd('.');
+            foreach (var suffix in new[] { "._http._tcp.local", "._https._tcp.local", "._home-assistant._tcp.local", "._hap._tcp.local" })
+            {
+                if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name[..^suffix.Length];
+                    break;
+                }
+            }
+
+            return string.IsNullOrWhiteSpace(name) ? "mDNS service" : name.Replace('\\', ' ');
         }
 
         private static async Task<IReadOnlyList<string>> LoadSupervisorLanCidrsAsync(DiscoverySettings settings, CancellationToken cancellationToken)
@@ -685,7 +1137,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
             if (item.TryGetProperty("ipv4", out var ipv4))
             {
-                foreach (var cidr in ExtractIpv4Cidrs(ipv4))
+                foreach (var cidr in ExtractIpv4Cidrs(ipv4, item))
                 {
                     yield return cidr;
                 }
@@ -697,13 +1149,13 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             }
         }
 
-        private static IEnumerable<string> ExtractIpv4Cidrs(JsonElement element)
+        private static IEnumerable<string> ExtractIpv4Cidrs(JsonElement element, params JsonElement[] fallbackContexts)
         {
             if (element.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in element.EnumerateArray())
                 {
-                    foreach (var cidr in ExtractIpv4Cidrs(item))
+                    foreach (var cidr in ExtractIpv4Cidrs(item, fallbackContexts))
                     {
                         yield return cidr;
                     }
@@ -717,7 +1169,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 yield break;
             }
 
-            foreach (var name in new[] { "ip_address", "address", "addresses" })
+            foreach (var name in new[] { "ip_address", "address", "addresses", "ip", "ipv4_address" })
             {
                 if (!element.TryGetProperty(name, out var property))
                 {
@@ -726,7 +1178,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
                 if (property.ValueKind == JsonValueKind.String)
                 {
-                    var cidr = BuildIpv4Cidr(property.GetString(), element);
+                    var cidr = BuildIpv4Cidr(property.GetString(), element, fallbackContexts);
                     if (!string.IsNullOrWhiteSpace(cidr))
                     {
                         yield return cidr;
@@ -738,7 +1190,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     {
                         if (item.ValueKind == JsonValueKind.String)
                         {
-                            var cidr = BuildIpv4Cidr(item.GetString(), element);
+                            var cidr = BuildIpv4Cidr(item.GetString(), element, fallbackContexts);
                             if (!string.IsNullOrWhiteSpace(cidr))
                             {
                                 yield return cidr;
@@ -746,7 +1198,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                         }
                         else
                         {
-                            foreach (var cidr in ExtractIpv4Cidrs(item))
+                            foreach (var cidr in ExtractIpv4Cidrs(item, PrependContext(element, fallbackContexts)))
                             {
                                 yield return cidr;
                             }
@@ -755,7 +1207,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 }
                 else if (property.ValueKind == JsonValueKind.Object)
                 {
-                    foreach (var cidr in ExtractIpv4Cidrs(property))
+                    foreach (var cidr in ExtractIpv4Cidrs(property, PrependContext(element, fallbackContexts)))
                     {
                         yield return cidr;
                     }
@@ -763,7 +1215,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             }
         }
 
-        private static string? BuildIpv4Cidr(string? value, JsonElement context)
+        private static string? BuildIpv4Cidr(string? value, JsonElement context, JsonElement[] fallbackContexts)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -783,13 +1235,41 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 return null;
             }
 
-            var prefixLength = ReadPrefixLength(context) ?? ReadNetmaskPrefixLength(context) ?? 24;
+            var prefixLength = ReadPrefixLengthFromContexts(context, fallbackContexts) ?? 24;
             return $"{address}/{prefixLength}";
+        }
+
+        private static int? ReadPrefixLengthFromContexts(JsonElement context, JsonElement[] fallbackContexts)
+        {
+            var prefixLength = ReadPrefixLength(context) ?? ReadNetmaskPrefixLength(context);
+            if (prefixLength is not null)
+            {
+                return prefixLength;
+            }
+
+            foreach (var fallbackContext in fallbackContexts)
+            {
+                prefixLength = ReadPrefixLength(fallbackContext) ?? ReadNetmaskPrefixLength(fallbackContext);
+                if (prefixLength is not null)
+                {
+                    return prefixLength;
+                }
+            }
+
+            return null;
+        }
+
+        private static JsonElement[] PrependContext(JsonElement context, JsonElement[] fallbackContexts)
+        {
+            var contexts = new JsonElement[fallbackContexts.Length + 1];
+            contexts[0] = context;
+            fallbackContexts.CopyTo(contexts, 1);
+            return contexts;
         }
 
         private static int? ReadPrefixLength(JsonElement element)
         {
-            foreach (var name in new[] { "prefix", "prefix_length", "prefixLength", "subnet_prefix", "network_prefix", "cidr_prefix" })
+            foreach (var name in new[] { "prefix", "prefix_length", "prefixLength", "subnet_prefix", "subnet_prefix_length", "network_prefix", "network_prefix_length", "cidr_prefix", "cidrPrefix", "mask_prefix" })
             {
                 if (!element.TryGetProperty(name, out var property))
                 {
@@ -814,7 +1294,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
         private static int? ReadNetmaskPrefixLength(JsonElement element)
         {
-            foreach (var name in new[] { "netmask", "subnet_mask", "mask" })
+            foreach (var name in new[] { "netmask", "subnet_mask", "network_mask", "mask" })
             {
                 var mask = GetJsonString(element, name);
                 if (string.IsNullOrWhiteSpace(mask) || !IPAddress.TryParse(mask, out var address))
@@ -1718,6 +2198,12 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         bool IsKnownLive,
         IReadOnlyList<int> KnownPorts);
 
+    private sealed record DiscoveryStage(string Name, IReadOnlyList<ProbeHost> Hosts);
+
+    private sealed record LanScanPlan(IReadOnlyList<ProbeHost> KnownHosts, IReadOnlyList<ProbeHost> ScanHosts);
+
+    private sealed record MdnsSrvRecord(string Target, int Port);
+
     private sealed record LocalInterfaceSubnet(IPAddress Address, IPAddress Mask);
 
     private sealed record DiscoverySettings(
@@ -2029,15 +2515,46 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 continue;
             }
 
-            var hostCount = Math.Max(0, (1 << Math.Clamp(32 - prefixLength, 0, 16)) - 2);
             var baseValue = AddressToUInt32(network) & MaskForPrefix(prefixLength);
-            for (var offset = 1; offset <= hostCount; offset++)
+            var broadcastValue = baseValue | ~MaskForPrefix(prefixLength);
+            foreach (var candidate in EnumerateCidrHostsInProbeOrder(AddressToUInt32(network), baseValue, broadcastValue, prefixLength))
             {
-                result.Add(UInt32ToAddress(baseValue + (uint)offset));
+                result.Add(UInt32ToAddress(candidate));
             }
         }
 
         return result;
+    }
+
+    private static IEnumerable<uint> EnumerateCidrHostsInProbeOrder(
+        uint requestedAddressValue,
+        uint baseValue,
+        uint broadcastValue,
+        int prefixLength)
+    {
+        var emitted = new HashSet<uint>();
+        if (prefixLength < 24)
+        {
+            var localClassCBase = requestedAddressValue & MaskForPrefix(24);
+            var localClassCBroadcast = localClassCBase | ~MaskForPrefix(24);
+            for (var candidate = Math.Max(baseValue + 1, localClassCBase + 1);
+                 candidate < broadcastValue && candidate < localClassCBroadcast;
+                 candidate++)
+            {
+                if (emitted.Add(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        for (var candidate = baseValue + 1; candidate < broadcastValue; candidate++)
+        {
+            if (emitted.Add(candidate))
+            {
+                yield return candidate;
+            }
+        }
     }
 
     private static bool IsPrivateCidr(string cidr)

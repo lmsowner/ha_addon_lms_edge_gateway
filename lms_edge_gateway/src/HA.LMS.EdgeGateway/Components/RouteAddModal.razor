@@ -159,7 +159,7 @@
                 <header class="edge-modal-header">
                     <div>
                         <h2 id="edge-http-service-title">HTTP/S service lookup</h2>
-                        <p class="meta-text">Scans Home Assistant plus the local IPv4 subnet on approved HTTP/S ports.</p>
+                        <p class="meta-text">Uses cached, ARP, SSDP, mDNS, WS-Discovery, Docker, and targeted LAN checks.</p>
                     </div>
                     <button class="edge-modal-close" type="button" aria-label="Close HTTP/S service lookup" @onclick="CloseHttpServicePicker">x</button>
                 </header>
@@ -168,8 +168,8 @@
                     <div class="edge-http-service-picker">
                         <div class="table-header edge-http-service-picker-header">
                             <div>
-                                <strong>Local subnet scan</strong>
-                                <p class="meta-text">Cached results are shown first. Scan refreshes localhost and every address in the detected local IPv4 subnet.</p>
+                                <strong>Staged service discovery</strong>
+                                <p class="meta-text">Fast discovery sources run first. The wider LAN range is checked last.</p>
                             </div>
                             <div class="edge-http-service-actions">
                                 <LmsButton Label="@(isDiscoveringHttpServices ? "Scanning..." : "Scan")"
@@ -183,9 +183,6 @@
                         @if (isDiscoveringHttpServices)
                         {
                             <div class="edge-http-service-scan-state" aria-live="polite">
-                                <span class="edge-loading-progress">
-                                    <span class="edge-loading-progress-fill"></span>
-                                </span>
                                 <p>@BuildHttpScanSummary()</p>
                             </div>
                         }
@@ -433,7 +430,7 @@
         httpServiceSuggestions = SortHttpServiceSuggestions(
             (await HttpServiceDiscovery.GetCachedAsync()).Where(IsLocalHttpServiceCandidate));
         httpServiceDiscoveryMessage = httpServiceSuggestions.Count == 0
-            ? "No cached service candidates yet. Run Scan to search the local IPv4 subnet."
+            ? "No cached service candidates yet. Run Scan to discover local services."
             : $"Showing {httpServiceSuggestions.Count} cached service candidate(s). Checking they still respond.";
         httpServiceDiscoveryStatus = httpServiceSuggestions.Count == 0 ? string.Empty : "Checking cached service candidates...";
         httpServiceScanFoundCount = 0;
@@ -458,7 +455,7 @@
         isDiscoveringHttpServices = true;
         CancelHttpServiceValidation();
         httpServiceDiscoveryMessage = "Scan running. Cached candidates stay visible while fresh results update.";
-        httpServiceDiscoveryStatus = "Starting local subnet scan...";
+        httpServiceDiscoveryStatus = "Starting staged service discovery...";
         httpServiceScanFoundCount = 0;
         httpServiceScanProbedCount = 0;
         httpServiceScanTotalCount = 0;
@@ -467,7 +464,7 @@
             IncludeLocalhost: true,
             IncludeLan: true,
             IncludeTailnet: false,
-            IncludeDocker: false);
+            IncludeDocker: true);
         httpServiceScanCancellation = new CancellationTokenSource();
         _ = RunHttpServicesScanAsync(request, httpServiceScanCancellation.Token);
         return Task.CompletedTask;
@@ -588,7 +585,7 @@
                 {
                     httpServiceSuggestions = SortHttpServiceSuggestions(results.Where(IsLocalHttpServiceCandidate));
                     httpServiceDiscoveryMessage = httpServiceSuggestions.Count == 0
-                        ? "No cached service candidates are still responding. Run Scan to search the local IPv4 subnet."
+                        ? "No cached service candidates are still responding. Run Scan to discover local services."
                         : $"{httpServiceSuggestions.Count} cached service candidate(s) still responding.";
                     httpServiceDiscoveryStatus = string.Empty;
                     StateHasChanged();
@@ -735,9 +732,12 @@
             {
                 "Home Assistant" => 0,
                 "Localhost" => 0,
-                "Docker" => 1,
-                "LAN" => 2,
-                "Tailnet" => 3,
+                "SSDP" => 1,
+                "mDNS" => 1,
+                "WS-Discovery" => 1,
+                "Docker" => 2,
+                "LAN" => 3,
+                "Tailnet" => 4,
                 _ => 4
             })
             .ThenBy(service => service.Host, StringComparer.OrdinalIgnoreCase)
@@ -746,7 +746,6 @@
             .ToArray();
 
     private static bool IsLocalHttpServiceCandidate(LocalHttpServiceEndpoint service) =>
-        !service.Scope.Equals("Docker", StringComparison.OrdinalIgnoreCase) &&
         !service.Scope.Equals("Tailnet", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildHttpServiceKey(LocalHttpServiceEndpoint service) =>
