@@ -10,14 +10,14 @@ public sealed class EdgeGatewayCaddyStartupService(
     {
         using var scope = serviceProvider.CreateScope();
         var provisioningService = scope.ServiceProvider.GetRequiredService<IEdgeGatewayRelayProvisioningService>();
-        var result = await provisioningService.RefreshCaddyConfigurationAsync(cancellationToken);
+        var result = await provisioningService.RefreshPublishedConfigurationAsync(cancellationToken);
         if (result.Success)
         {
-            logger.LogInformation("Caddy configuration refreshed on startup: {Summary}", result.Summary);
+            logger.LogInformation("Published configuration refreshed on startup: {Summary}", result.Summary);
             return;
         }
 
-        logger.LogWarning("Caddy configuration refresh failed on startup: {Summary}", result.Summary);
+        logger.LogWarning("Published configuration refresh failed on startup: {Summary}", result.Summary);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

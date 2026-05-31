@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.15
+
+- Reconciles managed Cloudflare Tunnel ingress routes for every saved app when the add-on starts.
+- Uses the same tunnel ingress origin settings on startup that edit/save applies to existing app routes.
+- Prevents version updates from leaving old Cloudflare tunnel entries stale until each app is manually re-saved.
+
 ## 0.1.14
 
 - Reads Home Assistant's frontend `hass.selectedTheme` and `hass.themes.darkMode` state before falling back to CSS inference.

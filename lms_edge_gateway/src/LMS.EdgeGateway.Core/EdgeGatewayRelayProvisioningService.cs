@@ -1503,6 +1503,116 @@ public sealed class EdgeGatewayRelayProvisioningService(
         }
     }
 
+    public async Task<EdgeGatewayCaddyConfigurationResult> RefreshPublishedConfigurationAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var steps = new List<string>();
+        var warnings = new List<string>();
+        try
+        {
+            var configuration = await configurationStore.LoadAsync(cancellationToken);
+            var caddyResult = await ApplyCaddyConfigurationAsync(configuration, cancellationToken);
+            if (caddyResult.Success)
+            {
+                steps.Add(caddyResult.Message);
+            }
+            else
+            {
+                warnings.Add(caddyResult.Message);
+            }
+
+            await ReconcileCloudflareTunnelIngressAsync(configuration, steps, warnings, cancellationToken);
+
+            var summary = steps.Count == 0
+                ? "No published configuration needed refreshing."
+                : string.Join(" ", steps);
+            return new EdgeGatewayCaddyConfigurationResult(caddyResult.Success, summary, warnings);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return new EdgeGatewayCaddyConfigurationResult(
+                false,
+                $"Could not refresh published configuration: {exception.Message}",
+                [$"Could not refresh published configuration: {exception.Message}"]);
+        }
+    }
+
+    private async Task ReconcileCloudflareTunnelIngressAsync(
+        EdgeGatewayConfiguration configuration,
+        ICollection<string> steps,
+        ICollection<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        var relays = configuration.RelayZones
+            .Where(IsRelayProvisioned)
+            .ToArray();
+        if (relays.Length == 0)
+        {
+            return;
+        }
+
+        var apiToken = await tokenStore.GetTokenAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(apiToken))
+        {
+            warnings.Add("Cloudflare API token is not configured; skipped startup tunnel ingress reconciliation.");
+            return;
+        }
+
+        var zonesResult = await zoneService.ListZonesAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(zonesResult.Error))
+        {
+            warnings.Add($"Cloudflare zones could not be loaded; skipped startup tunnel ingress reconciliation: {zonesResult.Error}");
+            return;
+        }
+
+        var caddyServiceUrl = ResolveCaddyServiceUrl();
+        foreach (var relay in relays)
+        {
+            var zone = zonesResult.Zones.FirstOrDefault(item =>
+                item.Name.Equals(relay.DomainName, StringComparison.OrdinalIgnoreCase));
+            var accountId = !string.IsNullOrWhiteSpace(zone?.AccountId)
+                ? zone.AccountId
+                : configuration.CloudflareTunnel.AccountId;
+            if (string.IsNullOrWhiteSpace(accountId))
+            {
+                warnings.Add($"Cloudflare account id is not known for {relay.DomainName}; skipped tunnel ingress reconciliation.");
+                continue;
+            }
+
+            var tunnelId = !string.IsNullOrWhiteSpace(relay.TunnelId)
+                ? relay.TunnelId
+                : configuration.CloudflareTunnel.TunnelId;
+            if (string.IsNullOrWhiteSpace(tunnelId))
+            {
+                warnings.Add($"Cloudflare tunnel id is not known for {relay.DomainName}; skipped tunnel ingress reconciliation.");
+                continue;
+            }
+
+            var existing = await tunnelService.GetConfigurationAsync(apiToken, accountId, tunnelId, cancellationToken);
+            var applications = configuration.Applications
+                .Where(application => IsApplicationForDomain(application, relay.DomainName))
+                .ToArray();
+            var reconciledRoutes = RebuildManagedTunnelIngressRoutes(existing.Routes, relay, applications, caddyServiceUrl);
+            if (TunnelRoutesEqual(existing.Routes, reconciledRoutes))
+            {
+                steps.Add($"Cloudflare tunnel ingress already matches saved apps for {relay.DomainName}.");
+                continue;
+            }
+
+            await tunnelService.UpdateConfigurationAsync(
+                apiToken,
+                accountId,
+                tunnelId,
+                new CloudflareTunnelConfiguration(reconciledRoutes),
+                cancellationToken);
+            steps.Add($"Reconciled Cloudflare tunnel ingress for {relay.DomainName} ({applications.Length} saved app route(s)).");
+        }
+    }
+
     private async Task<CaddyRouteCheck> TestCaddyApplicationRouteAsync(
         PublishedApplicationDefinition application,
         CancellationToken cancellationToken)
@@ -2622,6 +2732,65 @@ public sealed class EdgeGatewayRelayProvisioningService(
 
         return routes;
     }
+
+    private static IReadOnlyList<CloudflareTunnelRoute> RebuildManagedTunnelIngressRoutes(
+        IReadOnlyList<CloudflareTunnelRoute> existingRoutes,
+        EdgeGatewayRelayZone relay,
+        IReadOnlyList<PublishedApplicationDefinition> applications,
+        string caddyServiceUrl)
+    {
+        var managedHostnames = applications
+            .Select(application => NormalizePublicHostname(application.PublicHostname))
+            .Where(hostname => !string.IsNullOrWhiteSpace(hostname))
+            .Append(relay.WildcardHostname.Trim().TrimEnd('.'))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var routes = existingRoutes
+            .Where(route => !string.IsNullOrWhiteSpace(route.Hostname) &&
+                            !managedHostnames.Contains(route.Hostname.Trim().TrimEnd('.')))
+            .ToList();
+
+        foreach (var applicationGroup in applications
+                     .GroupBy(application => NormalizePublicHostname(application.PublicHostname), StringComparer.OrdinalIgnoreCase)
+                     .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+                     .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var skipUpstreamTlsVerification = applicationGroup.Any(ShouldSkipUpstreamTlsVerification);
+            routes.Add(new CloudflareTunnelRoute(
+                applicationGroup.Key,
+                caddyServiceUrl,
+                BuildOriginRequest(caddyServiceUrl, skipUpstreamTlsVerification)));
+        }
+
+        routes.Add(new CloudflareTunnelRoute(relay.WildcardHostname, caddyServiceUrl, BuildOriginRequest(caddyServiceUrl)));
+        routes.Add(new CloudflareTunnelRoute(string.Empty, "http_status:404"));
+        return routes;
+    }
+
+    private static bool TunnelRoutesEqual(
+        IReadOnlyList<CloudflareTunnelRoute> left,
+        IReadOnlyList<CloudflareTunnelRoute> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!TunnelRoutesEqual(left[index], right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TunnelRoutesEqual(CloudflareTunnelRoute left, CloudflareTunnelRoute right) =>
+        left.Hostname.Trim().TrimEnd('.').Equals(right.Hostname.Trim().TrimEnd('.'), StringComparison.OrdinalIgnoreCase) &&
+        left.Service.Trim().Equals(right.Service.Trim(), StringComparison.OrdinalIgnoreCase) &&
+        left.OriginRequest == right.OriginRequest;
 
     private static IReadOnlyList<CloudflareTunnelRoute> MergeHostnameTunnelRoute(
         IReadOnlyList<CloudflareTunnelRoute> existingRoutes,

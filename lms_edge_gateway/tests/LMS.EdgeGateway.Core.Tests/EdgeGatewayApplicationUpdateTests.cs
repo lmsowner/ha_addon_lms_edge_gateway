@@ -66,6 +66,57 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
             route.Hostname.Equals("old.example.com", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task Startup_refresh_reconciles_stale_cloudflare_tunnel_ingress_for_saved_apps()
+    {
+        Directory.CreateDirectory(tempRoot);
+        var configuration = Configuration() with
+        {
+            Applications =
+            [
+                Configuration().Applications[0] with
+                {
+                    IsEnabled = true,
+                    UpstreamUrl = "https://192.168.15.3:8123"
+                }
+            ]
+        };
+        var configurationStore = new InMemoryConfigurationStore(configuration);
+        var tunnelService = new RecordingTunnelService(
+            new CloudflareTunnelConfiguration(
+            [
+                new CloudflareTunnelRoute("old.example.com", "http://stale-origin:18080"),
+                new CloudflareTunnelRoute("*.ha-app-relay.example.com", "http://stale-origin:18080"),
+                new CloudflareTunnelRoute("external.example.com", "http://external-origin:8080"),
+                new CloudflareTunnelRoute(string.Empty, "http_status:404")
+            ]));
+        var service = new EdgeGatewayRelayProvisioningService(
+            CreateOptions(),
+            new InMemoryTokenStore(),
+            new StaticZoneService(),
+            new RecordingDnsService(),
+            tunnelService,
+            configurationStore,
+            new NeverRunningProcessProbe());
+
+        var result = await service.RefreshPublishedConfigurationAsync();
+
+        Assert.True(result.Success);
+        Assert.Contains("Reconciled Cloudflare tunnel ingress for example.com", result.Summary);
+        Assert.Equal(1, tunnelService.UpdateCount);
+        Assert.Contains(tunnelService.Configuration.Routes, route =>
+            route.Hostname.Equals("old.example.com", StringComparison.OrdinalIgnoreCase) &&
+            route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase) &&
+            route.OriginRequest.NoTlsVerify);
+        Assert.Contains(tunnelService.Configuration.Routes, route =>
+            route.Hostname.Equals("*.ha-app-relay.example.com", StringComparison.OrdinalIgnoreCase) &&
+            route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(tunnelService.Configuration.Routes, route =>
+            route.Hostname.Equals("external.example.com", StringComparison.OrdinalIgnoreCase) &&
+            route.Service.Equals("http://external-origin:8080", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1, tunnelService.Configuration.Routes.Count(route => string.IsNullOrWhiteSpace(route.Hostname)));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(tempRoot))
@@ -206,6 +257,7 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
     private sealed class RecordingTunnelService(CloudflareTunnelConfiguration configuration) : ICloudflareTunnelService
     {
         public CloudflareTunnelConfiguration Configuration { get; private set; } = configuration;
+        public int UpdateCount { get; private set; }
 
         public Task<IReadOnlyList<CloudflareTunnel>> ListTunnelsAsync(
             string apiToken,
@@ -249,6 +301,7 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
             CloudflareTunnelConfiguration configuration,
             CancellationToken cancellationToken = default)
         {
+            UpdateCount++;
             Configuration = configuration;
             return Task.CompletedTask;
         }

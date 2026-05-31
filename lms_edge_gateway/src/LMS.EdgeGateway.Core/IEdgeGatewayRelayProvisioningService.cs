@@ -78,4 +78,7 @@ public interface IEdgeGatewayRelayProvisioningService
 
     Task<EdgeGatewayCaddyConfigurationResult> RefreshCaddyConfigurationAsync(
         CancellationToken cancellationToken = default);
+
+    Task<EdgeGatewayCaddyConfigurationResult> RefreshPublishedConfigurationAsync(
+        CancellationToken cancellationToken = default);
 }
