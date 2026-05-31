@@ -1522,6 +1522,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
             }
 
             await ReconcileCloudflareTunnelIngressAsync(configuration, steps, warnings, cancellationToken);
+            await ValidateConfiguredRelaysAsync(configuration, steps, warnings, cancellationToken);
 
             var summary = steps.Count == 0
                 ? "No published configuration needed refreshing."
@@ -1538,6 +1539,28 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 false,
                 $"Could not refresh published configuration: {exception.Message}",
                 [$"Could not refresh published configuration: {exception.Message}"]);
+        }
+    }
+
+    private async Task ValidateConfiguredRelaysAsync(
+        EdgeGatewayConfiguration configuration,
+        ICollection<string> steps,
+        ICollection<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        foreach (var relay in configuration.RelayZones.Where(IsRelayProvisioned))
+        {
+            var validation = await ValidateRelayAsync(relay.DomainName, cancellationToken);
+            steps.Add($"Relay {relay.DomainName} validation: {validation.Summary}");
+            foreach (var step in validation.Steps)
+            {
+                steps.Add(step);
+            }
+
+            foreach (var warning in validation.Warnings)
+            {
+                warnings.Add(warning);
+            }
         }
     }
 

@@ -103,7 +103,9 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
 
         Assert.True(result.Success);
         Assert.Contains("Reconciled Cloudflare tunnel ingress for example.com", result.Summary);
+        Assert.Contains("Relay example.com validation:", result.Summary);
         Assert.Equal(1, tunnelService.UpdateCount);
+        Assert.True(tunnelService.GetTunnelCount > 0);
         Assert.Contains(tunnelService.Configuration.Routes, route =>
             route.Hostname.Equals("old.example.com", StringComparison.OrdinalIgnoreCase) &&
             route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase) &&
@@ -258,6 +260,7 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
     {
         public CloudflareTunnelConfiguration Configuration { get; private set; } = configuration;
         public int UpdateCount { get; private set; }
+        public int GetTunnelCount { get; private set; }
 
         public Task<IReadOnlyList<CloudflareTunnel>> ListTunnelsAsync(
             string apiToken,
@@ -276,8 +279,10 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
             string apiToken,
             string accountId,
             string tunnelId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<CloudflareTunnel?>(new CloudflareTunnel(
+            CancellationToken cancellationToken = default)
+        {
+            GetTunnelCount++;
+            return Task.FromResult<CloudflareTunnel?>(new CloudflareTunnel(
                 tunnelId,
                 accountId,
                 "tunnel",
@@ -286,6 +291,7 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
                 false,
                 true,
                 DateTimeOffset.UtcNow));
+        }
 
         public Task<CloudflareTunnelConfiguration> GetConfigurationAsync(
             string apiToken,

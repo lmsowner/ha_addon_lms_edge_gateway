@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.16
+
+- Runs relay validation on add-on startup after tunnel ingress reconciliation.
+- Restarts or directly starts cloudflared during startup when Cloudflare reports the saved tunnel is not healthy.
+- Matches the Setup tab validation behavior without requiring the user to open Setup after an update.
+
 ## 0.1.15
 
 - Reconciles managed Cloudflare Tunnel ingress routes for every saved app when the add-on starts.
