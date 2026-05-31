@@ -1,31 +1,53 @@
 (() => {
-    const storageKey = "lms-edge-gateway-theme";
-    const cookieName = "lms_edge_gateway_theme";
+    const modeStorageKey = "lms-edge-gateway-theme-mode";
+    const legacyThemeStorageKey = "lms-edge-gateway-theme";
+    const modeCookieName = "lms_edge_gateway_theme_mode";
+    const legacyThemeCookieName = "lms_edge_gateway_theme";
     const root = document.documentElement;
     const media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
     let blazorListenerAttached = false;
+    let parentThemeObserverAttached = false;
 
     const normalizeTheme = value => value === "dark" || value === "light" ? value : null;
+    const normalizeMode = value => value === "auto" || value === "dark" || value === "light" ? value : null;
 
-    const readCookieTheme = () => normalizeTheme(
-        document.cookie
-            .split(";")
-            .map(value => value.trim())
-            .find(value => value.startsWith(`${cookieName}=`))
-            ?.split("=")[1]);
+    const readCookieValue = name => document.cookie
+        .split(";")
+        .map(value => value.trim())
+        .find(value => value.startsWith(`${name}=`))
+        ?.split("=")[1];
 
-    const hasStoredTheme = () => Boolean(readStoredTheme());
+    const readCookieMode = () => normalizeMode(readCookieValue(modeCookieName));
 
-    const readStoredTheme = () => {
+    const writeCookie = (name, value, maxAge = 31536000) => {
+        document.cookie = `${name}=${value}; Max-Age=${maxAge}; Path=/; SameSite=Lax`;
+    };
+
+    const clearLegacyTheme = () => {
         try {
-            return normalizeTheme(localStorage.getItem(storageKey)) || readCookieTheme();
+            localStorage.removeItem(legacyThemeStorageKey);
         } catch {
-            return readCookieTheme();
+        }
+
+        writeCookie(legacyThemeCookieName, "", 0);
+    };
+
+    const readThemeMode = () => {
+        try {
+            return normalizeMode(localStorage.getItem(modeStorageKey)) || readCookieMode() || "auto";
+        } catch {
+            return readCookieMode() || "auto";
         }
     };
 
-    const writeCookieTheme = theme => {
-        document.cookie = `${cookieName}=${theme}; Max-Age=31536000; Path=/; SameSite=Lax`;
+    const saveThemeMode = mode => {
+        try {
+            localStorage.setItem(modeStorageKey, mode);
+        } catch {
+        }
+
+        writeCookie(modeCookieName, mode);
+        clearLegacyTheme();
     };
 
     const parseRgb = value => {
@@ -108,33 +130,73 @@
         }
     };
 
+    const resolveAutoTheme = () => readHomeAssistantTheme() || (media?.matches ? "dark" : "light");
+
     const readTheme = () => {
-        return readStoredTheme() || readHomeAssistantTheme() || (media?.matches ? "dark" : "light");
+        const mode = readThemeMode();
+        return mode === "auto" ? resolveAutoTheme() : mode;
     };
 
-    const saveTheme = theme => {
-        try {
-            localStorage.setItem(storageKey, theme);
-        } catch {
+    const nextThemeMode = () => {
+        const mode = readThemeMode();
+        if (mode === "auto") {
+            return readTheme() === "dark" ? "light" : "dark";
         }
 
-        writeCookieTheme(theme);
+        return mode === "dark" ? "light" : "auto";
     };
 
-    const applyTheme = theme => {
+    const applyTheme = (theme, mode = readThemeMode()) => {
         root.dataset.theme = theme;
+        root.dataset.themeMode = mode;
         root.style.colorScheme = theme;
 
-        const isDark = theme === "dark";
         for (const button of document.querySelectorAll("[data-theme-toggle]")) {
-            const label = isDark ? "Switch to light mode" : "Switch to dark mode";
+            const label = mode === "auto"
+                ? `Following Home Assistant theme (${theme}). Click to force ${theme === "dark" ? "light" : "dark"} mode.`
+                : `${mode === "dark" ? "Dark" : "Light"} mode forced. Click to ${mode === "dark" ? "force light mode" : "follow Home Assistant theme"}.`;
             button.title = label;
             button.setAttribute("aria-label", label);
-            button.setAttribute("aria-pressed", isDark ? "true" : "false");
+            button.setAttribute("aria-pressed", mode === "auto" ? "mixed" : theme === "dark" ? "true" : "false");
+            button.dataset.themeMode = mode;
         }
     };
 
-    const syncTheme = () => applyTheme(readTheme());
+    const syncTheme = () => applyTheme(readTheme(), readThemeMode());
+
+    const attachParentThemeObserver = () => {
+        if (parentThemeObserverAttached || !window.MutationObserver) {
+            return;
+        }
+
+        try {
+            if (!window.parent || window.parent === window || !window.parent.document) {
+                return;
+            }
+
+            const parentDocument = window.parent.document;
+            const observedElements = [parentDocument.documentElement, parentDocument.body].filter(Boolean);
+            if (observedElements.length === 0) {
+                return;
+            }
+
+            const observer = new MutationObserver(() => {
+                if (readThemeMode() === "auto") {
+                    syncTheme();
+                }
+            });
+            for (const element of observedElements) {
+                observer.observe(element, {
+                    attributes: true,
+                    attributeFilter: ["class", "style", "data-theme", "data-color-scheme", "theme"]
+                });
+            }
+
+            window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+            parentThemeObserverAttached = true;
+        } catch {
+        }
+    };
 
     document.addEventListener("click", event => {
         const button = event.target.closest("[data-theme-toggle]");
@@ -142,9 +204,8 @@
             return;
         }
 
-        const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-        saveTheme(nextTheme);
-        applyTheme(nextTheme);
+        saveThemeMode(event.shiftKey ? "auto" : nextThemeMode());
+        syncTheme();
     });
 
     document.addEventListener("DOMContentLoaded", syncTheme);
@@ -162,24 +223,27 @@
 
     window.addEventListener("load", () => {
         syncTheme();
+        attachParentThemeObserver();
         attachBlazorEnhancedNavigation();
     });
+    window.setTimeout(attachParentThemeObserver, 0);
     window.setTimeout(attachBlazorEnhancedNavigation, 0);
     window.setTimeout(syncTheme, 0);
 
     if (media?.addEventListener) {
-        media.addEventListener("change", event => {
-            if (!hasStoredTheme()) {
-                applyTheme(readHomeAssistantTheme() || (event.matches ? "dark" : "light"));
+        media.addEventListener("change", () => {
+            if (readThemeMode() === "auto") {
+                syncTheme();
             }
         });
     }
 
     window.setInterval(() => {
-        if (!hasStoredTheme()) {
+        if (readThemeMode() === "auto") {
             syncTheme();
         }
     }, 3000);
 
+    clearLegacyTheme();
     syncTheme();
 })();

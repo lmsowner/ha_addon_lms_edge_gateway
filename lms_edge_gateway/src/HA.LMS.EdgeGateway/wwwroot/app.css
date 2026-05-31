@@ -332,6 +332,26 @@ textarea {
     border-color: var(--color-line-strong);
 }
 
+.theme-toggle::after {
+    background: var(--color-accent);
+    border: 2px solid var(--control-background);
+    border-radius: 999px;
+    content: "";
+    height: 0.42rem;
+    opacity: 0;
+    position: absolute;
+    right: 0.18rem;
+    top: 0.18rem;
+    transform: scale(0.75);
+    transition: opacity 140ms ease, transform 140ms ease;
+    width: 0.42rem;
+}
+
+:root[data-theme-mode="auto"] .theme-toggle::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
 .theme-toggle:focus-visible {
     box-shadow: var(--shadow-focus);
     outline: none;

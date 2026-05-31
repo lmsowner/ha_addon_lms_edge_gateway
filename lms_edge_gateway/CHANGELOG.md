@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13
+
+- Defaults the UI theme to follow the current Home Assistant frame, including Home Assistant light, dark, and auto modes.
+- Keeps the Sun/Moon toggle as a local override and adds an auto indicator when following Home Assistant.
+- Loads the theme script before stylesheets so the selected theme is applied before first paint.
+
 ## 0.1.12
 
 - Fixes WS-Discovery parsing so XML namespace/schema URLs are ignored and only device `XAddrs` endpoints become service candidates.
