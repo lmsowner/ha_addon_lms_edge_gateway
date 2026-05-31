@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12
+
+- Fixes WS-Discovery parsing so XML namespace/schema URLs are ignored and only device `XAddrs` endpoints become service candidates.
+
 ## 0.1.11
 
 - Runs the Home Assistant add-on on the host network so LAN discovery sees the same network view as the HA host.

@@ -10,6 +10,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using Microsoft.Extensions.Options;
 
 namespace LMS.EdgeGateway.Core;
@@ -830,7 +832,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         private static IEnumerable<ProbeHost> ParseWsDiscoveryProbeHosts(byte[] payload)
         {
             var text = Encoding.UTF8.GetString(payload);
-            foreach (var url in ExtractHttpUrls(text))
+            foreach (var url in ExtractWsDiscoveryXAddrs(text))
             {
                 var host = TryBuildProbeHostFromUrl(url, "WS-Discovery", "WS-Discovery device");
                 if (host is not null)
@@ -895,11 +897,32 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             return null;
         }
 
-        private static IEnumerable<string> ExtractHttpUrls(string text)
+        private static IEnumerable<string> ExtractWsDiscoveryXAddrs(string text)
         {
-            foreach (Match match in Regex.Matches(text, @"https?://[^\s<>'""]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            XDocument document;
+            try
             {
-                yield return match.Value.TrimEnd('.', ',', ';', ')', ']', '"', '\'');
+                using var reader = XmlReader.Create(
+                    new StringReader(text),
+                    new XmlReaderSettings
+                    {
+                        DtdProcessing = DtdProcessing.Prohibit,
+                        XmlResolver = null
+                    });
+                document = XDocument.Load(reader, LoadOptions.None);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            foreach (var element in document.Descendants().Where(element =>
+                         element.Name.LocalName.Equals("XAddrs", StringComparison.OrdinalIgnoreCase)))
+            {
+                foreach (var value in element.Value.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    yield return value;
+                }
             }
         }
 

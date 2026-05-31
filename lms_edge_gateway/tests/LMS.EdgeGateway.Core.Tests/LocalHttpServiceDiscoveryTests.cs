@@ -1,5 +1,6 @@
 using System.Net;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using LMS.EdgeGateway.Core;
 using Xunit;
@@ -231,6 +232,42 @@ public sealed class LocalHttpServiceDiscoveryTests
     }
 
     [Fact]
+    public void Ws_discovery_uses_xaddrs_and_ignores_schema_urls()
+    {
+        const string payload = """
+            <e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope"
+                        xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+                        xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+                        xmlns:o="http://docs.oasis-open.org/wsn/b-2"
+                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                        xsi:schemaLocation="http://schemas.microsoft.com/windows/pnpx/2005/10 http://schemas.xmlsoap.org/ws/2005/04/discovery">
+              <e:Header>
+                <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</a:Action>
+              </e:Header>
+              <e:Body>
+                <d:ProbeMatches>
+                  <d:ProbeMatch>
+                    <a:EndpointReference>
+                      <a:Address>urn:uuid:7a0cba40-b61f-11ee-a506-0242ac120002</a:Address>
+                    </a:EndpointReference>
+                    <d:XAddrs>http://192.168.15.50/onvif/device_service https://192.168.15.51:8443/ws</d:XAddrs>
+                  </d:ProbeMatch>
+                </d:ProbeMatches>
+              </e:Body>
+            </e:Envelope>
+            """;
+
+        var hosts = ParseWsDiscoveryProbeHosts(Encoding.UTF8.GetBytes(payload));
+        var targets = hosts.Select(host => GetProperty<string>(host, "TargetHost") ?? string.Empty).ToArray();
+        var ports = hosts.Select(host => GetProperty<IReadOnlyList<int>>(host, "KnownPorts")!.Single()).ToArray();
+
+        Assert.Equal(["192.168.15.50", "192.168.15.51"], targets);
+        Assert.Equal([80, 8443], ports);
+        Assert.DoesNotContain(hosts, host => GetProperty<string>(host, "TargetHost")!.Contains("schemas", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(hosts, host => GetProperty<string>(host, "TargetHost")!.Contains("oasis-open", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Supervisor_core_info_uses_reported_ssl_scheme_and_port()
     {
         const string payload = """
@@ -274,6 +311,20 @@ public sealed class LocalHttpServiceDiscoveryTests
 
         var result = method.Invoke(null, [cidrs]);
         return Assert.IsAssignableFrom<IReadOnlyList<IPAddress>>(result);
+    }
+
+    private static IReadOnlyList<object> ParseWsDiscoveryProbeHosts(byte[] payload)
+    {
+        var adapterType = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("LanDiscoveryAdapter", BindingFlags.NonPublic);
+        Assert.NotNull(adapterType);
+
+        var method = adapterType.GetMethod("ParseWsDiscoveryProbeHosts", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method.Invoke(null, [payload]);
+        var enumerable = Assert.IsAssignableFrom<System.Collections.IEnumerable>(result);
+        return enumerable.Cast<object>().ToArray();
     }
 
     private static object BuildCoreEvidence(JsonElement payload)
