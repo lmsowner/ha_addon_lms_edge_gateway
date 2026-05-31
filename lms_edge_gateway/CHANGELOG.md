@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.14
+
+- Reads Home Assistant's frontend `hass.selectedTheme` and `hass.themes.darkMode` state before falling back to CSS inference.
+- Fixes the local theme toggle cycle so forced dark, forced light, and follow Home Assistant are all reachable.
+
 ## 0.1.13
 
 - Defaults the UI theme to follow the current Home Assistant frame, including Home Assistant light, dark, and auto modes.

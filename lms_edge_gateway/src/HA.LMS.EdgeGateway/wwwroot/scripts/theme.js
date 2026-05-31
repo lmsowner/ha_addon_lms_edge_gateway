@@ -93,6 +93,95 @@
         return null;
     };
 
+    const readThemeFromValue = value => {
+        if (typeof value === "boolean") {
+            return value ? "dark" : "light";
+        }
+
+        if (typeof value === "string") {
+            const normalized = value.trim().toLowerCase();
+            return normalizeTheme(normalized);
+        }
+
+        return null;
+    };
+
+    const readThemeFromObject = value => {
+        if (!value || typeof value !== "object") {
+            return null;
+        }
+
+        for (const key of ["darkMode", "dark", "isDark", "is_dark"]) {
+            const theme = readThemeFromValue(value[key]);
+            if (theme) {
+                return theme;
+            }
+        }
+
+        for (const key of ["mode", "themeMode", "theme_mode", "colorScheme", "color_scheme"]) {
+            const theme = readThemeFromValue(value[key]);
+            if (theme) {
+                return theme;
+            }
+        }
+
+        return null;
+    };
+
+    const readElementHass = element => {
+        try {
+            return element?.hass || null;
+        } catch {
+            return null;
+        }
+    };
+
+    const findHomeAssistantHass = parentDocument => {
+        const directSelectors = [
+            "home-assistant",
+            "home-assistant-main",
+            "ha-panel-lovelace",
+            "hui-root",
+            "partial-panel-resolver"
+        ];
+
+        for (const selector of directSelectors) {
+            const element = parentDocument.querySelector(selector);
+            const hass = readElementHass(element);
+            if (hass) {
+                return hass;
+            }
+        }
+
+        let inspected = 0;
+        for (const element of parentDocument.querySelectorAll("*")) {
+            const hass = readElementHass(element);
+            if (hass) {
+                return hass;
+            }
+
+            inspected += 1;
+            if (inspected >= 300) {
+                break;
+            }
+        }
+
+        return null;
+    };
+
+    const readHomeAssistantHassTheme = parentDocument => {
+        const hass = findHomeAssistantHass(parentDocument);
+        if (!hass) {
+            return null;
+        }
+
+        return readThemeFromObject(hass.selectedTheme) ||
+            readThemeFromObject(hass.themes?.selectedTheme) ||
+            readThemeFromObject(hass.themes) ||
+            readThemeFromObject(hass.userData?.selectedTheme) ||
+            readThemeFromObject(hass.userData?.theme);
+    };
+
     const readHomeAssistantTheme = () => {
         try {
             if (!window.parent || window.parent === window || !window.parent.document) {
@@ -100,6 +189,11 @@
             }
 
             const parentDocument = window.parent.document;
+            const hassTheme = readHomeAssistantHassTheme(parentDocument);
+            if (hassTheme) {
+                return hassTheme;
+            }
+
             const parentRoot = parentDocument.documentElement;
             const parentBody = parentDocument.body;
             const explicit = readElementTheme(parentRoot) || readElementTheme(parentBody);
@@ -139,11 +233,9 @@
 
     const nextThemeMode = () => {
         const mode = readThemeMode();
-        if (mode === "auto") {
-            return readTheme() === "dark" ? "light" : "dark";
-        }
-
-        return mode === "dark" ? "light" : "auto";
+        if (mode === "auto") return "dark";
+        if (mode === "dark") return "light";
+        return "auto";
     };
 
     const applyTheme = (theme, mode = readThemeMode()) => {
@@ -153,7 +245,7 @@
 
         for (const button of document.querySelectorAll("[data-theme-toggle]")) {
             const label = mode === "auto"
-                ? `Following Home Assistant theme (${theme}). Click to force ${theme === "dark" ? "light" : "dark"} mode.`
+                ? `Following Home Assistant theme (${theme}). Click to force dark mode.`
                 : `${mode === "dark" ? "Dark" : "Light"} mode forced. Click to ${mode === "dark" ? "force light mode" : "follow Home Assistant theme"}.`;
             button.title = label;
             button.setAttribute("aria-label", label);
