@@ -1192,6 +1192,10 @@ textarea {
     grid-template-columns: minmax(18rem, 1fr) auto;
 }
 
+.edge-cloudflare-intro {
+    box-shadow: none;
+}
+
 .edge-token-reset-form {
     margin: 0;
 }
@@ -2859,6 +2863,54 @@ textarea {
     font-size: 0.85rem;
 }
 
+.setup-intro-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1.2fr) minmax(16rem, 0.8fr);
+}
+
+.setup-intro-grid article,
+.edge-cloudflare-intro {
+    background: var(--surface-soft);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.42rem;
+    padding: 0.72rem 0.8rem;
+}
+
+.setup-intro-grid h2 {
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.setup-intro-grid p,
+.edge-cloudflare-intro span {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+    line-height: 1.42;
+    margin: 0;
+}
+
+.setup-intro-list {
+    display: grid;
+    gap: 0.48rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.setup-intro-list li {
+    display: grid;
+    gap: 0.12rem;
+}
+
+.setup-intro-list span {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    line-height: 1.35;
+}
+
 .setup-actions,
 .doc-links {
     display: flex;
@@ -3106,6 +3158,7 @@ textarea {
     .lms-about-feature-list article,
     .lms-about-facts div,
     .edge-token-guide-grid,
+    .setup-intro-grid,
     .security-user-form-grid,
     .security-messaging-grid,
     .security-test-grid,

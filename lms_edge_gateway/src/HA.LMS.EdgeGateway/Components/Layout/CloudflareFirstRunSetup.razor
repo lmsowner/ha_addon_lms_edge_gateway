@@ -9,13 +9,38 @@
             <img class="setup-logo" src="images/lms-logo-192.png" alt="" />
             <div>
                 <p class="lms-eyebrow">Required setup</p>
-                <h1>Connect Cloudflare API first</h1>
+                <h1>Publish Home Assistant through Cloudflare</h1>
                 <p>
-                    Create a Cloudflare API token with the permissions shown below, then paste it here.
-                    The add-on validates the token before saving it.
+                    Edge Gateway connects this Home Assistant add-on to Cloudflare Tunnel, Caddy, and LMS access controls so you can publish Home Assistant and selected LAN services without opening inbound ports.
                 </p>
             </div>
         </header>
+
+        <section class="setup-intro-grid" aria-label="Edge Gateway setup requirements">
+            <article>
+                <h2>Before you start</h2>
+                <ul class="setup-intro-list">
+                    <li>
+                        <strong>Cloudflare account</strong>
+                        <span>Used to create tunnels, Access apps and DNS records.</span>
+                    </li>
+                    <li>
+                        <strong>Cloudflare-managed domain</strong>
+                        <span>Your public domain must use Cloudflare DNS so Edge Gateway can create the relay wildcard.</span>
+                    </li>
+                    <li>
+                        <strong>Scoped API token</strong>
+                        <span>Grant only Cloudflare Tunnel, Access apps and policies, and DNS edit permissions.</span>
+                    </li>
+                </ul>
+            </article>
+            <article>
+                <h2>What setup does</h2>
+                <p>
+                    After the token validates, Setup Relay creates or reuses the Cloudflare Tunnel, writes the wildcard DNS entry, and keeps local cloudflared and Caddy routing aligned for this add-on.
+                </p>
+            </article>
+        </section>
 
         <div class="setup-actions">
             <a class="lms-button" href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">Open Cloudflare API Tokens</a>

@@ -14,12 +14,17 @@
             <div>
                 <p class="eyebrow">Cloudflare token</p>
                 <h2>Connect Cloudflare to Edge Gateway</h2>
-                <p class="meta-text">Validate a scoped token here before setup. Edge Gateway will then list the Cloudflare zones that token can manage.</p>
+                <p class="meta-text">Validate a scoped token here before setup. You'll need a Cloudflare account, a domain managed by Cloudflare DNS, and permission for Edge Gateway to create tunnels, Access apps, and DNS records.</p>
             </div>
             <div class="edge-token-header-actions">
                 <LmsStatusPill Text="@(tokenState?.HasToken == true ? "Token saved" : "Token needed")" Tone="@(tokenState?.HasToken == true ? LmsStatusTone.Ready : LmsStatusTone.Warning)" />
                 <LmsButton Label="Setup Guide" Icon="info" OnClick="OpenTokenGuide" />
             </div>
+        </div>
+
+        <div class="edge-cloudflare-intro">
+            <strong>What Edge Gateway manages</strong>
+            <span>Setup Relay prepares the Cloudflare Tunnel, wildcard DNS and local Caddy/cloudflared routes for this Home Assistant add-on host.</span>
         </div>
 
         @if (tokenState?.HasToken == true)
@@ -314,7 +319,7 @@
                     <div>
                         <p class="eyebrow">Setup Guide</p>
                         <h2 id="cloudflare-token-guide-title">Get a Cloudflare API token</h2>
-                        <p class="meta-text">Create a scoped custom token in Cloudflare with the account and zone permissions shown below, then paste the generated token into the Cloudflare token field.</p>
+                        <p class="meta-text">Create a scoped custom token in Cloudflare with the account and zone permissions shown below. Edge Gateway uses it to manage tunnels, Access apps, and DNS for the Cloudflare domain you choose.</p>
                     </div>
                     <button class="edge-modal-close" type="button" aria-label="Close setup guide" @onclick="CloseTokenGuide">x</button>
                 </header>

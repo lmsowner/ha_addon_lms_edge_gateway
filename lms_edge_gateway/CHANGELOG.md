@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.17
+
+- Keeps the full Home Assistant add-on name while shortening the sidebar label to Edge Gateway.
+- Adds clearer first-run Cloudflare onboarding that explains the required account, DNS-managed domain, and scoped API token.
+- Improves the Setup tab introduction so users know what Edge Gateway will manage before configuring a relay.
+
 ## 0.1.16
 
 - Runs relay validation on add-on startup after tunnel ingress reconciliation.
