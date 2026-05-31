@@ -4,6 +4,13 @@ LMS Edge Gateway for Home Assistant is a Home Assistant Add-on for secure self-h
 
 It is designed to let Home Assistant users publish Home Assistant and other LAN applications through Cloudflare, Cloudflare Access, Cloudflare Tunnel, Caddy, and LMS authentication policy without hand-writing reverse proxy or Linux service configuration.
 
+## Project links
+
+- Linux Made Sane: https://www.linuxmadesane.com
+- GitHub repository: https://github.com/lmsowner/ha_addon_lms_edge_gateway
+- Home Assistant add-on repository URL: https://github.com/lmsowner/ha_addon_lms_edge_gateway
+- Issues and feedback: https://github.com/lmsowner/ha_addon_lms_edge_gateway/issues
+
 ## Install from Home Assistant
 
 1. Open Home Assistant.

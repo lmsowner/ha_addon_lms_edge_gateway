@@ -9,6 +9,13 @@ The add-on is the Home Assistant packaging layer for the Linux Made Sane - Edge 
 - Caddy
 - cloudflared
 
+## Project links
+
+- Linux Made Sane: https://www.linuxmadesane.com
+- GitHub repository: https://github.com/lmsowner/ha_addon_lms_edge_gateway
+- Home Assistant add-on repository URL: https://github.com/lmsowner/ha_addon_lms_edge_gateway
+- Issues and feedback: https://github.com/lmsowner/ha_addon_lms_edge_gateway/issues
+
 ## Current setup flow
 
 The add-on provides the installable Home Assistant surface, ingress UI, runtime status, persistent storage, and supervised Caddy/cloudflared processes.
