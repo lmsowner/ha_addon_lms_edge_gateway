@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.20
+
+- Aligns the Messaging Email enabled control with the Provider drop-down and other fields.
+
 ## 0.1.19
 
 - Fixes Messaging so Email enabled is only shown for the selected provider when that provider is saved and verified.
