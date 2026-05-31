@@ -1,5 +1,5 @@
 name: LMS Edge Gateway for Home Assistant
-version: "0.1.10"
+version: "0.1.11"
 slug: lms_edge_gateway
 description: "LMS Edge Gateway for Home Assistant: secure application publishing for Home Assistant and self-hosted services."
 url: https://github.com/lmsowner/ha_addon_lms_edge_gateway
@@ -12,6 +12,7 @@ init: false
 ingress: true
 ingress_port: 5000
 ingress_stream: true
+host_network: true
 panel_icon: mdi:cloud-lock
 panel_title: LMS Edge Gateway for Home Assistant
 map:
@@ -21,6 +22,8 @@ map:
 hassio_api: true
 homeassistant_api: true
 panel_admin: true
+privileged:
+  - NET_RAW
 watchdog: http://[HOST]:[PORT:5000]/healthz
 options:
   advanced_docker_discovery: false

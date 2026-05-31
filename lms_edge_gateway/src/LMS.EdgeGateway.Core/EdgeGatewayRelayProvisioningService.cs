@@ -1823,6 +1823,11 @@ public sealed class EdgeGatewayRelayProvisioningService(
         builder.AppendLine("}");
         builder.AppendLine();
         builder.AppendLine($"{ResolveCaddySiteAddress()} {{");
+        if (ShouldBindCaddyToLoopback())
+        {
+            builder.AppendLine("    bind 127.0.0.1");
+        }
+
         builder.AppendLine("    route {");
         builder.AppendLine("        encode zstd gzip");
         builder.AppendLine("        respond /health \"ok\" 200");
@@ -3077,6 +3082,23 @@ public sealed class EdgeGatewayRelayProvisioningService(
             ? "https"
             : "http";
         return $"{scheme}://:{Math.Clamp(port, 1, 65535)}";
+    }
+
+    private bool ShouldBindCaddyToLoopback()
+    {
+        var serviceUrl = ResolveCaddyServiceUrl();
+        if (!Uri.TryCreate(serviceUrl, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+            IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static string ResolvePath(string path) =>

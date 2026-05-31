@@ -394,6 +394,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             if (request.IncludeLan)
             {
                 var scanPlan = await BuildLanScanPlanAsync(settings, cancellationToken);
+                ReportLanScanPlan(scanPlan, settings, progress);
                 AddStage(stages, seenHosts, "ARP cache", scanPlan.KnownHosts);
                 AddStage(stages, seenHosts, "SSDP discovery", await DiscoverSsdpHostsAsync(progress, cancellationToken));
                 AddStage(stages, seenHosts, "mDNS discovery", await DiscoverMdnsHostsAsync(progress, cancellationToken));
@@ -637,6 +638,39 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 : [new ProbeHost("localhost", IPAddress.Loopback, "localhost", "Localhost", "127.0.0.1", "Local host", true, true, ports)];
         }
 
+        private static void ReportLanScanPlan(
+            LanScanPlan scanPlan,
+            DiscoverySettings settings,
+            IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress)
+        {
+            if (progress is null)
+            {
+                return;
+            }
+
+            var source = scanPlan.Cidrs.Count > 0
+                ? $"CIDR(s): {FormatCidrs(scanPlan.Cidrs)}"
+                : settings.HasSupervisorToken
+                    ? "no Supervisor/configured CIDR; using local interface fallback"
+                    : "no Supervisor token or configured CIDR; using local interface fallback";
+            var fallback = scanPlan.LocalInterfaceFallbackCount > 0
+                ? $", {scanPlan.LocalInterfaceFallbackCount} fallback interface target(s)"
+                : string.Empty;
+
+            progress.Report(new LocalHttpServiceDiscoveryProgressUpdate(
+                $"LAN scan plan: {source}; {scanPlan.KnownHosts.Count} ARP/neighbour host(s), {scanPlan.ScanHosts.Count} targeted host(s){fallback}.",
+                0,
+                scanPlan.KnownHosts.Count + scanPlan.ScanHosts.Count,
+                0));
+        }
+
+        private static string FormatCidrs(IReadOnlyList<string> cidrs)
+        {
+            const int maxShown = 4;
+            var shown = string.Join(", ", cidrs.Take(maxShown));
+            return cidrs.Count <= maxShown ? shown : $"{shown}, +{cidrs.Count - maxShown} more";
+        }
+
         private static async Task<LanScanPlan> BuildLanScanPlanAsync(DiscoverySettings settings, CancellationToken cancellationToken)
         {
             var ports = BuildPortList(settings);
@@ -677,7 +711,9 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
             return new LanScanPlan(
                 hosts.Where(host => host.IsKnownLive).ToArray(),
-                hosts.Where(host => !host.IsKnownLive).ToArray());
+                hosts.Where(host => !host.IsKnownLive).ToArray(),
+                configuredCidrs,
+                fallbackAddresses.Count);
         }
 
         private static async Task<IReadOnlyList<ProbeHost>> DiscoverSsdpHostsAsync(
@@ -2200,7 +2236,11 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private sealed record DiscoveryStage(string Name, IReadOnlyList<ProbeHost> Hosts);
 
-    private sealed record LanScanPlan(IReadOnlyList<ProbeHost> KnownHosts, IReadOnlyList<ProbeHost> ScanHosts);
+    private sealed record LanScanPlan(
+        IReadOnlyList<ProbeHost> KnownHosts,
+        IReadOnlyList<ProbeHost> ScanHosts,
+        IReadOnlyList<string> Cidrs,
+        int LocalInterfaceFallbackCount);
 
     private sealed record MdnsSrvRecord(string Target, int Port);
 

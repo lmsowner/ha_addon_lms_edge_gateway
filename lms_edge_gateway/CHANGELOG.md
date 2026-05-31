@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.11
+
+- Runs the Home Assistant add-on on the host network so LAN discovery sees the same network view as the HA host.
+- Grants raw network access for ICMP reachability checks during LAN discovery.
+- Binds the internal Caddy relay listener to loopback when using the default localhost origin.
+- Adds LAN scan-plan progress messages showing CIDRs, ARP/neighbour counts, and target counts before probing.
+
 ## 0.1.10
 
 - Uses one shared add-route dialog across Setup and Apps instead of maintaining duplicate implementations.

@@ -94,6 +94,8 @@ public sealed class EdgeGatewayRouteAuthTests
 
         var caddyfile = Assert.IsType<string>(method!.Invoke(service, [configuration]));
 
+        Assert.Contains("http://:18080 {", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("bind 127.0.0.1", caddyfile, StringComparison.Ordinal);
         Assert.Contains("forward_auth 127.0.0.1:5299", caddyfile, StringComparison.Ordinal);
         Assert.Contains("uri /edge-auth/check", caddyfile, StringComparison.Ordinal);
         Assert.Contains("copy_headers X-LMS-User X-LMS-Email X-LMS-Groups", caddyfile, StringComparison.Ordinal);

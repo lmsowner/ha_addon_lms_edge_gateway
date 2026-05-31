@@ -12,10 +12,21 @@ if [[ ! -f /data/caddy/Caddyfile ]]; then
     }
 }
 
-:18080 {
+http://:18080 {
+    bind 127.0.0.1
     respond /health "ok" 200
 }
 CADDY
+fi
+
+sed -i \
+  -e 's#^:18080 {$#http://:18080 {#' \
+  -e 's#^127\.0\.0\.1:18080 {$#http://:18080 {#' \
+  -e 's#^http://127\.0\.0\.1:18080 {$#http://:18080 {#' \
+  /data/caddy/Caddyfile
+
+if ! grep -q '^[[:space:]]*bind 127\.0\.0\.1$' /data/caddy/Caddyfile; then
+  sed -i '/^http:\/\/:18080 {$/a\    bind 127.0.0.1' /data/caddy/Caddyfile
 fi
 
 caddy fmt --overwrite /data/caddy/Caddyfile >/dev/null 2>&1 || true
