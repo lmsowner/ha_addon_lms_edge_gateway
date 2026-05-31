@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.18
+
+- Updates the About page to present LMS HA Edge Gateway as the Home Assistant add-on edition.
+- Uses the Home Assistant-specific LMS Edge Gateway imagery in the About page.
+- Adds clearer references to Linux Made Sane as the base LMS project.
+
 ## 0.1.17
 
 - Keeps the full Home Assistant add-on name while shortening the sidebar label to Edge Gateway.
