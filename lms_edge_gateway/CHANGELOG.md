@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.19
+
+- Fixes Messaging so Email enabled is only shown for the selected provider when that provider is saved and verified.
+- Makes a successful test email the action that verifies and enables the selected messaging provider.
+- Prevents switching providers from carrying over the previous provider's verified/enabled state.
+
 ## 0.1.18
 
 - Updates the About page to present LMS HA Edge Gateway as the Home Assistant add-on edition.

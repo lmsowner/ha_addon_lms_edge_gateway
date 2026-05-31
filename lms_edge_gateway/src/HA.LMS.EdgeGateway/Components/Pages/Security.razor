@@ -213,14 +213,19 @@
                         }
 
                         <div class="edge-form-grid security-messaging-grid">
-                            <label class="security-checkbox-field">
-                                <input type="checkbox" @bind="messagingEditor.IsEnabled" />
-                                <span>Email enabled</span>
-                            </label>
+                            <div class="security-toggle-stack">
+                                <label class="security-checkbox-field">
+                                    <input type="checkbox"
+                                           @bind="MessagingEnabledForSelectedProvider"
+                                           disabled="@(!CanToggleMessagingEnabledForSelectedProvider || isSavingMessaging)" />
+                                    <span>Email enabled</span>
+                                </label>
+                                <span class="ui-field-helper">@MessagingEnabledHelperText</span>
+                            </div>
 
                             <label class="ui-field">
                                 <span class="ui-field-label">Provider</span>
-                                <select @bind="messagingEditor.Provider">
+                                <select @bind="SelectedMessagingProvider">
                                     <option value="@MessagingEmailProvider.Disabled">Disabled</option>
                                     <option value="@MessagingEmailProvider.Smtp">SMTP</option>
                                     <option value="@MessagingEmailProvider.MicrosoftGraph">Microsoft Graph</option>
@@ -349,7 +354,7 @@
                         <div class="security-section-heading">
                             <div>
                                 <h3>Send test email</h3>
-                                <p class="meta-text">A successful test marks Messaging as verified for LMS account setup emails.</p>
+                                <p class="meta-text">A successful test marks the selected provider as verified and enables Messaging for LMS account setup emails.</p>
                             </div>
                             @if (page.Messaging.LastVerifiedAtUtc is not null)
                             {
@@ -455,6 +460,58 @@
     {
         await LoadAsync();
         isLoaded = true;
+    }
+
+    private MessagingEmailProvider SelectedMessagingProvider
+    {
+        get => messagingEditor.Provider;
+        set
+        {
+            messagingEditor.Provider = value;
+            messagingMessage = null;
+            messagingMessageIsError = false;
+        }
+    }
+
+    private bool MessagingEnabledForSelectedProvider
+    {
+        get => messagingEditor.IsEnabled && IsSelectedMessagingProviderVerified;
+        set => messagingEditor.IsEnabled = value && IsSelectedMessagingProviderVerified;
+    }
+
+    private bool IsSelectedMessagingProviderVerified =>
+        page.Messaging.CanSendLoginSetupEmail &&
+        page.Messaging.Provider == messagingEditor.Provider;
+
+    private bool CanToggleMessagingEnabledForSelectedProvider =>
+        IsSelectedMessagingProviderVerified;
+
+    private string MessagingEnabledHelperText
+    {
+        get
+        {
+            if (MessagingEnabledForSelectedProvider)
+            {
+                return $"{FormatMessagingProvider(messagingEditor.Provider)} is the saved and verified email provider.";
+            }
+
+            if (page.Messaging.CanSendLoginSetupEmail)
+            {
+                if (messagingEditor.Provider == MessagingEmailProvider.Disabled)
+                {
+                    return $"{FormatMessagingProvider(page.Messaging.Provider)} is currently verified. Choose a provider and send a successful test to change it.";
+                }
+
+                return $"Only {FormatMessagingProvider(page.Messaging.Provider)} is currently verified. Send a successful test to enable {FormatMessagingProvider(messagingEditor.Provider)}.";
+            }
+
+            if (messagingEditor.Provider == MessagingEmailProvider.Disabled)
+            {
+                return "Choose a provider, configure it, then send a successful test email to enable Messaging.";
+            }
+
+            return "Send a successful test email to verify and enable the selected provider.";
+        }
     }
 
     private void SetTab(string tab) => activeTab = tab;
@@ -602,8 +659,10 @@
         try
         {
             await SecurityService.SaveMessagingSettingsAsync(messagingEditor);
-            messagingMessage = "Messaging settings saved.";
             await LoadAsync();
+            messagingMessage = page.Messaging.CanSendLoginSetupEmail
+                ? "Messaging settings saved. The selected provider remains verified."
+                : "Messaging settings saved. Send a successful test email to verify and enable the selected provider.";
         }
         catch (Exception exception)
         {

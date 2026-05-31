@@ -60,28 +60,34 @@ public sealed class EdgeGatewaySecurityService(
     {
         var configuration = await securityStore.LoadAsync(cancellationToken);
         var existing = configuration.Messaging;
-        var provider = editor.IsEnabled ? editor.Provider : MessagingEmailProvider.Disabled;
         var now = DateTimeOffset.UtcNow;
-        var settings = BuildMessagingSettings(existing, editor, now, resetVerification: true);
+        var candidateSettings = BuildMessagingSettings(existing, editor, now, resetVerification: false);
+        ValidateMessagingSettings(candidateSettings);
 
-        ValidateMessagingSettings(settings);
+        var canPreserveVerification = CanPreserveMessagingVerification(existing, candidateSettings);
+        var settings = candidateSettings with
+        {
+            IsEnabled = canPreserveVerification,
+            LastVerifiedAtUtc = canPreserveVerification ? existing.LastVerifiedAtUtc : null
+        };
+
         await securityStore.SaveAsync(configuration with
         {
             Messaging = settings,
             UpdatedAtUtc = now
         }, cancellationToken);
 
-        if (existing.Provider != provider)
+        if (existing.Provider != settings.Provider)
         {
             logger.LogInformation(
                 "Audit event: Messaging provider changed from {PreviousProvider} to {Provider}.",
                 FormatProvider(existing.Provider),
-                FormatProvider(provider));
+                FormatProvider(settings.Provider));
         }
 
         logger.LogInformation(
             "Audit event: Messaging settings updated for provider {Provider}; enabled {Enabled}.",
-            FormatProvider(provider),
+            FormatProvider(settings.Provider),
             settings.IsEnabled);
     }
 
@@ -97,14 +103,13 @@ public sealed class EdgeGatewaySecurityService(
 
         var configuration = await securityStore.LoadAsync(cancellationToken);
         var existing = configuration.Messaging;
-        var provider = editor.IsEnabled ? editor.Provider : MessagingEmailProvider.Disabled;
         var now = DateTimeOffset.UtcNow;
-        var settings = BuildMessagingSettings(existing, editor, now, resetVerification: true);
+        var settings = BuildMessagingSettings(existing, editor, now, resetVerification: true, enableSelectedProvider: true);
         ValidateMessagingSettings(settings);
         var secretDiagnostic = BuildMessagingSecretDiagnostic(settings, editor);
         logger.LogInformation(
             "Messaging test prepared for {Provider}; sender {SenderAddress}; secret source {SecretSource}; secret length {SecretLength}.",
-            FormatProvider(provider),
+            FormatProvider(settings.Provider),
             settings.SenderAddress,
             secretDiagnostic.Source,
             secretDiagnostic.Length);
@@ -126,17 +131,17 @@ public sealed class EdgeGatewaySecurityService(
                 UpdatedAtUtc = now
             }, cancellationToken);
 
-            if (existing.Provider != provider)
+            if (existing.Provider != settings.Provider)
             {
                 logger.LogInformation(
                     "Audit event: Messaging provider changed from {PreviousProvider} to {Provider}.",
                     FormatProvider(existing.Provider),
-                    FormatProvider(provider));
+                    FormatProvider(settings.Provider));
             }
 
             logger.LogInformation(
                 "Audit event: Messaging settings updated for provider {Provider}; enabled {Enabled}.",
-                FormatProvider(provider),
+                FormatProvider(settings.Provider),
                 settings.IsEnabled);
 
             logger.LogInformation(
@@ -751,9 +756,12 @@ public sealed class EdgeGatewaySecurityService(
         EdgeGatewayMessagingSettings existing,
         SecurityMessagingSettingsEditor editor,
         DateTimeOffset now,
-        bool resetVerification)
+        bool resetVerification,
+        bool enableSelectedProvider = false)
     {
-        var provider = editor.IsEnabled ? editor.Provider : MessagingEmailProvider.Disabled;
+        var provider = editor.Provider;
+        var isEnabled = provider != MessagingEmailProvider.Disabled &&
+                        (enableSelectedProvider || editor.IsEnabled);
         var smtpPasswordProtected = ResolveProtectedSecret(
             existing.SmtpPasswordProtected,
             editor.SmtpPassword,
@@ -770,7 +778,7 @@ public sealed class EdgeGatewaySecurityService(
 
         return existing with
         {
-            IsEnabled = editor.IsEnabled,
+            IsEnabled = isEnabled,
             Provider = provider,
             SenderAddress = NormalizeOptional(editor.SenderAddress),
             SenderDisplayName = string.IsNullOrWhiteSpace(editor.SenderDisplayName)
@@ -794,6 +802,33 @@ public sealed class EdgeGatewaySecurityService(
             UpdatedAtUtc = now
         };
     }
+
+    private static bool CanPreserveMessagingVerification(
+        EdgeGatewayMessagingSettings existing,
+        EdgeGatewayMessagingSettings candidate) =>
+        existing.IsEnabled &&
+        candidate.IsEnabled &&
+        existing.LastVerifiedAtUtc.HasValue &&
+        existing.Provider == candidate.Provider &&
+        existing.SenderAddress.Equals(candidate.SenderAddress, StringComparison.OrdinalIgnoreCase) &&
+        existing.SenderDisplayName.Equals(candidate.SenderDisplayName, StringComparison.Ordinal) &&
+        existing.SmtpHost.Equals(candidate.SmtpHost, StringComparison.OrdinalIgnoreCase) &&
+        existing.SmtpPort == candidate.SmtpPort &&
+        existing.SmtpUseStartTls == candidate.SmtpUseStartTls &&
+        existing.SmtpUsername.Equals(candidate.SmtpUsername, StringComparison.Ordinal) &&
+        existing.SmtpPasswordProtected.Equals(candidate.SmtpPasswordProtected, StringComparison.Ordinal) &&
+        existing.GraphTenantId.Equals(candidate.GraphTenantId, StringComparison.Ordinal) &&
+        existing.GraphClientId.Equals(candidate.GraphClientId, StringComparison.Ordinal) &&
+        existing.GraphClientSecretProtected.Equals(candidate.GraphClientSecretProtected, StringComparison.Ordinal) &&
+        UrlsEquivalent(existing.GraphAuthority, candidate.GraphAuthority) &&
+        UrlsEquivalent(existing.GraphBaseUrl, candidate.GraphBaseUrl) &&
+        existing.GraphSaveToSentItems == candidate.GraphSaveToSentItems &&
+        existing.ApiKeyProtected.Equals(candidate.ApiKeyProtected, StringComparison.Ordinal) &&
+        existing.MailgunDomain.Equals(candidate.MailgunDomain, StringComparison.OrdinalIgnoreCase) &&
+        existing.MailgunRegion == candidate.MailgunRegion;
+
+    private static bool UrlsEquivalent(string left, string right) =>
+        left.Trim().TrimEnd('/').Equals(right.Trim().TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
     private static void ValidateMessagingSettings(EdgeGatewayMessagingSettings settings)
     {

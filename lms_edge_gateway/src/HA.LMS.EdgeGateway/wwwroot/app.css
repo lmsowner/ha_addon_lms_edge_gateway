@@ -2207,6 +2207,12 @@ textarea {
     width: auto;
 }
 
+.security-toggle-stack {
+    align-content: end;
+    display: grid;
+    gap: 0.28rem;
+}
+
 .security-provisioning-panel {
     align-items: start;
     display: grid;

@@ -236,6 +236,105 @@ public sealed class EmailProviderTests
     }
 
     [Fact]
+    public async Task Saving_unchanged_verified_provider_keeps_email_enabled()
+    {
+        var verifiedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty with
+        {
+            Messaging = Settings(MessagingEmailProvider.Brevo, apiKey: "xkeysib-saved-key") with
+            {
+                LastVerifiedAtUtc = verifiedAt
+            }
+        });
+        var service = new EdgeGatewaySecurityService(
+            store,
+            new PlainSecretProtector(),
+            BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
+            NullLogger<EdgeGatewaySecurityService>.Instance);
+
+        await service.SaveMessagingSettingsAsync(new SecurityMessagingSettingsEditor
+        {
+            IsEnabled = true,
+            Provider = MessagingEmailProvider.Brevo,
+            SenderAddress = "noreply@example.com",
+            SenderDisplayName = "Linux Made Sane",
+            ApiKey = string.Empty,
+            HasApiKey = true
+        });
+
+        var saved = await store.LoadAsync();
+        Assert.True(saved.Messaging.IsEnabled);
+        Assert.Equal(MessagingEmailProvider.Brevo, saved.Messaging.Provider);
+        Assert.Equal(verifiedAt, saved.Messaging.LastVerifiedAtUtc);
+    }
+
+    [Fact]
+    public async Task Saving_different_provider_stores_it_unverified_until_test_succeeds()
+    {
+        var verifiedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty with
+        {
+            Messaging = Settings(MessagingEmailProvider.Brevo, apiKey: "xkeysib-saved-key") with
+            {
+                LastVerifiedAtUtc = verifiedAt
+            }
+        });
+        var service = new EdgeGatewaySecurityService(
+            store,
+            new PlainSecretProtector(),
+            BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
+            NullLogger<EdgeGatewaySecurityService>.Instance);
+
+        await service.SaveMessagingSettingsAsync(new SecurityMessagingSettingsEditor
+        {
+            IsEnabled = true,
+            Provider = MessagingEmailProvider.Resend,
+            SenderAddress = "noreply@example.com",
+            SenderDisplayName = "Linux Made Sane",
+            ApiKey = "resend-key"
+        });
+
+        var saved = await store.LoadAsync();
+        Assert.False(saved.Messaging.IsEnabled);
+        Assert.Equal(MessagingEmailProvider.Resend, saved.Messaging.Provider);
+        Assert.Null(saved.Messaging.LastVerifiedAtUtc);
+        Assert.Equal("resend-key", saved.Messaging.ApiKeyProtected);
+    }
+
+    [Fact]
+    public async Task Test_email_enables_selected_provider_even_when_editor_enabled_is_false()
+    {
+        var handler = new CaptureHandler(new HttpResponseMessage(HttpStatusCode.Created)
+        {
+            Content = new StringContent("""{"messageId":"brevo-current"}""")
+        });
+        var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty);
+        var service = new EdgeGatewaySecurityService(
+            store,
+            new PlainSecretProtector(),
+            BuildEmailSender(store, handler),
+            NullLogger<EdgeGatewaySecurityService>.Instance);
+
+        var result = await service.SendMessagingTestAsync(
+            new SecurityMessagingSettingsEditor
+            {
+                IsEnabled = false,
+                Provider = MessagingEmailProvider.Brevo,
+                SenderAddress = "noreply@example.com",
+                SenderDisplayName = "Linux Made Sane",
+                ApiKey = "xkeysib-current-key"
+            },
+            "user@example.com");
+
+        Assert.True(result.Succeeded);
+        var saved = await store.LoadAsync();
+        Assert.True(saved.Messaging.IsEnabled);
+        Assert.Equal(MessagingEmailProvider.Brevo, saved.Messaging.Provider);
+        Assert.True(saved.Messaging.LastVerifiedAtUtc.HasValue);
+        Assert.Equal("xkeysib-current-key", handler.Request!.Headers.GetValues("api-key").Single());
+    }
+
+    [Fact]
     public async Task Test_email_uses_current_editor_graph_secret_and_trims_it()
     {
         var handler = new QueueHandler(
