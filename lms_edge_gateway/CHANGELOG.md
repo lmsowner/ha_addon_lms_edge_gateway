@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.32
+
+- Moves the Setup Relay screenshot into the relay documentation section.
+- Places documentation screenshots on separate full-width rows and removes temporary image labels from captions.
+
 ## 0.1.31
 
 - Adds explicit pass-through warnings on new routes, edited routes, and enabled published routes.
