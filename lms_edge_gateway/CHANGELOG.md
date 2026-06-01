@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.24
+
+- Fixes Messaging form control heights so Provider no longer stretches taller than the status control.
+- Aligns Messaging controls to the same control row for cleaner bottom alignment.
+
 ## 0.1.23
 
 - Removes the extra outer Published Apps wrapper.

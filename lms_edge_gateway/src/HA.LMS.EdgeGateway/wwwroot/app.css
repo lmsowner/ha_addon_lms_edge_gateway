@@ -2197,6 +2197,42 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.security-messaging-grid {
+    --security-messaging-control-height: 2.35rem;
+    align-items: stretch;
+}
+
+.security-messaging-grid > .ui-field {
+    grid-template-rows:
+        minmax(0.94rem, auto)
+        var(--security-messaging-control-height)
+        minmax(0, auto);
+    height: 100%;
+}
+
+.security-messaging-grid > .ui-field > input,
+.security-messaging-grid > .ui-field > select,
+.security-messaging-grid > .ui-field > .security-checkbox-field {
+    align-self: end;
+    height: var(--security-messaging-control-height);
+    min-height: var(--security-messaging-control-height);
+}
+
+.security-messaging-grid > .ui-field > input,
+.security-messaging-grid > .ui-field > select {
+    padding-bottom: 0;
+    padding-top: 0;
+}
+
+.security-messaging-grid > .ui-field > .security-checkbox-field {
+    padding-bottom: 0;
+    padding-top: 0;
+}
+
+.security-messaging-grid > .ui-field > .ui-field-helper {
+    align-self: start;
+}
+
 .security-test-grid {
     align-items: end;
     grid-template-columns: minmax(14rem, 24rem) auto;
