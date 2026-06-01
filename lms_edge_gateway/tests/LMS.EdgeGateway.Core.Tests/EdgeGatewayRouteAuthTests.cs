@@ -103,6 +103,8 @@ public sealed class EdgeGatewayRouteAuthTests
         Assert.DoesNotContain("/auth/login", caddyfile, StringComparison.Ordinal);
         Assert.DoesNotContain("/auth/logout", caddyfile, StringComparison.Ordinal);
         Assert.DoesNotContain("/auth/*", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("respond 404", caddyfile, StringComparison.Ordinal);
+        Assert.DoesNotContain("No Linux Made Sane Edge Gateway route matched this hostname.", caddyfile, StringComparison.Ordinal);
         Assert.Contains("reverse_proxy 127.0.0.1:5299", caddyfile, StringComparison.Ordinal);
     }
 

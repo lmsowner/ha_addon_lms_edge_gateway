@@ -45,7 +45,7 @@ public sealed class EdgeGatewayRouteAuthService(IEdgeGatewayConfigurationStore c
         {
             return new EdgeGatewayAuthCheckResult(
                 StatusNotFound,
-                "No enabled Edge Gateway route matched the requested hostname.");
+                "Not Found.");
         }
 
         if (IsBlockedAccessPolicy(route.AccessPolicy))

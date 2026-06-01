@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.27
+
+- Returns a plain Caddy 404 for unmatched published-app hostnames instead of exposing an Edge Gateway-specific message.
+- Uses a generic 404 reason for unmatched forward-auth route checks.
+
 ## 0.1.26
 
 - Tightens the About page layout by reducing artwork sizes, media column width, section spacing, and list row padding.

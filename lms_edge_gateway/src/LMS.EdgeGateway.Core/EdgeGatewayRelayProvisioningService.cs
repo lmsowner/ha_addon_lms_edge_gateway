@@ -17,7 +17,6 @@ public sealed class EdgeGatewayRelayProvisioningService(
 {
     private const string RelayNamespace = "ha-app-relay";
     private const string CloudflareTunnelTargetSuffix = ".cfargotunnel.com";
-    private const string FallbackCaddyResponse = "No Linux Made Sane Edge Gateway route matched this hostname.";
     private const string HealthyTunnelStatus = "healthy";
     private const string CloudflaredProcessPattern = "(^|/)(cloudflared|lms-edge-cloudflared)( |$)";
     private const int TunnelValidationAttempts = 30;
@@ -1657,15 +1656,6 @@ public sealed class EdgeGatewayRelayProvisioningService(
             request.Headers.Host = hostname;
             request.Headers.UserAgent.ParseAdd("LinuxMadeSane-edge-caddy-route-check");
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            var snippet = await TryReadResponseSnippetAsync(response, cancellationToken);
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound &&
-                snippet.Contains(FallbackCaddyResponse, StringComparison.OrdinalIgnoreCase))
-            {
-                return new CaddyRouteCheck(
-                    false,
-                    $"Caddy route check {hostname}{requestPath} via {ResolveCaddyServiceUrl()} returned the Edge Gateway fallback 404. The Host matcher was not loaded.");
-            }
-
             if ((int)response.StatusCode >= 500)
             {
                 var homeAssistantHint = BuildHomeAssistantRouteCheckHint(application);
@@ -1722,23 +1712,6 @@ public sealed class EdgeGatewayRelayProvisioningService(
         }
 
         return " If this Home Assistant instance has SSL enabled, change the target scheme to https and leave upstream TLS verification disabled.";
-    }
-
-    private static async Task<string> TryReadResponseSnippetAsync(
-        HttpResponseMessage response,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            var buffer = new byte[4096];
-            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            return read <= 0 ? string.Empty : Encoding.UTF8.GetString(buffer, 0, read);
-        }
-        catch
-        {
-            return string.Empty;
-        }
     }
 
     private async Task<EdgeGatewayRelayValidationResult> SaveAndReturnRepairFailureAsync(
@@ -2087,7 +2060,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
             builder.AppendLine();
         }
 
-        builder.AppendLine($"        respond \"{FallbackCaddyResponse}\" 404");
+        builder.AppendLine("        respond 404");
         builder.AppendLine("    }");
         builder.AppendLine("}");
         builder.AppendLine();
