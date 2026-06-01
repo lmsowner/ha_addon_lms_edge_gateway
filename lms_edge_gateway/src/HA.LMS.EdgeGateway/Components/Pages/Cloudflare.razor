@@ -22,17 +22,19 @@
             </div>
         </div>
 
-        <div class="edge-cloudflare-intro">
-            <strong>What Edge Gateway manages</strong>
-            <span>Setup Relay prepares the Cloudflare Tunnel, wildcard DNS and local Caddy/cloudflared routes for this Home Assistant add-on host.</span>
-        </div>
-
         @if (tokenState?.HasToken == true)
         {
             <div class="edge-token-ready">
                 <div>
                     <strong>Cloudflare is connected.</strong>
                     <span>Use the domain section below to set up this LMS host's relay namespace and prepare Caddy/cloudflared automatically.</span>
+                </div>
+            </div>
+
+            <div class="edge-token-reset-panel">
+                <div>
+                    <strong>Reset Cloudflare settings</strong>
+                    <span>Clears the saved Cloudflare token and setup state for this add-on.</span>
                 </div>
                 <form class="edge-token-reset-form" method="post" action="api/setup/reset-cloudflare-token">
                     <button class="lms-button lms-button-danger" type="submit">
@@ -52,6 +54,11 @@
         }
         else
         {
+            <div class="edge-cloudflare-intro">
+                <strong>What Edge Gateway manages</strong>
+                <span>Setup Relay prepares the Cloudflare Tunnel, wildcard DNS and local Caddy/cloudflared routes for this Home Assistant add-on host.</span>
+            </div>
+
             <form class="edge-token-grid" method="post" action="api/setup/cloudflare-api-token">
                 <label class="ui-field">
                     <span class="ui-field-label">Paste Cloudflare token</span>

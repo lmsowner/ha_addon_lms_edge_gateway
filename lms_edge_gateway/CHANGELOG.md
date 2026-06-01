@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.21
+
+- Hides the Setup page "What Edge Gateway manages" callout after Cloudflare is configured.
+- Moves the Cloudflare reset action into a separate bottom row of the token card.
+
 ## 0.1.20
 
 - Aligns the Messaging Email enabled control with the Provider drop-down and other fields.
