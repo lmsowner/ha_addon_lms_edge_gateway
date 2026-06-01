@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.23
+
+- Removes the extra outer Published Apps wrapper.
+- Adds expandable and collapsible domain groups on the Published Apps page.
+
 ## 0.1.22
 
 - Moves the connected Cloudflare status and reset button to the bottom of the Setup page.

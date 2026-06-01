@@ -18,7 +18,7 @@
     }
     else
     {
-        <section class="surface-card edge-card">
+        <section class="edge-route-page-section">
             <div class="table-header">
                 <div>
                     <p class="eyebrow">Services</p>
@@ -67,10 +67,17 @@
                 <div class="edge-route-list">
                     @foreach (var domainGroup in RouteDomainGroups)
                     {
+                        var domainPanelId = BuildRouteDomainPanelId(domainGroup.DomainName);
+                        var isDomainExpanded = IsRouteDomainExpanded(domainGroup.DomainName);
+
                         <section class="edge-route-domain-group">
-                            <div class="edge-route-domain-header" aria-expanded="true">
-                                <button class="edge-route-domain-toggle" type="button">
-                                    <span class="edge-route-domain-chevron expanded" aria-hidden="true"></span>
+                            <div class="edge-route-domain-header @(isDomainExpanded ? string.Empty : "collapsed")" aria-expanded="@(isDomainExpanded ? "true" : "false")">
+                                <button class="edge-route-domain-toggle"
+                                        type="button"
+                                        aria-controls="@domainPanelId"
+                                        aria-expanded="@(isDomainExpanded ? "true" : "false")"
+                                        @onclick="@(() => ToggleRouteDomain(domainGroup.DomainName))">
+                                    <span class="edge-route-domain-chevron @(isDomainExpanded ? "expanded" : string.Empty)" aria-hidden="true"></span>
                                     <span class="edge-route-domain-copy">
                                         <strong>@domainGroup.DomainName</strong>
                                         <span>@BuildRouteDomainSummary(domainGroup.DomainName)</span>
@@ -87,52 +94,55 @@
                                 </span>
                             </div>
 
-                            <div class="edge-route-domain-apps">
-                                @foreach (var route in domainGroup.Routes)
-                                {
-                                    <article class="surface-subcard edge-route-card">
-                                        <div class="edge-route-card-header">
-                                            <div class="edge-route-title">
-                                                <h3>@route.Name</h3>
-                                                <LmsStatusPill Text="@(route.IsEnabled ? "Enabled" : "Disabled")" Tone="@(route.IsEnabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
-                                                <LmsStatusPill Text="@BuildAccessLabel(route)" Tone="@GetAccessTone(route)" />
-                                                <LmsStatusPill Text="@GetRouteTestLabel(route.Id)" Tone="@GetRouteTestTone(route.Id)" />
+                            @if (isDomainExpanded)
+                            {
+                                <div class="edge-route-domain-apps" id="@domainPanelId">
+                                    @foreach (var route in domainGroup.Routes)
+                                    {
+                                        <article class="surface-subcard edge-route-card">
+                                            <div class="edge-route-card-header">
+                                                <div class="edge-route-title">
+                                                    <h3>@route.Name</h3>
+                                                    <LmsStatusPill Text="@(route.IsEnabled ? "Enabled" : "Disabled")" Tone="@(route.IsEnabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+                                                    <LmsStatusPill Text="@BuildAccessLabel(route)" Tone="@GetAccessTone(route)" />
+                                                    <LmsStatusPill Text="@GetRouteTestLabel(route.Id)" Tone="@GetRouteTestTone(route.Id)" />
+                                                </div>
+                                                <div class="edge-route-actions">
+                                                    <LmsButton Label="@(IsRouteBusy(route.Id, RouteToggleAction) ? "Saving..." : route.IsEnabled ? "Disable" : "Enable")"
+                                                               Icon="@(route.IsEnabled ? "disable" : "publish")"
+                                                               Danger="@route.IsEnabled"
+                                                               Primary="@(!route.IsEnabled)"
+                                                               Disabled="@isRouteActionBusy"
+                                                               OnClick="@(() => ToggleRouteAsync(route.Id, route.IsEnabled))" />
+                                                    <LmsButton Label="@(IsRouteBusy(route.Id, RouteTestAction) ? "Testing..." : "Test")"
+                                                               Icon="test"
+                                                               Disabled="@isRouteActionBusy"
+                                                               OnClick="@(() => TestRouteAsync(route.Id))" />
+                                                    <LmsButton Label="Edit"
+                                                               Icon="edit"
+                                                               Disabled="@isRouteActionBusy"
+                                                               OnClick="@(() => OpenEditRouteModal(route))" />
+                                                    <LmsButton Label="@(IsRouteBusy(route.Id, RouteDeleteAction) ? "Deleting..." : "Delete")"
+                                                               Icon="delete"
+                                                               Danger="true"
+                                                               Disabled="@isRouteActionBusy"
+                                                               OnClick="@(() => DeleteRouteAsync(route.Id))" />
+                                                </div>
                                             </div>
-                                            <div class="edge-route-actions">
-                                                <LmsButton Label="@(IsRouteBusy(route.Id, RouteToggleAction) ? "Saving..." : route.IsEnabled ? "Disable" : "Enable")"
-                                                           Icon="@(route.IsEnabled ? "disable" : "publish")"
-                                                           Danger="@route.IsEnabled"
-                                                           Primary="@(!route.IsEnabled)"
-                                                           Disabled="@isRouteActionBusy"
-                                                           OnClick="@(() => ToggleRouteAsync(route.Id, route.IsEnabled))" />
-                                                <LmsButton Label="@(IsRouteBusy(route.Id, RouteTestAction) ? "Testing..." : "Test")"
-                                                           Icon="test"
-                                                           Disabled="@isRouteActionBusy"
-                                                           OnClick="@(() => TestRouteAsync(route.Id))" />
-                                                <LmsButton Label="Edit"
-                                                           Icon="edit"
-                                                           Disabled="@isRouteActionBusy"
-                                                           OnClick="@(() => OpenEditRouteModal(route))" />
-                                                <LmsButton Label="@(IsRouteBusy(route.Id, RouteDeleteAction) ? "Deleting..." : "Delete")"
-                                                           Icon="delete"
-                                                           Danger="true"
-                                                           Disabled="@isRouteActionBusy"
-                                                           OnClick="@(() => DeleteRouteAsync(route.Id))" />
+                                            <div class="edge-route-links">
+                                                <span class="edge-route-link">
+                                                    <span>External</span>
+                                                    <a href="@BuildExternalRouteUrl(route)" target="_blank" rel="noopener noreferrer">@BuildExternalRouteUrl(route)</a>
+                                                </span>
+                                                <span class="edge-route-link">
+                                                    <span>Internal</span>
+                                                    <a href="@route.UpstreamUrl" target="_blank" rel="noopener noreferrer">@route.UpstreamUrl</a>
+                                                </span>
                                             </div>
-                                        </div>
-                                        <div class="edge-route-links">
-                                            <span class="edge-route-link">
-                                                <span>External</span>
-                                                <a href="@BuildExternalRouteUrl(route)" target="_blank" rel="noopener noreferrer">@BuildExternalRouteUrl(route)</a>
-                                            </span>
-                                            <span class="edge-route-link">
-                                                <span>Internal</span>
-                                                <a href="@route.UpstreamUrl" target="_blank" rel="noopener noreferrer">@route.UpstreamUrl</a>
-                                            </span>
-                                        </div>
-                                    </article>
-                                }
-                            </div>
+                                        </article>
+                                    }
+                                </div>
+                            }
                         </section>
                     }
                 </div>
@@ -294,6 +304,7 @@
     private bool editAppUsePublicHostHeader;
     private bool editAppStripForwardedFor = true;
     private bool editAppSkipUpstreamTlsVerification;
+    private readonly HashSet<string> collapsedRouteDomains = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, string> routeTestLabels = [];
     private readonly Dictionary<Guid, LmsStatusTone> routeTestTones = [];
 
@@ -309,6 +320,27 @@
     protected override async Task OnInitializedAsync()
     {
         status = await StatusService.GetStatusAsync();
+    }
+
+    private bool IsRouteDomainExpanded(string domainName) =>
+        !collapsedRouteDomains.Contains(domainName);
+
+    private void ToggleRouteDomain(string domainName)
+    {
+        if (!collapsedRouteDomains.Add(domainName))
+        {
+            collapsedRouteDomains.Remove(domainName);
+        }
+    }
+
+    private static string BuildRouteDomainPanelId(string domainName)
+    {
+        var safeName = new string(domainName
+            .Select(character => char.IsLetterOrDigit(character) ? char.ToLowerInvariant(character) : '-')
+            .ToArray())
+            .Trim('-');
+
+        return $"edge-route-domain-{safeName}";
     }
 
     private bool IsRouteBusy(Guid routeId, string actionName) =>

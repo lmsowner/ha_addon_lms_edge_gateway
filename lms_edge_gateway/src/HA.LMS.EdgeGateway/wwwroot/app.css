@@ -662,6 +662,11 @@ textarea {
     gap: var(--space-4);
 }
 
+.edge-route-page-section {
+    display: grid;
+    gap: var(--space-4);
+}
+
 .edge-tab-panel {
     align-content: start;
 }
@@ -961,18 +966,28 @@ textarea {
     width: 100%;
 }
 
+.edge-route-domain-header.collapsed {
+    border-bottom: 0;
+}
+
 .edge-route-domain-toggle {
     align-items: center;
     background: transparent;
     border: 0;
     color: inherit;
-    cursor: default;
+    cursor: pointer;
     display: grid;
     gap: 0.55rem;
     grid-template-columns: auto minmax(0, 1fr);
     min-width: 0;
     padding: 0;
     text-align: left;
+}
+
+.edge-route-domain-toggle:focus-visible {
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-focus);
+    outline: none;
 }
 
 .edge-route-domain-chevron,
@@ -983,6 +998,7 @@ textarea {
     display: inline-block;
     height: 0.46rem;
     transform: rotate(-45deg);
+    transition: transform 140ms ease;
     width: 0.46rem;
 }
 
