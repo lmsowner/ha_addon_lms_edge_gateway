@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.28
+
+- Adds an in-app Documentation tab covering Cloudflare setup, relay domains, app publishing, discovery, Caddy routing, authentication policies, passkey setup, messaging providers, scenarios, and operations.
+- Adds screenshot placeholder areas in the documentation page for future captured setup images.
+- Adds third-party software and service acknowledgements to the About page.
+
 ## 0.1.27
 
 - Returns a plain Caddy 404 for unmatched published-app hostnames instead of exposing an Edge Gateway-specific message.

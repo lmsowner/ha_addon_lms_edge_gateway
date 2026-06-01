@@ -1,0 +1,344 @@
+@page "/documentation"
+
+<PageTitle>Documentation | LMS HA Edge Gateway</PageTitle>
+
+<div class="page-shell edge-gateway-page docs-page">
+    <section class="surface-card edge-card docs-hero">
+        <div>
+            <p class="eyebrow">Documentation</p>
+            <h2>LMS HA Edge Gateway Handbook</h2>
+            <p class="meta-text">
+                A complete operating guide for publishing Home Assistant and any internal web app through Cloudflare Tunnel,
+                Caddy, and LMS authentication without opening inbound firewall ports.
+            </p>
+        </div>
+        <div class="docs-hero-flow" aria-label="Traffic flow">
+            <span>Browser</span>
+            <span>Cloudflare</span>
+            <span>cloudflared</span>
+            <span>Caddy</span>
+            <span>Internal app</span>
+        </div>
+    </section>
+
+    <section class="surface-card edge-card docs-section docs-quick-map">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Read this first</p>
+                <h2>What Edge Gateway is doing for you</h2>
+                <p class="meta-text">
+                    Edge Gateway turns each published hostname into a managed route. Cloudflare handles the public edge and
+                    tunnel transport, cloudflared keeps an outbound connector alive from this add-on, Caddy routes traffic to
+                    the correct LAN service, and LMS applies the selected access policy before the upstream app is reached.
+                </p>
+            </div>
+        </div>
+
+        <div class="docs-flow-list">
+            <div><strong>1. DNS</strong><span>A public hostname such as <code>plex.example.com</code> points at the managed Edge Gateway relay namespace.</span></div>
+            <div><strong>2. Tunnel</strong><span>Cloudflare routes the request down the named tunnel to the local cloudflared process in the add-on.</span></div>
+            <div><strong>3. Caddy</strong><span>Caddy matches the public Host header and optional path prefix, then proxies to the configured internal target.</span></div>
+            <div><strong>4. Auth</strong><span>For protected apps, Caddy asks LMS forward-auth whether to allow, redirect to login, block, or pass through.</span></div>
+        </div>
+
+        <p class="callout ready">
+            For browser-based internal apps this gives a VPN-grade access pattern with less friction: no inbound ports, no full
+            network tunnel, no VPN client rollout, and per-app MFA/passkey controls. It is not a replacement for every VPN use case,
+            but it is a better fit when the thing you want to expose is a web UI.
+        </p>
+    </section>
+
+    <section class="surface-card edge-card docs-section">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Setup path</p>
+                <h2>Before you publish the first app</h2>
+                <p class="meta-text">Have these in place before relying on external access.</p>
+            </div>
+        </div>
+
+        <div class="docs-check-grid">
+            <article>
+                <strong>Cloudflare account</strong>
+                <span>The add-on uses Cloudflare APIs to create or reuse a tunnel, write DNS records, and keep ingress aligned.</span>
+            </article>
+            <article>
+                <strong>Cloudflare-managed domain</strong>
+                <span>Your domain must use Cloudflare DNS. Edge Gateway can only manage zones returned by the saved token.</span>
+            </article>
+            <article>
+                <strong>Scoped API token</strong>
+                <span>Use a custom token with only the required account and zone permissions for the domains this add-on should manage.</span>
+            </article>
+            <article>
+                <strong>Email provider</strong>
+                <span>Recommended. It enables setup emails and email OTP fallback. Supported providers include SMTP, Microsoft Graph, Resend, Brevo, MailerSend, and Mailgun; many offer free tiers.</span>
+            </article>
+            <article>
+                <strong>Internal targets</strong>
+                <span>Know the scheme, host/IP, port, and any path prefix for each app you want to publish.</span>
+            </article>
+            <article>
+                <strong>Admin account</strong>
+                <span>Create at least one LMS user, enroll authenticator OTP, then save a passkey from the public HTTPS route.</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="cloudflare-token">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Cloudflare token</p>
+                <h2>Create and save the scoped token</h2>
+                <p class="meta-text">
+                    Go to Cloudflare API Tokens, create a custom token, scope it to the account and zone this add-on should manage,
+                    then paste it into Setup. The token is stored under the add-on data root.
+                </p>
+            </div>
+        </div>
+
+        <div class="docs-two-column">
+            <div>
+                <h3>Required permission rows</h3>
+                <ul class="plain-list">
+                    <li><code>Account</code> / <code>Cloudflare Tunnel</code> / <code>Edit</code></li>
+                    <li><code>Account</code> / <code>Access: Apps and Policies</code> / <code>Edit</code></li>
+                    <li><code>Zone</code> / <code>DNS</code> / <code>Edit</code></li>
+                </ul>
+                <p class="meta-text">
+                    Keep the token narrow. Prefer one account and only the zones this add-on is allowed to publish.
+                    Rotate the token if it is copied outside Home Assistant or if the add-on host is decommissioned.
+                </p>
+            </div>
+
+            <figure class="docs-screenshot-slot">
+                <span>Screenshot slot</span>
+                <strong>Cloudflare API token permissions</strong>
+                <small>Use this area for the Cloudflare custom token screen.</small>
+            </figure>
+        </div>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="relay">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Domain and relay</p>
+                <h2>How the wildcard relay namespace works</h2>
+                <p class="meta-text">
+                    Setup Relay prepares the Cloudflare side once for a domain. Published apps then reuse that managed relay
+                    namespace instead of each app needing hand-built tunnel and DNS plumbing.
+                </p>
+            </div>
+        </div>
+
+        <div class="docs-route-diagram">
+            <div><strong>Relay namespace</strong><code>ha-app-relay.example.com</code></div>
+            <div><strong>Wildcard DNS</strong><code>*.ha-app-relay.example.com -> tunnel-id.cfargotunnel.com</code></div>
+            <div><strong>App DNS</strong><code>plex.example.com -> ha-app-relay.example.com</code></div>
+            <div><strong>Caddy target</strong><code>http://192.168.15.40:32400</code></div>
+        </div>
+
+        <div class="docs-two-column">
+            <div>
+                <h3>What Setup Relay creates</h3>
+                <ol class="numbered-list">
+                    <li>Finds the selected Cloudflare zone and account from the saved token.</li>
+                    <li>Creates or reuses a named Cloudflare Tunnel for the relay namespace.</li>
+                    <li>Creates the proxied wildcard DNS record for <code>*.ha-app-relay.example.com</code>.</li>
+                    <li>Saves the connector token used by cloudflared inside the add-on.</li>
+                    <li>Writes tunnel ingress so Cloudflare sends matching hostnames to local Caddy.</li>
+                    <li>Applies the Caddyfile so host/path matches route to the right internal service.</li>
+                </ol>
+            </div>
+            <figure class="docs-screenshot-slot">
+                <span>Screenshot slot</span>
+                <strong>Setup Relay success</strong>
+                <small>Capture the configured zones and setup steps panel here.</small>
+            </figure>
+        </div>
+
+        <p class="callout ready">
+            Public TLS is handled at Cloudflare. Caddy then controls the internal hop to your service, including Host headers,
+            forwarded headers, path prefix handling, and whether an HTTPS upstream with a self-signed or IP-address certificate
+            should skip upstream TLS verification.
+        </p>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="publishing">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Publishing apps</p>
+                <h2>Expose any internal web app securely</h2>
+                <p class="meta-text">
+                    If a service has a web interface on your LAN, Edge Gateway can usually publish it. Home Assistant, Plex,
+                    Jellyfin, Proxmox, ESXi, routers, NAS tools, dashboards, admin consoles, and custom web apps all follow the
+                    same route model.
+                </p>
+            </div>
+        </div>
+
+        <div class="docs-two-column">
+            <div>
+                <h3>Add app fields</h3>
+                <div class="docs-definition-list">
+                    <div><strong>App name</strong><span>Human-readable label in Published Apps.</span></div>
+                    <div><strong>Public host</strong><span>The external hostname users will open, for example <code>plex.example.com</code>.</span></div>
+                    <div><strong>Target scheme/host/port</strong><span>The internal service, for example <code>http://192.168.15.40:32400</code>.</span></div>
+                    <div><strong>Path prefix</strong><span>Optional. Caddy strips this before proxying when you publish under a path.</span></div>
+                    <div><strong>Access policy</strong><span>MFA/Passkey, Pass Through, or Blocked.</span></div>
+                </div>
+            </div>
+            <figure class="docs-screenshot-slot">
+                <span>Screenshot slot</span>
+                <strong>Add App dialog and discovery results</strong>
+                <small>Capture service search and the selected target details.</small>
+            </figure>
+        </div>
+
+        <h3>Service discovery</h3>
+        <p class="meta-text">
+            Discovery is deliberately targeted. It starts from what the host already knows, then probes likely HTTP services instead
+            of blindly walking every address and every port.
+        </p>
+        <div class="docs-pipeline">
+            <span>ARP / neighbour cache</span>
+            <span>SSDP</span>
+            <span>mDNS</span>
+            <span>WS-Discovery</span>
+            <span>Docker / Supervisor</span>
+            <span>Known ports</span>
+            <span>Targeted probes</span>
+        </div>
+        <p class="meta-text">
+            In Home Assistant, host network visibility can differ from a normal Linux shell. Expanded LAN discovery asks Home
+            Assistant and the host network for broader CIDR details where available, then folds those candidates into the same
+            targeted probe pipeline.
+        </p>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="authentication">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Authentication options</p>
+                <h2>Choose the right access policy per app</h2>
+                <p class="meta-text">
+                    Every published route has its own policy. Use the strictest policy that still fits the app and client.
+                </p>
+            </div>
+        </div>
+
+        <div class="docs-policy-grid">
+            <article>
+                <strong>MFA/Passkey</strong>
+                <span>Best default for browser-first apps. Users authenticate with LMS, satisfy MFA, then Caddy forwards the request.</span>
+            </article>
+            <article>
+                <strong>Pass Through</strong>
+                <span>Use when the upstream app has its own login or native clients cannot handle the LMS browser flow. The app remains behind Cloudflare Tunnel and Caddy.</span>
+            </article>
+            <article>
+                <strong>Blocked</strong>
+                <span>Keeps a route saved but returns HTTP 403. Useful during maintenance or when you want to preserve config without exposing it.</span>
+            </article>
+            <article>
+                <strong>Source restrictions</strong>
+                <span>Layer known IPs, LAN-only rules, allowed users, or allowed groups on top of the selected route policy.</span>
+            </article>
+        </div>
+
+        <div class="docs-two-column">
+            <div>
+                <h3>Why passkeys are the best option</h3>
+                <p class="meta-text">
+                    Passkeys are phishing-resistant and bound to the public HTTPS origin, so a copied password or OTP is not enough.
+                    The browser or device proves possession of the private key and usually requires the user to unlock the device.
+                    There is no shared secret to type, no code to relay, and no reusable password for an attacker to steal.
+                </p>
+                <ol class="numbered-list">
+                    <li>Create or reset an LMS user so they have an authenticator OTP QR code.</li>
+                    <li>Sign in through the public Edge Gateway route with OTP or email OTP.</li>
+                    <li>Use the save passkey prompt to register this device with the current public origin.</li>
+                    <li>Next time, choose Passkey and approve the device prompt instead of typing a code.</li>
+                </ol>
+                <p class="meta-text">
+                    Save passkeys from the real external HTTPS hostname. WebAuthn checks the origin, so registering from a local
+                    HTTP address and using it from the public HTTPS route will fail by design.
+                </p>
+            </div>
+            <figure class="docs-screenshot-slot">
+                <span>Screenshot slot</span>
+                <strong>Login and passkey setup flow</strong>
+                <small>Capture OTP sign-in followed by the save passkey prompt.</small>
+            </figure>
+        </div>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="messaging">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Messaging</p>
+                <h2>Set up email early</h2>
+                <p class="meta-text">
+                    Email is not mandatory for local testing, but it makes account provisioning and recovery far smoother.
+                    A successful test email marks the selected provider as verified and enables email for LMS account setup workflows.
+                </p>
+            </div>
+        </div>
+
+        <div class="docs-definition-list compact">
+            <div><strong>SMTP</strong><span>Works with a standard SMTP server or relay account.</span></div>
+            <div><strong>Microsoft Graph</strong><span>Uses an Entra app registration and a mailbox allowed to send setup messages.</span></div>
+            <div><strong>Resend, Brevo, MailerSend, Mailgun</strong><span>API-based transactional providers. Many have free tiers; check current provider limits before choosing one.</span></div>
+        </div>
+        <p class="callout ready">
+            Recommended flow: choose a provider, save the settings, send a successful test to yourself, then create LMS users.
+            That gives each user a cleaner setup path and gives you email OTP as a fallback when a passkey is not yet enrolled.
+        </p>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="scenarios">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Examples</p>
+                <h2>Practical publishing scenarios</h2>
+                <p class="meta-text">Use these as starting points for real routes.</p>
+            </div>
+        </div>
+
+        <div class="docs-scenario-list">
+            <article>
+                <strong>Home Assistant from outside the house</strong>
+                <span>Publish <code>hassio.example.com</code> to the internal Home Assistant URL. Use pass-through if the HA mobile app or native HA auth needs to own the login flow; use MFA/Passkey for browser admin access.</span>
+            </article>
+            <article>
+                <strong>Plex or Jellyfin for family access</strong>
+                <span>Publish the media UI without opening router ports. Pass-through often fits because Plex/Jellyfin already have their own account model.</span>
+            </article>
+            <article>
+                <strong>Admin tools such as routers, NAS, Proxmox, or ESXi</strong>
+                <span>Use MFA/Passkey, known IPs, and user/group restrictions. These are high-impact apps, so avoid pass-through unless the upstream auth is strong.</span>
+            </article>
+            <article>
+                <strong>Temporary troubleshooting access</strong>
+                <span>Create a route, leave it disabled until needed, enable it during a support window, then disable or delete it afterwards. Diagnostics and route tests confirm whether Cloudflare, Caddy, and the upstream target are healthy.</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="operations">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h2>Repair, test, and keep it healthy</h2>
+                <p class="meta-text">The app is designed to make the moving parts visible without making you hand-edit them.</p>
+            </div>
+        </div>
+
+        <div class="docs-definition-list">
+            <div><strong>Setup tab</strong><span>Validates the token, relay zones, tunnel status, wildcard DNS, connector token, cloudflared, and Caddy readiness.</span></div>
+            <div><strong>Published Apps</strong><span>Shows each domain group, lets you add, edit, enable, disable, test, or delete routes.</span></div>
+            <div><strong>Diagnostics</strong><span>Shows route checks, access events, and operational signals for why a route is allowed, blocked, or failing.</span></div>
+            <div><strong>Repair behavior</strong><span>Startup and Setup validation reconcile tunnel ingress, DNS, Caddy, and cloudflared where possible. If Cloudflare reports the tunnel down, the add-on tries to restart or directly start cloudflared before asking you to rebuild anything.</span></div>
+        </div>
+    </section>
+</div>
