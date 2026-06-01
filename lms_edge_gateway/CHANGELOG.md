@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.25
+
+- Moves the Messaging provider status note out of the first control row so Status and Provider controls align cleanly.
+
 ## 0.1.24
 
 - Fixes Messaging form control heights so Provider no longer stretches taller than the status control.

@@ -221,7 +221,6 @@
                                            disabled="@(!CanToggleMessagingEnabledForSelectedProvider || isSavingMessaging)" />
                                     <span>Email enabled</span>
                                 </label>
-                                <span class="ui-field-helper">@MessagingEnabledHelperText</span>
                             </div>
 
                             <label class="ui-field">
@@ -236,6 +235,8 @@
                                     <option value="@MessagingEmailProvider.Mailgun">Mailgun</option>
                                 </select>
                             </label>
+
+                            <p class="ui-field-helper security-messaging-note">@MessagingEnabledHelperText</p>
 
                             <label class="ui-field">
                                 <span class="ui-field-label">Sender email</span>

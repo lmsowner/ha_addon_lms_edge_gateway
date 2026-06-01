@@ -2233,6 +2233,11 @@ textarea {
     align-self: start;
 }
 
+.security-messaging-note {
+    grid-column: 1 / -1;
+    margin: -0.35rem 0 0;
+}
+
 .security-test-grid {
     align-items: end;
     grid-template-columns: minmax(14rem, 24rem) auto;
