@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.22
+
+- Moves the connected Cloudflare status and reset button to the bottom of the Setup page.
+
 ## 0.1.21
 
 - Hides the Setup page "What Edge Gateway manages" callout after Cloudflare is configured.

@@ -1169,31 +1169,20 @@ textarea {
     border-radius: var(--radius-md);
     display: grid;
     gap: var(--space-3);
+    grid-template-columns: minmax(0, 1fr) auto;
     padding: 0.7rem 0.8rem;
 }
 
-.edge-token-ready > div,
-.edge-token-reset-panel > div {
+.edge-token-ready > div {
     display: grid;
     gap: 0.15rem;
     min-width: 0;
 }
 
-.edge-token-ready span,
-.edge-token-reset-panel span {
+.edge-token-ready span {
     color: var(--color-text-muted);
     font-size: 0.82rem;
     line-height: 1.35;
-}
-
-.edge-token-reset-panel {
-    align-items: center;
-    border-top: 1px solid var(--color-line);
-    display: grid;
-    gap: var(--space-3);
-    grid-template-columns: minmax(0, 1fr) auto;
-    margin-top: 0.35rem;
-    padding-top: 0.82rem;
 }
 
 .edge-token-grid {
@@ -3147,7 +3136,6 @@ textarea {
 
     .table-header,
     .edge-token-ready,
-    .edge-token-reset-panel,
     .edge-route-card-header {
         align-items: stretch;
         grid-template-columns: 1fr;
