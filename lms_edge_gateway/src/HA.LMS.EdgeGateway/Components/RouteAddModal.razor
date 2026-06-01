@@ -48,10 +48,17 @@
                             <select @bind="addAppAccessPolicy">
                                 <option value="MFA/Passkey">MFA/Passkey</option>
                                 <option value="Pass Through">Pass through</option>
-                                <option value="Blocked">Blocked</option>
                             </select>
                         </label>
                     </div>
+
+                    @if (IsPassThroughAccessPolicy(addAppAccessPolicy))
+                    {
+                        <div class="callout warning edge-pass-through-warning" role="alert">
+                            <strong>Pass-through sends internet traffic straight to the destination</strong>
+                            <span>@PassThroughWarningText</span>
+                        </div>
+                    }
 
                     <div class="edge-form-grid edge-form-grid-target">
                         <label class="ui-field">
@@ -681,9 +688,7 @@
         addAppTargetPort = service.Port;
         addAppName = BuildRouteNameFromDiscoveredService(service);
         addAppHostLabel = BuildRouteHostLabelFromDiscoveredService(service);
-        addAppAccessPolicy = service.Exposure == DiscoveryExposure.UnsafeToExpose
-            ? "Blocked"
-            : "MFA/Passkey";
+        addAppAccessPolicy = "MFA/Passkey";
         addAppUsePublicHostHeader = IsHomeAssistantCandidate(addAppName, addAppHostLabel, service.Port);
         addAppStripForwardedFor = true;
         addAppSkipUpstreamTlsVerification = addAppTargetScheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
@@ -835,9 +840,7 @@
     {
         var auth = addAppAccessPolicy.Contains("through", StringComparison.OrdinalIgnoreCase)
             ? "Caddy will proxy this straight to the backend."
-            : addAppAccessPolicy.Contains("block", StringComparison.OrdinalIgnoreCase)
-                ? "Caddy will keep this route blocked until the auth mode is changed."
-                : $"Policy: {BuildAddAppAccessLabel()}.";
+            : $"Policy: {BuildAddAppAccessLabel()}.";
         var path = NormalizeRoutePathPrefix(addAppTargetPathPrefix);
         var routing = string.IsNullOrWhiteSpace(path)
             ? "This is the default route for the hostname."
@@ -849,11 +852,21 @@
         string.IsNullOrWhiteSpace(addAppAccessPolicy) ? "MFA/Passkey" : addAppAccessPolicy.Trim();
 
     private LmsStatusTone GetAddAppAccessTone() =>
-        BuildAddAppAccessLabel().Contains("block", StringComparison.OrdinalIgnoreCase)
-            ? LmsStatusTone.Critical
-            : BuildAddAppAccessLabel().Contains("pass", StringComparison.OrdinalIgnoreCase)
+        IsPassThroughAccessPolicy(addAppAccessPolicy)
                 ? LmsStatusTone.Warning
                 : LmsStatusTone.Ready;
+
+    private const string PassThroughWarningText =
+        "Internet traffic for this hostname is passed straight to the destination service. LMS MFA and passkeys are not required on this route, so use pass-through only when the destination is public by design or has the authentication and authorization you require.";
+
+    private static bool IsPassThroughAccessPolicy(string? accessPolicy)
+    {
+        var value = (accessPolicy ?? string.Empty).Trim();
+        return value.Equals("Pass Through", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("Pass-through", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("PassThrough", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("Public", StringComparison.OrdinalIgnoreCase);
+    }
 
     private string BuildAddAppPreviewExternalUrl()
     {

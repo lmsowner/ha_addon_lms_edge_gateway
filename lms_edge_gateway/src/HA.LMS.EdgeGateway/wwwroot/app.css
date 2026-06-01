@@ -1492,6 +1492,31 @@ textarea {
     line-height: 1.35;
 }
 
+.edge-pass-through-warning {
+    border: 1px solid var(--color-warning-line);
+    display: grid;
+    gap: 0.22rem;
+    line-height: 1.35;
+}
+
+.edge-pass-through-warning strong {
+    color: var(--color-warning);
+    font-size: 0.86rem;
+}
+
+.edge-pass-through-warning span {
+    color: var(--color-text);
+    font-size: 0.8rem;
+}
+
+.edge-route-card > .edge-pass-through-warning {
+    margin-top: 0.75rem;
+}
+
+.edge-token-guide-grid > .edge-pass-through-warning {
+    grid-column: 1 / -1;
+}
+
 .edge-form-flags {
     align-items: center;
     display: flex;

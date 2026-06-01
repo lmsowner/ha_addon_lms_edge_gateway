@@ -54,7 +54,7 @@
     }
 
     private string UseTitle => IsBlocked
-        ? "Blocked by discovery policy."
+        ? "Not selectable by discovery policy."
         : $"Select {Service.Url}";
 
     private static void AddIfPresent(List<string> parts, string label, string? value)

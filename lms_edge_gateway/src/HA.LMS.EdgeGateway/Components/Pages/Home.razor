@@ -139,6 +139,13 @@
                                                     <a href="@route.UpstreamUrl" target="_blank" rel="noopener noreferrer">@route.UpstreamUrl</a>
                                                 </span>
                                             </div>
+                                            @if (route.IsEnabled && IsPassThroughAccessPolicy(route.AccessPolicy))
+                                            {
+                                                <div class="callout warning edge-pass-through-warning" role="alert">
+                                                    <strong>Pass-through is enabled</strong>
+                                                    <span>@PassThroughWarningText</span>
+                                                </div>
+                                            }
                                         </article>
                                     }
                                 </div>
@@ -220,9 +227,15 @@
                                 <select @bind="editAppAccessPolicy">
                                     <option value="MFA/Passkey">MFA/Passkey</option>
                                     <option value="Pass Through">Pass through</option>
-                                    <option value="Blocked">Blocked</option>
                                 </select>
                             </label>
+                            @if (IsPassThroughAccessPolicy(editAppAccessPolicy))
+                            {
+                                <div class="callout warning edge-pass-through-warning" role="alert">
+                                    <strong>Pass-through sends internet traffic straight to the destination</strong>
+                                    <span>@PassThroughWarningText</span>
+                                </div>
+                            }
                             <div class="edge-readonly-field">
                                 <span class="ui-field-label">Route</span>
                                 <strong>@editingRoute.PublicHostname</strong>
@@ -506,7 +519,7 @@
         editingRoute = route;
         editAppName = route.Name;
         editAppHostLabel = GetHostLabel(route);
-        editAppAccessPolicy = route.AccessPolicy;
+        editAppAccessPolicy = IsBlockedAccessPolicy(route.AccessPolicy) ? "MFA/Passkey" : BuildAccessLabel(route);
         editAppTargetPathPrefix = route.TargetPathPrefix;
         editAppAllowKnownIps = route.AllowKnownIps;
         editAppAllowedUsers = route.AllowedUsers;
@@ -612,12 +625,26 @@
             : route.AccessPolicy;
 
     private static LmsStatusTone GetAccessTone(PublishedApplicationDefinition route) =>
-        BuildAccessLabel(route).Contains("block", StringComparison.OrdinalIgnoreCase)
+        IsBlockedAccessPolicy(route.AccessPolicy)
             ? LmsStatusTone.Critical
-            : BuildAccessLabel(route).Contains("straight", StringComparison.OrdinalIgnoreCase) ||
-        BuildAccessLabel(route).Contains("pass", StringComparison.OrdinalIgnoreCase)
+            : IsPassThroughAccessPolicy(route.AccessPolicy)
             ? LmsStatusTone.Warning
             : LmsStatusTone.Ready;
+
+    private const string PassThroughWarningText =
+        "Internet traffic for this hostname is passed straight to the destination service. LMS MFA and passkeys are not required on this route, so use pass-through only when the destination is public by design or has the authentication and authorization you require.";
+
+    private static bool IsBlockedAccessPolicy(string? accessPolicy) =>
+        (accessPolicy ?? string.Empty).Contains("block", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPassThroughAccessPolicy(string? accessPolicy)
+    {
+        var value = (accessPolicy ?? string.Empty).Trim();
+        return value.Equals("Pass Through", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("Pass-through", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("PassThrough", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("Public", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string BuildExternalRouteUrl(PublishedApplicationDefinition route)
     {

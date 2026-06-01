@@ -38,7 +38,7 @@
             <div><strong>1. DNS</strong><span>A public hostname such as <code>plex.example.com</code> points at the managed Edge Gateway relay namespace.</span></div>
             <div><strong>2. Tunnel</strong><span>Cloudflare routes the request down the named tunnel to the local cloudflared process in the add-on.</span></div>
             <div><strong>3. Caddy</strong><span>Caddy matches the public Host header and optional path prefix, then proxies to the configured internal target.</span></div>
-            <div><strong>4. Auth</strong><span>For protected apps, Caddy asks LMS forward-auth whether to allow, redirect to login, block, or pass through.</span></div>
+            <div><strong>4. Auth</strong><span>For protected apps, Caddy asks LMS forward-auth whether to allow, redirect to login, deny, or pass through.</span></div>
         </div>
 
         <p class="callout ready">
@@ -187,7 +187,7 @@
                     <div><strong>Public host</strong><span>The external hostname users will open, for example <code>plex.example.com</code>.</span></div>
                     <div><strong>Target scheme/host/port</strong><span>The internal service, for example <code>http://192.168.15.40:32400</code>.</span></div>
                     <div><strong>Path prefix</strong><span>Optional. Caddy strips this before proxying when you publish under a path.</span></div>
-                    <div><strong>Access policy</strong><span>MFA/Passkey, Pass Through, or Blocked.</span></div>
+                    <div><strong>Access policy</strong><span>MFA/Passkey or Pass Through. Disable the route when it should not be reachable.</span></div>
                 </div>
             </div>
         </div>
@@ -248,15 +248,15 @@
             </article>
             <article>
                 <strong>Pass Through</strong>
-                <span>Use when the upstream app has its own login or native clients cannot handle the LMS browser flow. The app remains behind Cloudflare Tunnel and Caddy.</span>
-            </article>
-            <article>
-                <strong>Blocked</strong>
-                <span>Keeps a route saved but returns HTTP 403. Useful during maintenance or when you want to preserve config without exposing it.</span>
+                <span>Use only when the upstream app is public by design, has its own authentication, or native clients cannot handle the LMS browser flow. Internet traffic is proxied straight to the destination service.</span>
             </article>
             <article>
                 <strong>Source restrictions</strong>
                 <span>Layer known IPs, LAN-only rules, allowed users, or allowed groups on top of the selected route policy.</span>
+            </article>
+            <article>
+                <strong>Disabled routes</strong>
+                <span>Turn a route off when you want to keep the configuration but stop external access.</span>
             </article>
         </div>
 
@@ -351,7 +351,7 @@
         <div class="docs-definition-list">
             <div><strong>Setup tab</strong><span>Validates the token, relay zones, tunnel status, wildcard DNS, connector token, cloudflared, and Caddy readiness.</span></div>
             <div><strong>Published Apps</strong><span>Shows each domain group, lets you add, edit, enable, disable, test, or delete routes.</span></div>
-            <div><strong>Diagnostics</strong><span>Shows route checks, access events, and operational signals for why a route is allowed, blocked, or failing.</span></div>
+            <div><strong>Diagnostics</strong><span>Shows route checks, access events, and operational signals for why a route is allowed, denied, or failing.</span></div>
             <div><strong>Repair behavior</strong><span>Startup and Setup validation reconcile tunnel ingress, DNS, Caddy, and cloudflared where possible. If Cloudflare reports the tunnel down, the add-on tries to restart or directly start cloudflared before asking you to rebuild anything.</span></div>
         </div>
 

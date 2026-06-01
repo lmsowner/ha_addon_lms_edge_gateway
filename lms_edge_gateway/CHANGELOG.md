@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.31
+
+- Adds explicit pass-through warnings on new routes, edited routes, and enabled published routes.
+- Removes the Blocked auth mode from route create/edit controls; disable a route instead when it should not be reachable.
+- Updates Documentation so route policy guidance describes MFA/Passkey, Pass Through, source restrictions, and route disablement.
+
 ## 0.1.30
 
 - Replaces the Cloudflare token permissions placeholder in Documentation with the existing permissions screenshot.
