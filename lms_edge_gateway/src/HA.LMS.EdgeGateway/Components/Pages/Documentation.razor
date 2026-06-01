@@ -220,6 +220,41 @@
         </p>
     </section>
 
+    <section class="surface-card edge-card docs-section" id="domain-services">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Domain Services</p>
+                <h2>Publish .well-known services</h2>
+                <p class="meta-text">
+                    Domain Services manages public files and JSON metadata under <code>/.well-known/</code> for domains already
+                    routed through Edge Gateway. This covers verification files, public keys, app links, security contacts,
+                    WebFinger, and OAuth/OIDC discovery without manually editing Caddy or Linux paths.
+                </p>
+            </div>
+        </div>
+
+        <div class="docs-check-grid">
+            <article>
+                <strong>Tesla Fleet</strong>
+                <span>Generates an EC key pair, stores the private key under add-on secrets, and publishes only the public key at Tesla's required path.</span>
+            </article>
+            <article>
+                <strong>security.txt</strong>
+                <span>Builds a valid text file with contact, expiry, preferred languages, canonical, policy, and hiring links.</span>
+            </article>
+            <article>
+                <strong>App and identity metadata</strong>
+                <span>Templates cover WebFinger, Apple App Site Association, Android Asset Links, OpenID/OAuth discovery, custom text, and custom JSON.</span>
+            </article>
+        </div>
+
+        <p class="callout ready">
+            .well-known routes are public by default and generated before normal app routes, so they bypass LMS forward-auth unless
+            you explicitly require auth. The manager validates paths, prevents traversal, writes files under
+            <code>/data/lms-edge-gateway/well-known/public</code>, refreshes Caddy safely, and verifies the public URL over HTTPS.
+        </p>
+    </section>
+
     <section class="surface-card edge-card docs-section" id="authentication">
         <div class="table-header">
             <div>

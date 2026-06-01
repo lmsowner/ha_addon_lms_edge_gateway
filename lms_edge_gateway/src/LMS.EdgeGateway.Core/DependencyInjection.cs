@@ -11,6 +11,7 @@ public static class DependencyInjection
         services.AddSingleton<IEdgeGatewaySecurityStore, JsonEdgeGatewaySecurityStore>();
         services.AddSingleton<IEdgeGatewaySecretProtector, EdgeGatewaySecretProtector>();
         services.AddSingleton<ICloudflareApiTokenStore, JsonCloudflareApiTokenStore>();
+        services.AddSingleton<IWellKnownServiceStore, JsonWellKnownServiceStore>();
         services.AddHttpClient<ICloudflareApiTokenValidator, CloudflareApiTokenValidator>(client =>
         {
             client.BaseAddress = new Uri("https://api.cloudflare.com/client/v4/");
@@ -37,6 +38,13 @@ public static class DependencyInjection
         services.AddScoped<IEdgeGatewayEmailDeliveryService, EdgeGatewayEmailDeliveryService>();
         services.AddScoped<IEmailSender>(provider => provider.GetRequiredService<IEdgeGatewayEmailDeliveryService>());
         services.AddScoped<IEdgeGatewaySecurityService, EdgeGatewaySecurityService>();
+        services.AddHttpClient<IWellKnownServiceManager, WellKnownServiceManager>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false,
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            });
         return services;
     }
 }

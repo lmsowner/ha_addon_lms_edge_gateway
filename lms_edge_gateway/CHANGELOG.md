@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.33
+
+- Adds Domain Services / .well-known Manager with reusable service storage, validation, public file publishing, verification, and Caddy route generation.
+- Adds guided quick-start templates for Tesla Fleet, security.txt, WebFinger, Apple App Site Association, Android Asset Links, OpenID/OAuth discovery, and custom text/JSON.
+- Adds Tesla Fleet EC key generation with the private key stored outside the public .well-known folder and only the public key published.
+- Validates .well-known paths, content types, private-key-looking public bodies, and public verification responses.
+- Validates generated Caddy configs before reload and restores the previous Caddyfile when reload fails.
+
 ## 0.1.32
 
 - Moves the Setup Relay screenshot into the relay documentation section.

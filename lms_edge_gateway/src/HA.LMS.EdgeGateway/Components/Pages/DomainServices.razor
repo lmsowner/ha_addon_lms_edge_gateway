@@ -1,0 +1,620 @@
+@page "/domain-services"
+@rendermode InteractiveServer
+@inject IWellKnownServiceManager WellKnownManager
+@inject IEdgeGatewayStatusService StatusService
+@inject IJSRuntime JS
+
+<PageTitle>Domain Services | LMS Edge Gateway</PageTitle>
+
+<div class="page-shell edge-gateway-page domain-services-page">
+    <section class="surface-card edge-card">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Domain Services</p>
+                <h2>.well-known Manager</h2>
+                <p class="meta-text">
+                    Publish public domain verification files, JSON metadata, public keys, and app-link documents through the same
+                    Cloudflare Tunnel and Caddy route foundation as Edge Gateway apps.
+                </p>
+            </div>
+            <LmsButton Label="Refresh"
+                       Icon="refresh"
+                       Busy="@isLoading"
+                       OnClick="LoadAsync" />
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(actionMessage))
+        {
+            <p class="callout @(actionIsError ? "warning" : "ready")">@actionMessage</p>
+        }
+
+        @if (configuration is null || runtimeStatus is null)
+        {
+            <section class="surface-card edge-loading-card" aria-busy="true">
+                <span class="edge-loading-progress">
+                    <span class="edge-loading-progress-fill"></span>
+                </span>
+                <p class="meta-text">Loading domain services.</p>
+            </section>
+        }
+        else
+        {
+            <div class="domain-template-grid">
+                @foreach (var template in templates)
+                {
+                    <button class="domain-template-card @(selectedTemplate == template.Kind ? "active" : string.Empty)"
+                            type="button"
+                            @onclick="@(() => SelectTemplate(template))">
+                        <strong>@template.Name</strong>
+                        <span>@template.Description</span>
+                    </button>
+                }
+            </div>
+
+            <section class="surface-subcard domain-editor">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Add Service</p>
+                        <h2>@BuildEditorTitle()</h2>
+                        <p class="meta-text">@BuildEditorDescription()</p>
+                    </div>
+                </div>
+
+                <div class="edge-form-grid domain-editor-grid">
+                    <label class="ui-field">
+                        <span class="ui-field-label">Domain</span>
+                        <input list="domain-service-domains" @bind="editorDomain" placeholder="example.com" />
+                        <datalist id="domain-service-domains">
+                            @foreach (var domain in AvailableDomains)
+                            {
+                                <option value="@domain">@domain</option>
+                            }
+                        </datalist>
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Service name</span>
+                        <input @bind="editorDisplayName" placeholder="Security.txt" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Path</span>
+                        <input @bind="editorRelativePath" placeholder="/.well-known/security.txt" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Content-Type</span>
+                        <input @bind="editorContentType" placeholder="text/plain; charset=utf-8" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Source</span>
+                        <select @bind="editorSourceType">
+                            <option value="@WellKnownSourceType.StaticText">Static text</option>
+                            <option value="@WellKnownSourceType.Json">JSON</option>
+                            <option value="@WellKnownSourceType.Generated">Generated</option>
+                        </select>
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Cache-Control</span>
+                        <input @bind="editorCacheControl" placeholder="no-store" />
+                    </label>
+                </div>
+
+                @if (selectedTemplate == WellKnownTemplateKind.SecurityTxt)
+                {
+                    <div class="edge-form-grid domain-security-grid">
+                        <label class="ui-field">
+                            <span class="ui-field-label">Contact email or URL</span>
+                            <input @bind="securityContact" placeholder="mailto:security@example.com" />
+                        </label>
+                        <label class="ui-field">
+                            <span class="ui-field-label">Expires</span>
+                            <input @bind="securityExpiresDate" placeholder="2027-01-01" />
+                        </label>
+                        <label class="ui-field">
+                            <span class="ui-field-label">Preferred languages</span>
+                            <input @bind="securityPreferredLanguages" placeholder="en" />
+                        </label>
+                        <label class="ui-field">
+                            <span class="ui-field-label">Policy URL</span>
+                            <input @bind="securityPolicyUrl" placeholder="https://example.com/security-policy" />
+                        </label>
+                        <label class="ui-field">
+                            <span class="ui-field-label">Canonical URL</span>
+                            <input @bind="securityCanonicalUrl" placeholder="Auto if blank" />
+                        </label>
+                        <label class="ui-field">
+                            <span class="ui-field-label">Hiring URL</span>
+                            <input @bind="securityHiringUrl" placeholder="Optional" />
+                        </label>
+                    </div>
+                }
+
+                @if (selectedTemplate == WellKnownTemplateKind.TeslaFleet)
+                {
+                    <div class="callout ready domain-guidance">
+                        <strong>Tesla Fleet generates a private/public key pair.</strong>
+                        <span>The private key is stored under <code>/data/lms-edge-gateway/secrets/tesla-fleet</code>. Only the public key is written to <code>@editorRelativePath</code>.</span>
+                    </div>
+                }
+                else
+                {
+                    <label class="ui-field domain-body-editor">
+                        <span class="ui-field-label">Public body</span>
+                        <textarea @bind="editorBody" rows="12" spellcheck="false"></textarea>
+                    </label>
+                }
+
+                <div class="domain-editor-flags">
+                    <label class="edge-checkbox-field">
+                        <input type="checkbox" @bind="editorEnabled" />
+                        <span>Enabled</span>
+                    </label>
+                    <label class="edge-checkbox-field">
+                        <input type="checkbox" @bind="editorRequiresAuth" />
+                        <span>Require LMS auth</span>
+                    </label>
+                    <label class="edge-checkbox-field">
+                        <input type="checkbox" @bind="advancedContentTypeConfirmed" />
+                        <span>Allow advanced content type</span>
+                    </label>
+                    @if (WellKnownPath.ContainsPrivateKeyMaterial(editorBody))
+                    {
+                        <label class="edge-checkbox-field">
+                            <input type="checkbox" @bind="sensitivePublicBodyConfirmed" />
+                            <span>Confirm publishing private-looking material</span>
+                        </label>
+                    }
+                </div>
+
+                <div class="domain-preview">
+                    <span>Public URL</span>
+                    <code>@BuildPreviewUrl()</code>
+                    <LmsButton Label="Copy"
+                               Icon="copy"
+                               Disabled="@string.IsNullOrWhiteSpace(editorDomain)"
+                               OnClick="@(() => CopyAsync(BuildPreviewUrl()))" />
+                </div>
+
+                <div class="edge-actions">
+                    <LmsButton Label="@(isSaving ? "Publishing..." : selectedTemplate == WellKnownTemplateKind.TeslaFleet ? "Generate Tesla service" : "Publish service")"
+                               Icon="save"
+                               Primary="true"
+                               Busy="@isSaving"
+                               Disabled="@isSaving"
+                               OnClick="SaveEditorAsync" />
+                    <LmsButton Label="Reset"
+                               Icon="refresh"
+                               Disabled="@isSaving"
+                               OnClick="ResetEditor" />
+                </div>
+            </section>
+
+            <section class="surface-subcard domain-service-list">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Managed Services</p>
+                        <h2>@configuration.Services.Count service@(configuration.Services.Count == 1 ? string.Empty : "s")</h2>
+                        <p class="meta-text">Routes are generated before normal app routes so public .well-known paths bypass LMS auth by default.</p>
+                    </div>
+                </div>
+
+                @if (configuration.Services.Count == 0)
+                {
+                    <p class="meta-text">No .well-known services have been added yet.</p>
+                }
+                else
+                {
+                    <div class="domain-service-cards">
+                        @foreach (var service in configuration.Services.OrderBy(item => item.Domain).ThenBy(item => item.RelativePath))
+                        {
+                            <article class="surface-subcard domain-service-card">
+                                <div class="edge-route-card-header">
+                                    <div class="edge-route-title">
+                                        <h3>@service.DisplayName</h3>
+                                        <LmsStatusPill Text="@(service.Enabled ? "Enabled" : "Disabled")" Tone="@(service.Enabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+                                        <LmsStatusPill Text="@BuildVerificationLabel(service)" Tone="@BuildVerificationTone(service)" />
+                                        @if (service.RequiresAuth)
+                                        {
+                                            <LmsStatusPill Text="Auth required" Tone="@LmsStatusTone.Warning" />
+                                        }
+                                        else
+                                        {
+                                            <LmsStatusPill Text="Public" Tone="@LmsStatusTone.Ready" />
+                                        }
+                                    </div>
+                                    <div class="edge-route-actions">
+                                        <LmsButton Label="Copy URL" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" />
+                                        <LmsButton Label="@(IsBusy(service.Id, "verify") ? "Verifying..." : "Verify")"
+                                                   Icon="test"
+                                                   Busy="@IsBusy(service.Id, "verify")"
+                                                   Disabled="@isServiceActionBusy"
+                                                   OnClick="@(() => VerifyAsync(service.Id))" />
+                                        <LmsButton Label="@(IsBusy(service.Id, "publish") ? "Publishing..." : "Rebuild")"
+                                                   Icon="refresh"
+                                                   Busy="@IsBusy(service.Id, "publish")"
+                                                   Disabled="@isServiceActionBusy"
+                                                   OnClick="@(() => PublishAsync(service.Id))" />
+                                        <LmsButton Label="@(service.Enabled ? "Disable" : "Enable")"
+                                                   Icon="@(service.Enabled ? "disable" : "publish")"
+                                                   Danger="@service.Enabled"
+                                                   Primary="@(!service.Enabled)"
+                                                   Disabled="@isServiceActionBusy"
+                                                   OnClick="@(() => ToggleAsync(service.Id, service.Enabled))" />
+                                        <LmsButton Label="Delete"
+                                                   Icon="delete"
+                                                   Danger="true"
+                                                   Disabled="@isServiceActionBusy"
+                                                   OnClick="@(() => DeleteAsync(service.Id))" />
+                                    </div>
+                                </div>
+
+                                <div class="domain-service-facts">
+                                    <div><span>Domain</span><strong>@service.Domain</strong></div>
+                                    <div><span>Path</span><code>@service.RelativePath</code></div>
+                                    <div><span>Content-Type</span><code>@service.ContentType</code></div>
+                                    <div><span>Relay</span><strong>@BuildRelayStatus(service.Domain)</strong></div>
+                                    <div><span>Last verified</span><strong>@FormatDate(service.LastVerifiedUtc)</strong></div>
+                                </div>
+
+                                <div class="domain-preview">
+                                    <span>Public URL</span>
+                                    <a href="@service.PublicUrl" target="_blank" rel="noopener noreferrer">@service.PublicUrl</a>
+                                </div>
+
+                                @if (service.Template.Equals(WellKnownTemplateKind.TeslaFleet.ToString(), StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <div class="domain-tesla-values">
+                                        <strong>Tesla Developer values</strong>
+                                        <div><span>Origin domain</span><code>@service.Domain</code><LmsButton Label="Copy" Icon="copy" OnClick="@(() => CopyAsync(service.Domain))" /></div>
+                                        <div><span>Public key URL</span><code>@service.PublicUrl</code><LmsButton Label="Copy" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" /></div>
+                                        <p class="meta-text">Use the same origin domain in the Tesla Developer app and the Home Assistant Tesla Fleet integration.</p>
+                                    </div>
+                                }
+
+                                <details class="edge-advanced-settings">
+                                    <summary>
+                                        <span>Content preview and diagnostics</span>
+                                        <small>Generated file, public storage path, and last verification result</small>
+                                    </summary>
+                                    <div class="edge-advanced-settings-body">
+                                        <div class="domain-service-facts">
+                                            <div><span>Public file</span><code>@service.PublicFilePath</code></div>
+                                            <div><span>Secret file</span><code>@(string.IsNullOrWhiteSpace(service.SecretFilePath) ? "None" : service.SecretFilePath)</code></div>
+                                            <div><span>Caddy route</span><strong>@(service.Enabled ? "Generated on rebuild" : "Not generated while disabled")</strong></div>
+                                            <div><span>Verification</span><strong>@(string.IsNullOrWhiteSpace(service.LastVerificationMessage) ? "Not verified yet." : service.LastVerificationMessage)</strong></div>
+                                        </div>
+                                        <pre class="domain-content-preview">@TruncateBody(service.Body)</pre>
+                                    </div>
+                                </details>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    </section>
+</div>
+
+@code {
+    private WellKnownConfiguration? configuration;
+    private EdgeGatewayRuntimeStatus? runtimeStatus;
+    private IReadOnlyList<WellKnownTemplateDefinition> templates = [];
+    private bool isLoading;
+    private bool isSaving;
+    private bool isServiceActionBusy;
+    private Guid? busyServiceId;
+    private string busyAction = string.Empty;
+    private string actionMessage = string.Empty;
+    private bool actionIsError;
+    private WellKnownTemplateKind selectedTemplate = WellKnownTemplateKind.TeslaFleet;
+    private string editorDomain = string.Empty;
+    private string editorDisplayName = string.Empty;
+    private string editorRelativePath = string.Empty;
+    private string editorContentType = string.Empty;
+    private string editorBody = string.Empty;
+    private WellKnownSourceType editorSourceType = WellKnownSourceType.Generated;
+    private bool editorEnabled = true;
+    private bool editorRequiresAuth;
+    private string editorCacheControl = "no-store";
+    private bool advancedContentTypeConfirmed;
+    private bool sensitivePublicBodyConfirmed;
+    private string securityContact = string.Empty;
+    private string securityExpiresDate = DateTime.UtcNow.AddYears(1).ToString("yyyy-MM-dd");
+    private string securityPreferredLanguages = "en";
+    private string securityCanonicalUrl = string.Empty;
+    private string securityPolicyUrl = string.Empty;
+    private string securityHiringUrl = string.Empty;
+
+    private IReadOnlyList<string> AvailableDomains =>
+        runtimeStatus?.Configuration.RelayZones
+            .Select(relay => relay.DomainName)
+            .Concat(runtimeStatus.Configuration.Applications.Select(GetDomainName))
+            .Where(domain => !string.IsNullOrWhiteSpace(domain))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(domain => domain, StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        templates = WellKnownManager.GetTemplates();
+        await LoadAsync();
+        SelectTemplate(templates.First(template => template.Kind == WellKnownTemplateKind.TeslaFleet));
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        try
+        {
+            configuration = await WellKnownManager.GetConfigurationAsync();
+            runtimeStatus = await StatusService.GetStatusAsync();
+            if (string.IsNullOrWhiteSpace(editorDomain) && AvailableDomains.Count > 0)
+            {
+                editorDomain = AvailableDomains[0];
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void SelectTemplate(WellKnownTemplateDefinition template)
+    {
+        selectedTemplate = template.Kind;
+        editorDisplayName = template.Name;
+        editorRelativePath = template.RelativePath;
+        editorContentType = template.ContentType;
+        editorSourceType = template.SourceType;
+        editorBody = template.Body;
+        editorEnabled = true;
+        editorRequiresAuth = false;
+        editorCacheControl = "no-store";
+        advancedContentTypeConfirmed = false;
+        sensitivePublicBodyConfirmed = false;
+
+        if (string.IsNullOrWhiteSpace(editorDomain) && AvailableDomains.Count > 0)
+        {
+            editorDomain = AvailableDomains[0];
+        }
+
+        if (template.Kind == WellKnownTemplateKind.SecurityTxt)
+        {
+            securityContact = $"mailto:security@{editorDomain}";
+            securityCanonicalUrl = string.IsNullOrWhiteSpace(editorDomain)
+                ? string.Empty
+                : $"https://{editorDomain}/.well-known/security.txt";
+        }
+    }
+
+    private async Task SaveEditorAsync()
+    {
+        if (isSaving)
+        {
+            return;
+        }
+
+        isSaving = true;
+        actionMessage = string.Empty;
+        actionIsError = false;
+        try
+        {
+            WellKnownServiceSaveResult result;
+            if (selectedTemplate == WellKnownTemplateKind.TeslaFleet)
+            {
+                result = await WellKnownManager.CreateTeslaFleetAsync(editorDomain, editorDisplayName);
+            }
+            else if (selectedTemplate == WellKnownTemplateKind.SecurityTxt)
+            {
+                result = await WellKnownManager.CreateSecurityTxtAsync(new SecurityTxtTemplateRequest(
+                    editorDomain,
+                    securityContact,
+                    ParseSecurityExpires(),
+                    securityPreferredLanguages,
+                    securityCanonicalUrl,
+                    securityPolicyUrl,
+                    securityHiringUrl));
+            }
+            else
+            {
+                result = await WellKnownManager.SaveAsync(new WellKnownServiceSaveRequest(
+                    null,
+                    editorDisplayName,
+                    editorDomain,
+                    editorRelativePath,
+                    editorContentType,
+                    editorBody,
+                    editorSourceType,
+                    editorEnabled,
+                    editorRequiresAuth,
+                    true,
+                    editorCacheControl,
+                    selectedTemplate.ToString(),
+                    advancedContentTypeConfirmed,
+                    sensitivePublicBodyConfirmed));
+            }
+
+            actionMessage = result.Summary;
+            actionIsError = !result.Success;
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            actionMessage = exception.Message;
+            actionIsError = true;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task VerifyAsync(Guid serviceId)
+    {
+        await RunServiceActionAsync(serviceId, "verify", async () =>
+        {
+            var result = await WellKnownManager.VerifyAsync(serviceId);
+            actionMessage = result.Message;
+            actionIsError = !result.Success;
+        });
+    }
+
+    private async Task PublishAsync(Guid serviceId)
+    {
+        await RunServiceActionAsync(serviceId, "publish", async () =>
+        {
+            var result = await WellKnownManager.PublishAsync(serviceId);
+            actionMessage = result.Summary;
+            actionIsError = !result.Success;
+        });
+    }
+
+    private async Task ToggleAsync(Guid serviceId, bool enabled)
+    {
+        await RunServiceActionAsync(serviceId, "toggle", async () =>
+        {
+            var result = await WellKnownManager.SetEnabledAsync(serviceId, !enabled);
+            actionMessage = result.Summary;
+            actionIsError = !result.Success;
+        });
+    }
+
+    private async Task DeleteAsync(Guid serviceId)
+    {
+        await RunServiceActionAsync(serviceId, "delete", async () =>
+        {
+            var result = await WellKnownManager.DeleteAsync(serviceId);
+            actionMessage = result.Summary;
+            actionIsError = !result.Success;
+        });
+    }
+
+    private async Task RunServiceActionAsync(Guid serviceId, string action, Func<Task> operation)
+    {
+        if (isServiceActionBusy)
+        {
+            return;
+        }
+
+        isServiceActionBusy = true;
+        busyServiceId = serviceId;
+        busyAction = action;
+        try
+        {
+            await operation();
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            actionMessage = exception.Message;
+            actionIsError = true;
+        }
+        finally
+        {
+            isServiceActionBusy = false;
+            busyServiceId = null;
+            busyAction = string.Empty;
+        }
+    }
+
+    private bool IsBusy(Guid serviceId, string action) =>
+        isServiceActionBusy && busyServiceId == serviceId && busyAction.Equals(action, StringComparison.OrdinalIgnoreCase);
+
+    private void ResetEditor()
+    {
+        var template = templates.FirstOrDefault(template => template.Kind == selectedTemplate) ?? templates[0];
+        SelectTemplate(template);
+    }
+
+    private async Task CopyAsync(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", value);
+            actionMessage = "Copied to clipboard.";
+            actionIsError = false;
+        }
+    }
+
+    private string BuildPreviewUrl()
+    {
+        try
+        {
+            return WellKnownPath.BuildPublicUrl(editorDomain, editorRelativePath);
+        }
+        catch
+        {
+            return "Complete domain and path to preview the URL.";
+        }
+    }
+
+    private string BuildEditorTitle() =>
+        selectedTemplate == WellKnownTemplateKind.TeslaFleet
+            ? "Tesla Fleet guided template"
+            : $"{editorDisplayName} template";
+
+    private string BuildEditorDescription() =>
+        selectedTemplate == WellKnownTemplateKind.TeslaFleet
+            ? "Generate command-signing keys and publish the Tesla public key at the required app-specific path."
+            : "Review the generated path, content type, body, and public URL before publishing.";
+
+    private DateTimeOffset ParseSecurityExpires()
+    {
+        if (DateTime.TryParse(securityExpiresDate, out var date))
+        {
+            return new DateTimeOffset(DateTime.SpecifyKind(date.Date, DateTimeKind.Utc));
+        }
+
+        return DateTimeOffset.UtcNow.AddYears(1);
+    }
+
+    private static string GetDomainName(PublishedApplicationDefinition route)
+    {
+        var host = route.PublicHostname;
+        if (Uri.TryCreate(route.PublicHostname, UriKind.Absolute, out var uri))
+        {
+            host = uri.Host;
+        }
+
+        var parts = host.Trim().TrimEnd('.').Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 ? $"{parts[^2]}.{parts[^1]}" : host;
+    }
+
+    private static string BuildVerificationLabel(WellKnownService service) =>
+        string.IsNullOrWhiteSpace(service.LastVerificationStatus)
+            ? "Not verified"
+            : service.LastVerificationStatus;
+
+    private static LmsStatusTone BuildVerificationTone(WellKnownService service) =>
+        service.LastVerificationStatus.Equals("Verified", StringComparison.OrdinalIgnoreCase)
+            ? LmsStatusTone.Ready
+            : service.LastVerificationStatus.Equals("Published", StringComparison.OrdinalIgnoreCase)
+                ? LmsStatusTone.Warning
+                : string.IsNullOrWhiteSpace(service.LastVerificationStatus)
+                    ? LmsStatusTone.Neutral
+                    : LmsStatusTone.Critical;
+
+    private static string FormatDate(DateTimeOffset? value) =>
+        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "Never";
+
+    private string BuildRelayStatus(string domain)
+    {
+        var relay = runtimeStatus?.Configuration.RelayZones
+            .Where(relay => domain.Equals(relay.DomainName, StringComparison.OrdinalIgnoreCase) ||
+                            domain.EndsWith($".{relay.DomainName}", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(relay => relay.DomainName.Length)
+            .FirstOrDefault();
+        if (relay is null)
+        {
+            return "No relay status";
+        }
+
+        var tunnel = string.IsNullOrWhiteSpace(relay.TunnelStatus) ? "unknown" : relay.TunnelStatus;
+        return $"{relay.RelayHostname} / {tunnel}";
+    }
+
+    private static string TruncateBody(string body) =>
+        string.IsNullOrWhiteSpace(body)
+            ? string.Empty
+            : body.Length <= 4000
+                ? body
+                : body[..4000] + "\n...";
+}

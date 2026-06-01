@@ -1854,6 +1854,185 @@ textarea {
     border-color: rgba(180, 110, 0, 0.28);
 }
 
+.domain-services-page {
+    gap: 1rem;
+}
+
+.domain-template-grid {
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 1rem 0;
+}
+
+.domain-template-card {
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    cursor: pointer;
+    display: grid;
+    gap: 0.25rem;
+    min-height: 6.1rem;
+    padding: 0.78rem;
+    text-align: left;
+}
+
+.domain-template-card:hover,
+.domain-template-card.active {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.12);
+}
+
+.domain-template-card strong {
+    font-size: 0.9rem;
+    line-height: 1.2;
+}
+
+.domain-template-card span {
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+.domain-editor,
+.domain-service-list {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.domain-editor-grid,
+.domain-security-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.domain-body-editor {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.domain-body-editor textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    min-height: 14rem;
+    resize: vertical;
+}
+
+.domain-editor-flags {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.domain-guidance {
+    display: grid;
+    gap: 0.22rem;
+}
+
+.domain-preview {
+    align-items: center;
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 0.62rem 0.72rem;
+}
+
+.domain-preview > span {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.domain-preview code,
+.domain-preview a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.domain-service-cards {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.domain-service-card {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.domain-service-facts {
+    display: grid;
+    gap: 0.55rem;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.domain-service-facts div {
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0.55rem 0.62rem;
+}
+
+.domain-service-facts span {
+    color: var(--color-text-muted);
+    font-size: 0.68rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.domain-service-facts strong,
+.domain-service-facts code {
+    font-size: 0.78rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.domain-tesla-values {
+    border: 1px solid var(--color-success-line);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.75rem;
+}
+
+.domain-tesla-values > div {
+    align-items: center;
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: 8rem minmax(0, 1fr) auto;
+}
+
+.domain-tesla-values span {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.domain-tesla-values code {
+    overflow-wrap: anywhere;
+}
+
+.domain-content-preview {
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: 0.76rem;
+    line-height: 1.42;
+    margin: 0;
+    max-height: 22rem;
+    overflow: auto;
+    padding: 0.75rem;
+    white-space: pre-wrap;
+}
+
 .edge-relay-settings-form-line {
     align-items: end;
     display: grid;
@@ -3491,6 +3670,12 @@ textarea {
     .edge-route-main-grid,
     .edge-form-grid-target,
     .edge-form-grid-two,
+    .domain-template-grid,
+    .domain-editor-grid,
+    .domain-security-grid,
+    .domain-service-facts,
+    .domain-preview,
+    .domain-tesla-values > div,
     .edge-token-grid,
     .edge-runtime-grid,
     .edge-route-links,
