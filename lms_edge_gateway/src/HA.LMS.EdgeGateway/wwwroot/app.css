@@ -2221,6 +2221,50 @@ textarea {
     line-height: 1.35;
 }
 
+.docs-screenshot-card {
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.65rem;
+    margin: 0;
+    overflow: hidden;
+    padding: 0.55rem;
+}
+
+.docs-screenshot-card img {
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: calc(var(--radius-md) - 0.25rem);
+    display: block;
+    height: auto;
+    max-width: 100%;
+    width: 100%;
+}
+
+.docs-screenshot-card figcaption {
+    display: grid;
+    gap: 0.15rem;
+    padding: 0 0.1rem 0.1rem;
+}
+
+.docs-screenshot-card figcaption strong {
+    font-size: 0.88rem;
+}
+
+.docs-screenshot-card figcaption small {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+.docs-screenshot-strip {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0.9rem 0 1rem;
+}
+
 .docs-route-diagram {
     display: grid;
     gap: 0.55rem;
@@ -3438,6 +3482,7 @@ textarea {
     .docs-hero-flow,
     .docs-two-column,
     .docs-check-grid,
+    .docs-screenshot-strip,
     .docs-policy-grid,
     .docs-route-diagram,
     .docs-definition-list div,

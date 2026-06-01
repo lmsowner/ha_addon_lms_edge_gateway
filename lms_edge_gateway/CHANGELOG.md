@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.30
+
+- Replaces the Cloudflare token permissions placeholder in Documentation with the existing permissions screenshot.
+- Adds Published Apps screenshots for the add-route entry point and the saved service route state.
+
 ## 0.1.29
 
 - Documents why Home Assistant can show add-on installation moving from `0%` to `100%` while the Supervisor still reports `Installing`.
