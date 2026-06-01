@@ -340,5 +340,21 @@
             <div><strong>Diagnostics</strong><span>Shows route checks, access events, and operational signals for why a route is allowed, blocked, or failing.</span></div>
             <div><strong>Repair behavior</strong><span>Startup and Setup validation reconcile tunnel ingress, DNS, Caddy, and cloudflared where possible. If Cloudflare reports the tunnel down, the add-on tries to restart or directly start cloudflared before asking you to rebuild anything.</span></div>
         </div>
+
+        <h3>Home Assistant install progress</h3>
+        <p class="meta-text">
+            Home Assistant can jump from <code>0%</code> to <code>100%</code> and still show <code>Installing</code>. That is
+            Supervisor reporting a coarse install phase, not proof that the Edge Gateway app is ready yet.
+        </p>
+        <p class="meta-text">
+            This add-on is currently built locally by Home Assistant from the repository Dockerfile. The HA host still has to
+            restore and publish the .NET app, install Caddy, download cloudflared, create the Docker image, and start the
+            supervised services. On smaller Home Assistant hardware that can take long enough to look stuck.
+        </p>
+        <p class="callout ready">
+            Prebuilt multi-architecture registry images would remove the long local build step. Until then, treat the Supervisor
+            progress bar as a broad Docker build/install indicator, then use Setup validation after startup to confirm token,
+            tunnel, DNS, cloudflared, Caddy, and route health.
+        </p>
     </section>
 </div>

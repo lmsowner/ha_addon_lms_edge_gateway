@@ -24,6 +24,14 @@ Setup Relay uses the saved Cloudflare token to create or reuse the named tunnel,
 
 Per-application publish, Cloudflare Access policy, LMS authentication policy, rollback, and relay removal flows are the next pieces.
 
+## Home Assistant install progress
+
+Home Assistant Supervisor reports add-on installation progress in broad phases. It can show `0%`, jump to `100%`, and still display `Installing` while Docker is still building, preparing, or starting the add-on container.
+
+That is expected for this package while it is source-built by Home Assistant. The add-on config does not yet point to prebuilt registry images, so the HA host builds the Dockerfile locally. That includes restoring and publishing the .NET application, installing Caddy, downloading cloudflared, creating the image, and starting the supervised services. On smaller HA hardware this can look like the install has paused even though the build is still running.
+
+When prebuilt multi-architecture images are published and the add-on `image` field points at them, Home Assistant can pull the ready image instead of building it locally. The progress UI may still be coarse, but the long local build phase should disappear.
+
 ## Storage
 
 Persistent files live under `/data`:

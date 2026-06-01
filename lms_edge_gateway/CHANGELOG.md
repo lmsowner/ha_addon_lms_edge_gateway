@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.29
+
+- Documents why Home Assistant can show add-on installation moving from `0%` to `100%` while the Supervisor still reports `Installing`.
+- Clarifies that the current package is source-built by Home Assistant until prebuilt registry images are published and referenced by the add-on config.
+
 ## 0.1.28
 
 - Adds an in-app Documentation tab covering Cloudflare setup, relay domains, app publishing, discovery, Caddy routing, authentication policies, passkey setup, messaging providers, scenarios, and operations.

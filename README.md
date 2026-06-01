@@ -25,6 +25,14 @@ https://github.com/lmsowner/ha_addon_lms_edge_gateway
 5. Install **LMS Edge Gateway for Home Assistant**.
 6. Start the add-on and open the web UI through Home Assistant ingress.
 
+### Install progress in Home Assistant
+
+If Home Assistant shows the install progress jumping from `0%` to `100%` and then keeps showing `Installing`, that usually means the Supervisor has finished one coarse progress phase but is still building or preparing the add-on container.
+
+This repository currently ships the add-on source and Dockerfile. Until prebuilt registry images are published and referenced by the add-on config, Home Assistant builds the image locally on the HA host. That can take a while because the image restores and publishes the .NET app, installs Caddy, downloads cloudflared, creates the Docker image, and then starts the supervised services. Slow HA hardware makes this more visible.
+
+That progress display is not the same as the Edge Gateway web app being ready. After install, start the add-on and use the Setup tab to validate Cloudflare, cloudflared, Caddy, DNS, and route health.
+
 ## Product shape
 
 This repository is a dedicated Home Assistant product, not a fork of LMS.
