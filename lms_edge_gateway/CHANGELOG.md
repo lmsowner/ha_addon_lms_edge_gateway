@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.26
+
+- Tightens the About page layout by reducing artwork sizes, media column width, section spacing, and list row padding.
+
 ## 0.1.25
 
 - Moves the Messaging provider status note out of the first control row so Status and Provider controls align cleanly.
