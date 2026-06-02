@@ -60,16 +60,24 @@
                     </div>
                 </div>
 
+                @if (AvailableRelayDomains.Count == 0)
+                {
+                    <p class="callout warning">
+                        Setup Relay first. Domain Services can only publish .well-known content for external relay domains that Edge Gateway has already provisioned.
+                    </p>
+                }
+
                 <div class="edge-form-grid domain-editor-grid">
                     <label class="ui-field">
-                        <span class="ui-field-label">Domain</span>
-                        <input list="domain-service-domains" @bind="editorDomain" placeholder="example.com" />
-                        <datalist id="domain-service-domains">
-                            @foreach (var domain in AvailableDomains)
+                        <span class="ui-field-label">External relay domain</span>
+                        <select @bind="editorDomain" disabled="@(AvailableRelayDomains.Count == 0)">
+                            <option value="">Select a provisioned relay domain</option>
+                            @foreach (var relay in AvailableRelayDomains)
                             {
-                                <option value="@domain">@domain</option>
+                                <option value="@relay.DomainName">@BuildRelayOptionLabel(relay)</option>
                             }
-                        </datalist>
+                        </select>
+                        <span class="ui-field-helper">Caddy matches this host and the .well-known path before normal app routes.</span>
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Service name</span>
@@ -178,7 +186,7 @@
                                Icon="save"
                                Primary="true"
                                Busy="@isSaving"
-                               Disabled="@isSaving"
+                               Disabled="@(isSaving || AvailableRelayDomains.Count == 0)"
                                OnClick="SaveEditorAsync" />
                     <LmsButton Label="Reset"
                                Icon="refresh"
@@ -323,13 +331,10 @@
     private string securityPolicyUrl = string.Empty;
     private string securityHiringUrl = string.Empty;
 
-    private IReadOnlyList<string> AvailableDomains =>
+    private IReadOnlyList<EdgeGatewayRelayZone> AvailableRelayDomains =>
         runtimeStatus?.Configuration.RelayZones
-            .Select(relay => relay.DomainName)
-            .Concat(runtimeStatus.Configuration.Applications.Select(GetDomainName))
-            .Where(domain => !string.IsNullOrWhiteSpace(domain))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(domain => domain, StringComparer.OrdinalIgnoreCase)
+            .Where(HasRelayProvisioningData)
+            .OrderBy(relay => relay.DomainName, StringComparer.OrdinalIgnoreCase)
             .ToArray() ?? [];
 
     protected override async Task OnInitializedAsync()
@@ -346,9 +351,10 @@
         {
             configuration = await WellKnownManager.GetConfigurationAsync();
             runtimeStatus = await StatusService.GetStatusAsync();
-            if (string.IsNullOrWhiteSpace(editorDomain) && AvailableDomains.Count > 0)
+            if ((string.IsNullOrWhiteSpace(editorDomain) || !IsAvailableRelayDomain(editorDomain)) &&
+                AvailableRelayDomains.Count > 0)
             {
-                editorDomain = AvailableDomains[0];
+                editorDomain = AvailableRelayDomains[0].DomainName;
             }
         }
         finally
@@ -371,9 +377,10 @@
         advancedContentTypeConfirmed = false;
         sensitivePublicBodyConfirmed = false;
 
-        if (string.IsNullOrWhiteSpace(editorDomain) && AvailableDomains.Count > 0)
+        if ((string.IsNullOrWhiteSpace(editorDomain) || !IsAvailableRelayDomain(editorDomain)) &&
+            AvailableRelayDomains.Count > 0)
         {
-            editorDomain = AvailableDomains[0];
+            editorDomain = AvailableRelayDomains[0].DomainName;
         }
 
         if (template.Kind == WellKnownTemplateKind.SecurityTxt)
@@ -566,18 +573,6 @@
         return DateTimeOffset.UtcNow.AddYears(1);
     }
 
-    private static string GetDomainName(PublishedApplicationDefinition route)
-    {
-        var host = route.PublicHostname;
-        if (Uri.TryCreate(route.PublicHostname, UriKind.Absolute, out var uri))
-        {
-            host = uri.Host;
-        }
-
-        var parts = host.Trim().TrimEnd('.').Split('.', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2 ? $"{parts[^2]}.{parts[^1]}" : host;
-    }
-
     private static string BuildVerificationLabel(WellKnownService service) =>
         string.IsNullOrWhiteSpace(service.LastVerificationStatus)
             ? "Not verified"
@@ -609,6 +604,23 @@
 
         var tunnel = string.IsNullOrWhiteSpace(relay.TunnelStatus) ? "unknown" : relay.TunnelStatus;
         return $"{relay.RelayHostname} / {tunnel}";
+    }
+
+    private bool IsAvailableRelayDomain(string domain) =>
+        AvailableRelayDomains.Any(relay =>
+            relay.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase));
+
+    private static bool HasRelayProvisioningData(EdgeGatewayRelayZone relay) =>
+        !string.IsNullOrWhiteSpace(relay.TunnelId) &&
+        !string.IsNullOrWhiteSpace(relay.DnsTarget) &&
+        !string.IsNullOrWhiteSpace(relay.WildcardHostname);
+
+    private static string BuildRelayOptionLabel(EdgeGatewayRelayZone relay)
+    {
+        var status = string.IsNullOrWhiteSpace(relay.TunnelStatus)
+            ? "unknown"
+            : relay.TunnelStatus.Trim().ToLowerInvariant();
+        return $"{relay.DomainName} ({relay.RelayHostname}, tunnel {status})";
     }
 
     private static string TruncateBody(string body) =>

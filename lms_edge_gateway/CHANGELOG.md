@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.34
+
+- Changes Domain Services to use a fixed dropdown of provisioned external relay domains instead of accepting arbitrary typed/app-derived domains.
+- Disables .well-known publishing until Setup Relay has completed for at least one external domain.
+
 ## 0.1.33
 
 - Adds Domain Services / .well-known Manager with reusable service storage, validation, public file publishing, verification, and Caddy route generation.
