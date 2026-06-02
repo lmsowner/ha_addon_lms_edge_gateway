@@ -1038,7 +1038,7 @@ static string RenderPage(TeslaFleetState state)
       color: var(--text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    main { width: min(1180px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 48px; }
+    main { width: min(1540px, calc(100vw - 24px)); margin: 0 auto; padding: 28px 0 48px; }
     header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 18px; }
     h1, h2, h3, p { margin-top: 0; }
     h1 { font-size: 28px; margin-bottom: 8px; }
@@ -1133,11 +1133,53 @@ static string RenderPage(TeslaFleetState state)
     .callout.warn { border-color: rgba(255, 211, 125, .45); }
     ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); line-height: 1.55; }
     .split-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: #0c1118; }
-    table { width: 100%; border-collapse: collapse; min-width: 860px; }
-    th, td { padding: 9px 10px; border-bottom: 1px solid rgba(51, 65, 85, .72); text-align: left; vertical-align: top; font-size: 13px; }
-    th { color: var(--muted); font-weight: 700; background: rgba(29, 39, 52, .7); position: sticky; top: 0; }
-    td code { padding: 0; border: 0; background: transparent; color: var(--accent-2); }
+    .table-wrap {
+      overflow: auto;
+      max-height: 640px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0c1118;
+    }
+    .property-table { width: 100%; min-width: 1480px; border-collapse: collapse; table-layout: fixed; }
+    .property-table th,
+    .property-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(51, 65, 85, .72);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .property-table th {
+      color: var(--muted);
+      font-weight: 700;
+      background: rgba(29, 39, 52, .94);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .property-table code {
+      display: inline;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--accent-2);
+      overflow-wrap: normal;
+      word-break: normal;
+      white-space: nowrap;
+    }
+    .resource-main { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    .resource-id { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; margin-top: 3px; }
+    .value-cell { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .property-table .scope-col { width: 104px; }
+    .property-table .resource-col { width: 250px; }
+    .property-table .path-col { width: 380px; }
+    .property-table .display-col { width: 180px; }
+    .property-table .type-col { width: 96px; }
+    .property-table .hint-col { width: 190px; }
+    .property-table .value-col { width: 470px; }
     .pill {
       display: inline-flex;
       align-items: center;
@@ -1332,7 +1374,16 @@ static string RenderPage(TeslaFleetState state)
         <form method="post" action="actions/clear-properties"><button type="submit">Clear cached properties</button></form>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="property-table">
+          <colgroup>
+            <col class="scope-col" />
+            <col class="resource-col" />
+            <col class="path-col" />
+            <col class="display-col" />
+            <col class="type-col" />
+            <col class="hint-col" />
+            <col class="value-col" />
+          </colgroup>
           <thead>
             <tr>
               <th>Scope</th>
@@ -1399,15 +1450,16 @@ static string RenderPropertyRows(IReadOnlyList<TeslaDiscoveredProperty> properti
                     property.SuggestedUnit
                 }
                 .Where(value => !string.IsNullOrWhiteSpace(value)));
+            var resourceTitle = $"{property.ResourceName} {property.ResourceId}".Trim();
             return $"""
             <tr>
-              <td><span class="pill">{H(property.Scope)}</span></td>
-              <td>{H(property.ResourceName)}<br><code>{H(property.ResourceId)}</code></td>
-              <td><code>{H(property.Path)}</code></td>
-              <td>{H(property.DisplayName)}</td>
-              <td>{H(property.ValueType)}</td>
-              <td>{H(suggestion)}</td>
-              <td>{H(TruncateForUi(property.Value, 140))}</td>
+              <td title="{H(property.Scope)}"><span class="pill">{H(property.Scope)}</span></td>
+              <td title="{H(resourceTitle)}"><span class="resource-main">{H(property.ResourceName)}</span><span class="resource-id">{H(property.ResourceId)}</span></td>
+              <td title="{H(property.Path)}"><code>{H(property.Path)}</code></td>
+              <td title="{H(property.DisplayName)}">{H(property.DisplayName)}</td>
+              <td title="{H(property.ValueType)}">{H(property.ValueType)}</td>
+              <td title="{H(suggestion)}">{H(suggestion)}</td>
+              <td class="value-cell" title="{H(property.Value)}">{H(TruncateForUi(property.Value, 260))}</td>
             </tr>
 """;
         })) +
