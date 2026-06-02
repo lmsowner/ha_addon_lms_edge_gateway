@@ -90,6 +90,23 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
                 new CloudflareTunnelRoute("external.example.com", "http://external-origin:8080"),
                 new CloudflareTunnelRoute(string.Empty, "http_status:404")
             ]));
+        var wellKnownStore = new StaticWellKnownServiceStore(new WellKnownConfiguration(
+            [
+                new WellKnownService(
+                    Guid.NewGuid(),
+                    "Tesla Fleet public key",
+                    "tesla.example.com",
+                    "/.well-known/appspecific/com.tesla.3p.public-key.pem",
+                    "application/x-pem-file",
+                    "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+                    WellKnownSourceType.Generated,
+                    true,
+                    false,
+                    true,
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow)
+            ],
+            DateTimeOffset.UtcNow));
         var service = new EdgeGatewayRelayProvisioningService(
             CreateOptions(),
             new InMemoryTokenStore(),
@@ -97,7 +114,8 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
             new RecordingDnsService(),
             tunnelService,
             configurationStore,
-            new NeverRunningProcessProbe());
+            new NeverRunningProcessProbe(),
+            wellKnownStore);
 
         var result = await service.RefreshPublishedConfigurationAsync();
 
@@ -112,6 +130,9 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
             route.OriginRequest.NoTlsVerify);
         Assert.Contains(tunnelService.Configuration.Routes, route =>
             route.Hostname.Equals("*.ha-app-relay.example.com", StringComparison.OrdinalIgnoreCase) &&
+            route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(tunnelService.Configuration.Routes, route =>
+            route.Hostname.Equals("tesla.example.com", StringComparison.OrdinalIgnoreCase) &&
             route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(tunnelService.Configuration.Routes, route =>
             route.Hostname.Equals("external.example.com", StringComparison.OrdinalIgnoreCase) &&
@@ -330,6 +351,17 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
             string apiToken,
             string accountId,
             string tunnelId,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class StaticWellKnownServiceStore(WellKnownConfiguration configuration) : IWellKnownServiceStore
+    {
+        public Task<WellKnownConfiguration> LoadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(configuration);
+
+        public Task SaveAsync(
+            WellKnownConfiguration configuration,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }

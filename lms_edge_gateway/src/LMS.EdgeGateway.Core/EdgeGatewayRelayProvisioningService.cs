@@ -1593,6 +1593,11 @@ public sealed class EdgeGatewayRelayProvisioningService(
         }
 
         var caddyServiceUrl = ResolveCaddyServiceUrl();
+        var wellKnownServices = wellKnownServiceStore is null
+            ? []
+            : (await wellKnownServiceStore.LoadAsync(cancellationToken)).Services
+            .Where(service => service.Enabled)
+            .ToArray();
         foreach (var relay in relays)
         {
             var zone = zonesResult.Zones.FirstOrDefault(item =>
@@ -1619,10 +1624,18 @@ public sealed class EdgeGatewayRelayProvisioningService(
             var applications = configuration.Applications
                 .Where(application => IsApplicationForDomain(application, relay.DomainName))
                 .ToArray();
-            var reconciledRoutes = RebuildManagedTunnelIngressRoutes(existing.Routes, relay, applications, caddyServiceUrl);
+            var relayWellKnownServices = wellKnownServices
+                .Where(service => IsWellKnownServiceForDomain(service, relay.DomainName))
+                .ToArray();
+            var reconciledRoutes = RebuildManagedTunnelIngressRoutes(
+                existing.Routes,
+                relay,
+                applications,
+                relayWellKnownServices,
+                caddyServiceUrl);
             if (TunnelRoutesEqual(existing.Routes, reconciledRoutes))
             {
-                steps.Add($"Cloudflare tunnel ingress already matches saved apps for {relay.DomainName}.");
+                steps.Add($"Cloudflare tunnel ingress already matches saved apps and domain services for {relay.DomainName}.");
                 continue;
             }
 
@@ -1632,7 +1645,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 tunnelId,
                 new CloudflareTunnelConfiguration(reconciledRoutes),
                 cancellationToken);
-            steps.Add($"Reconciled Cloudflare tunnel ingress for {relay.DomainName} ({applications.Length} saved app route(s)).");
+            steps.Add($"Reconciled Cloudflare tunnel ingress for {relay.DomainName} ({applications.Length} saved app route(s), {relayWellKnownServices.Length} domain service route(s)).");
         }
     }
 
@@ -2797,11 +2810,21 @@ public sealed class EdgeGatewayRelayProvisioningService(
         IReadOnlyList<CloudflareTunnelRoute> existingRoutes,
         EdgeGatewayRelayZone relay,
         IReadOnlyList<PublishedApplicationDefinition> applications,
+        IReadOnlyList<WellKnownService> wellKnownServices,
         string caddyServiceUrl)
     {
-        var managedHostnames = applications
+        var applicationHostnames = applications
             .Select(application => NormalizePublicHostname(application.PublicHostname))
             .Where(hostname => !string.IsNullOrWhiteSpace(hostname))
+            .ToArray();
+        var wellKnownHostnames = wellKnownServices
+            .Select(service => NormalizePublicHostname(service.Domain))
+            .Where(hostname => !string.IsNullOrWhiteSpace(hostname))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(hostname => hostname, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var managedHostnames = applicationHostnames
+            .Concat(wellKnownHostnames)
             .Append(relay.WildcardHostname.Trim().TrimEnd('.'))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -2809,6 +2832,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
             .Where(route => !string.IsNullOrWhiteSpace(route.Hostname) &&
                             !managedHostnames.Contains(route.Hostname.Trim().TrimEnd('.')))
             .ToList();
+        var addedHostnames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var applicationGroup in applications
                      .GroupBy(application => NormalizePublicHostname(application.PublicHostname), StringComparer.OrdinalIgnoreCase)
@@ -2820,6 +2844,12 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 applicationGroup.Key,
                 caddyServiceUrl,
                 BuildOriginRequest(caddyServiceUrl, skipUpstreamTlsVerification)));
+            addedHostnames.Add(applicationGroup.Key);
+        }
+
+        foreach (var hostname in wellKnownHostnames.Where(hostname => !addedHostnames.Contains(hostname)))
+        {
+            routes.Add(new CloudflareTunnelRoute(hostname, caddyServiceUrl, BuildOriginRequest(caddyServiceUrl)));
         }
 
         routes.Add(new CloudflareTunnelRoute(relay.WildcardHostname, caddyServiceUrl, BuildOriginRequest(caddyServiceUrl)));
@@ -2984,6 +3014,19 @@ public sealed class EdgeGatewayRelayProvisioningService(
         try
         {
             return GetDomainNameFromPublicHostname(application.PublicHostname)
+                .Equals(domainName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsWellKnownServiceForDomain(WellKnownService service, string domainName)
+    {
+        try
+        {
+            return GetDomainNameFromPublicHostname(service.Domain)
                 .Equals(domainName, StringComparison.OrdinalIgnoreCase);
         }
         catch

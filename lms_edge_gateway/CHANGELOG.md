@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.40
+
+- Reconciles enabled Domain Services `.well-known` hostnames into Cloudflare tunnel ingress during startup and Setup refresh.
+- Restores service hostnames such as `tesla.example.com` automatically so Cloudflare does not return tunnel `1033` / HTTP 530 after an update.
+
 ## 0.1.39
 
 - Serves public `.well-known` responses through an internal Edge Gateway endpoint instead of Caddy `file_server`, while still writing files under `/share/lms-edge-gateway/well-known/public` for visibility and diagnostics.
