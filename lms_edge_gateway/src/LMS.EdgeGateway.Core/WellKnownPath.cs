@@ -160,9 +160,16 @@ public static partial class WellKnownPath
     public static string BuildPublicUrl(string domain, string relativePath) =>
         $"https://{NormalizeDomain(domain)}{NormalizeRelativePath(relativePath)}";
 
-    public static string BuildPublicFilePath(string dataRoot, string domain, string relativePath)
+    public static string BuildPublicFilePath(string dataRoot, string domain, string relativePath) =>
+        BuildPublicFilePath(dataRoot, string.Empty, domain, relativePath);
+
+    public static string BuildPublicFilePath(
+        string dataRoot,
+        string wellKnownPublicRoot,
+        string domain,
+        string relativePath)
     {
-        var root = Path.Combine(ResolveDataRoot(dataRoot), "well-known", "public", NormalizeDomain(domain));
+        var root = BuildPublicRoot(dataRoot, wellKnownPublicRoot, domain);
         var segments = NormalizeRelativePath(relativePath)
             .TrimStart('/')
             .Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -178,7 +185,15 @@ public static partial class WellKnownPath
     }
 
     public static string BuildPublicRoot(string dataRoot, string domain) =>
-        Path.Combine(ResolveDataRoot(dataRoot), "well-known", "public", NormalizeDomain(domain));
+        BuildPublicRoot(dataRoot, string.Empty, domain);
+
+    public static string BuildPublicRoot(string dataRoot, string wellKnownPublicRoot, string domain) =>
+        Path.Combine(ResolveWellKnownPublicRoot(dataRoot, wellKnownPublicRoot), NormalizeDomain(domain));
+
+    public static string ResolveWellKnownPublicRoot(string dataRoot, string wellKnownPublicRoot) =>
+        string.IsNullOrWhiteSpace(wellKnownPublicRoot)
+            ? Path.Combine(ResolveDataRoot(dataRoot), "well-known", "public")
+            : ResolveDataRoot(wellKnownPublicRoot);
 
     public static string GuessContentType(string relativePath, WellKnownSourceType sourceType)
     {

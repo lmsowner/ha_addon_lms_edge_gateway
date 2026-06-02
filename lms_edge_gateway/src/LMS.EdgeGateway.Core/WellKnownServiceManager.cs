@@ -197,7 +197,11 @@ public sealed class WellKnownServiceManager(
                     warnings);
             }
 
-            var publicFilePath = WellKnownPath.BuildPublicFilePath(options.Value.DataRoot, domain, relativePath);
+            var publicFilePath = WellKnownPath.BuildPublicFilePath(
+                options.Value.DataRoot,
+                options.Value.WellKnownPublicRoot,
+                domain,
+                relativePath);
             var service = new WellKnownService(
                 id,
                 string.IsNullOrWhiteSpace(request.DisplayName) ? relativePath : request.DisplayName.Trim(),
@@ -473,7 +477,11 @@ public sealed class WellKnownServiceManager(
 
     private async Task WritePublicFileAsync(WellKnownService service, CancellationToken cancellationToken)
     {
-        var path = WellKnownPath.BuildPublicFilePath(options.Value.DataRoot, service.Domain, service.RelativePath);
+        var path = WellKnownPath.BuildPublicFilePath(
+            options.Value.DataRoot,
+            options.Value.WellKnownPublicRoot,
+            service.Domain,
+            service.RelativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ResolveDataRoot());
         await File.WriteAllTextAsync(path, service.Body ?? string.Empty, Encoding.UTF8, cancellationToken);
     }

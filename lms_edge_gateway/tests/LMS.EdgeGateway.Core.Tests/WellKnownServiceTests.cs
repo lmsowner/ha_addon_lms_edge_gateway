@@ -235,6 +235,40 @@ public sealed class WellKnownServiceTests : IDisposable
         Assert.Contains(verification.Checks, check => check.Contains("HTTP 200", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Configured_public_root_serves_well_known_files_without_exposing_tesla_private_key()
+    {
+        var dataRoot = Path.Combine(tempRoot, "data");
+        var publicRoot = Path.Combine(tempRoot, "share", "lms-edge-gateway", "well-known", "public");
+        var options = Options.Create(new EdgeGatewayCoreOptions
+        {
+            DataRoot = dataRoot,
+            WellKnownPublicRoot = publicRoot,
+            CaddyConfigPath = Path.Combine(tempRoot, "Caddyfile")
+        });
+        var manager = new WellKnownServiceManager(
+            options,
+            new JsonWellKnownServiceStore(options),
+            new RecordingRelayProvisioningService(),
+            new HttpClient(new StaticResponseHandler(HttpStatusCode.OK, "application/x-pem-file", "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----")));
+
+        var result = await manager.CreateTeslaFleetAsync("tesla.example.com");
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Service);
+        var service = result.Service!;
+        Assert.StartsWith(publicRoot, service.PublicFilePath, StringComparison.Ordinal);
+        Assert.True(File.Exists(service.PublicFilePath));
+        Assert.Contains("-----BEGIN PUBLIC KEY-----", await File.ReadAllTextAsync(service.PublicFilePath), StringComparison.Ordinal);
+        Assert.StartsWith(Path.Combine(dataRoot, "secrets"), service.SecretFilePath, StringComparison.Ordinal);
+        Assert.False(service.SecretFilePath.StartsWith(publicRoot, StringComparison.Ordinal));
+        Assert.Contains("PRIVATE KEY", await File.ReadAllTextAsync(service.SecretFilePath), StringComparison.OrdinalIgnoreCase);
+
+        var caddy = WellKnownCaddyRouteRenderer.Render([service], dataRoot, publicRoot, "127.0.0.1:5299");
+        Assert.Contains($"root * {Path.Combine(publicRoot, "tesla.example.com")}", caddy, StringComparison.Ordinal);
+        Assert.DoesNotContain(Path.Combine(dataRoot, "well-known", "public"), caddy, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(tempRoot))

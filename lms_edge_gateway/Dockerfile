@@ -1,5 +1,5 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
-ARG BUILD_VERSION=0.1.35
+ARG BUILD_VERSION=0.1.36
 ARG BUILD_ARCH=amd64
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
@@ -21,7 +21,7 @@ RUN \
       /p:UseAppHost=true
 
 FROM ${BUILD_FROM}
-ARG BUILD_VERSION=0.1.35
+ARG BUILD_VERSION=0.1.36
 ARG BUILD_ARCH=amd64
 
 LABEL \
@@ -37,6 +37,7 @@ ENV \
   ASPNETCORE_URLS=http://0.0.0.0:5000 \
   DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
   EdgeGateway__DataRoot=/data/lms-edge-gateway \
+  EdgeGateway__WellKnownPublicRoot=/share/lms-edge-gateway/well-known/public \
   EdgeGateway__CaddyConfigPath=/data/caddy/Caddyfile \
   EdgeGateway__CloudflaredConfigDirectory=/data/cloudflared \
   EdgeGateway__OptionsJsonPath=/data/options.json \

@@ -3,6 +3,7 @@ namespace LMS.EdgeGateway.Core;
 public sealed class EdgeGatewayCoreOptions
 {
     public string DataRoot { get; set; } = "data/lms-edge-gateway";
+    public string WellKnownPublicRoot { get; set; } = "";
     public string CaddyConfigPath { get; set; } = "data/caddy/Caddyfile";
     public string CloudflaredConfigDirectory { get; set; } = "data/cloudflared";
     public string CloudflaredExecutablePath { get; set; } = "";

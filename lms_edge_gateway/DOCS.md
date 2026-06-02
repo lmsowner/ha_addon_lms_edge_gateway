@@ -73,6 +73,6 @@ Domain Services publishes public `/.well-known/` files and JSON metadata for dom
 
 Supported first-pass templates include Tesla Fleet, `security.txt`, WebFinger, Apple App Site Association, Android Asset Links, OpenID/OAuth discovery, custom text, and custom JSON.
 
-Definitions are stored in `/data/lms-edge-gateway/well-known/services.json`. Public files are written below `/data/lms-edge-gateway/well-known/public/{domain}/.well-known/...`. Tesla Fleet private keys are stored separately under `/data/lms-edge-gateway/secrets/tesla-fleet/{serviceId}/private-key.pem` and are not served from the public folder.
+Definitions are stored in `/data/lms-edge-gateway/well-known/services.json`. Public files are written below `/share/lms-edge-gateway/well-known/public/{domain}/.well-known/...`. Tesla Fleet private keys are stored separately under `/data/lms-edge-gateway/secrets/tesla-fleet/{serviceId}/private-key.pem` and are not served from the public folder.
 
 Generated Caddy routes are public by default, are constrained to `/.well-known/`, and are emitted before normal app routes so they bypass LMS forward-auth unless a service explicitly requires auth.

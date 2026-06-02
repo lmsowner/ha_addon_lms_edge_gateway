@@ -1891,6 +1891,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         var wellKnownConfiguration = wellKnownServiceStore is null
             ? WellKnownConfiguration.Empty
             : await wellKnownServiceStore.LoadAsync(cancellationToken);
+        await EnsureWellKnownPublicFilesAsync(wellKnownConfiguration.Services, cancellationToken);
         var caddyfile = GenerateCaddyfileWithWellKnown(configuration, wellKnownConfiguration.Services);
         var existing = File.Exists(configPath)
             ? await File.ReadAllTextAsync(configPath, cancellationToken)
@@ -1977,6 +1978,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
             builder,
             wellKnownServices,
             options.Value.DataRoot,
+            options.Value.WellKnownPublicRoot,
             BuildForwardAuthUpstream());
 
         foreach (var route in configuration.Applications
@@ -2105,6 +2107,28 @@ public sealed class EdgeGatewayRelayProvisioningService(
         builder.AppendLine("}");
         builder.AppendLine();
         return builder.ToString();
+    }
+
+    private async Task EnsureWellKnownPublicFilesAsync(
+        IReadOnlyList<WellKnownService> services,
+        CancellationToken cancellationToken)
+    {
+        foreach (var service in services)
+        {
+            if (string.IsNullOrWhiteSpace(service.Domain) ||
+                string.IsNullOrWhiteSpace(service.RelativePath))
+            {
+                continue;
+            }
+
+            var publicFilePath = WellKnownPath.BuildPublicFilePath(
+                options.Value.DataRoot,
+                options.Value.WellKnownPublicRoot,
+                service.Domain,
+                service.RelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(publicFilePath) ?? ResolvePath(options.Value.DataRoot));
+            await File.WriteAllTextAsync(publicFilePath, service.Body ?? string.Empty, cancellationToken);
+        }
     }
 
     private static bool IsHomeAssistantRoute(PublishedApplicationDefinition route)

@@ -20,7 +20,7 @@ public sealed class JsonWellKnownServiceStore(IOptions<EdgeGatewayCoreOptions> o
 
         await using var stream = File.OpenRead(path);
         var configuration = await JsonSerializer.DeserializeAsync<WellKnownConfiguration>(stream, jsonOptions, cancellationToken);
-        return Normalize(configuration);
+        return Normalize(configuration, options.Value);
     }
 
     public async Task SaveAsync(
@@ -43,7 +43,9 @@ public sealed class JsonWellKnownServiceStore(IOptions<EdgeGatewayCoreOptions> o
     private static string ResolveDataRoot(string dataRoot) =>
         Path.IsPathRooted(dataRoot) ? dataRoot : Path.GetFullPath(dataRoot);
 
-    private static WellKnownConfiguration Normalize(WellKnownConfiguration? configuration)
+    private static WellKnownConfiguration Normalize(
+        WellKnownConfiguration? configuration,
+        EdgeGatewayCoreOptions options)
     {
         if (configuration is null)
         {
@@ -54,22 +56,66 @@ public sealed class JsonWellKnownServiceStore(IOptions<EdgeGatewayCoreOptions> o
         {
             Services = configuration.Services?
                 .Where(service => service.Id != Guid.Empty)
-                .Select(service => service with
-                {
-                    DisplayName = service.DisplayName ?? string.Empty,
-                    Domain = service.Domain ?? string.Empty,
-                    RelativePath = service.RelativePath ?? string.Empty,
-                    ContentType = service.ContentType ?? string.Empty,
-                    Body = service.Body ?? string.Empty,
-                    LastVerificationStatus = service.LastVerificationStatus ?? string.Empty,
-                    LastVerificationMessage = service.LastVerificationMessage ?? string.Empty,
-                    CacheControl = string.IsNullOrWhiteSpace(service.CacheControl) ? "no-store" : service.CacheControl,
-                    Template = service.Template ?? string.Empty,
-                    PublicUrl = service.PublicUrl ?? string.Empty,
-                    PublicFilePath = service.PublicFilePath ?? string.Empty,
-                    SecretFilePath = service.SecretFilePath ?? string.Empty
-                })
+                .Select(service => NormalizeService(service, options))
                 .ToArray() ?? []
         };
+    }
+
+    private static WellKnownService NormalizeService(
+        WellKnownService service,
+        EdgeGatewayCoreOptions options)
+    {
+        var domain = service.Domain ?? string.Empty;
+        var relativePath = service.RelativePath ?? string.Empty;
+        return service with
+        {
+            DisplayName = service.DisplayName ?? string.Empty,
+            Domain = domain,
+            RelativePath = relativePath,
+            ContentType = service.ContentType ?? string.Empty,
+            Body = service.Body ?? string.Empty,
+            LastVerificationStatus = service.LastVerificationStatus ?? string.Empty,
+            LastVerificationMessage = service.LastVerificationMessage ?? string.Empty,
+            CacheControl = string.IsNullOrWhiteSpace(service.CacheControl) ? "no-store" : service.CacheControl,
+            Template = service.Template ?? string.Empty,
+            PublicUrl = BuildPublicUrlOrExisting(domain, relativePath, service.PublicUrl),
+            PublicFilePath = BuildPublicPathOrExisting(options, domain, relativePath, service.PublicFilePath),
+            SecretFilePath = service.SecretFilePath ?? string.Empty
+        };
+    }
+
+    private static string BuildPublicUrlOrExisting(
+        string domain,
+        string relativePath,
+        string existing)
+    {
+        try
+        {
+            return WellKnownPath.BuildPublicUrl(domain, relativePath);
+        }
+        catch
+        {
+            return existing ?? string.Empty;
+        }
+    }
+
+    private static string BuildPublicPathOrExisting(
+        EdgeGatewayCoreOptions options,
+        string domain,
+        string relativePath,
+        string existing)
+    {
+        try
+        {
+            return WellKnownPath.BuildPublicFilePath(
+                options.DataRoot,
+                options.WellKnownPublicRoot,
+                domain,
+                relativePath);
+        }
+        catch
+        {
+            return existing ?? string.Empty;
+        }
     }
 }

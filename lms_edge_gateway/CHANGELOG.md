@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.36
+
+- Moves public `.well-known` files served by Caddy to `/share/lms-edge-gateway/well-known/public` in the Home Assistant add-on.
+- Keeps private add-on state and Tesla Fleet private keys under `/data/lms-edge-gateway`.
+
 ## 0.1.35
 
 - Adds an origin host field to Domain Services so .well-known services can publish on subdomains such as `tesla.example.com` while still selecting from provisioned relay domains.

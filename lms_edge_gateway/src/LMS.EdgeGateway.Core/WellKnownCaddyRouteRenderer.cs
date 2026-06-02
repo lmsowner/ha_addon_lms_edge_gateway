@@ -8,6 +8,7 @@ public static class WellKnownCaddyRouteRenderer
         StringBuilder builder,
         IReadOnlyList<WellKnownService> services,
         string dataRoot,
+        string wellKnownPublicRoot,
         string forwardAuthUpstream)
     {
         foreach (var service in services
@@ -17,7 +18,7 @@ public static class WellKnownCaddyRouteRenderer
         {
             var domain = WellKnownPath.NormalizeDomain(service.Domain);
             var relativePath = WellKnownPath.NormalizeRelativePath(service.RelativePath);
-            var publicRoot = WellKnownPath.BuildPublicRoot(dataRoot, domain);
+            var publicRoot = WellKnownPath.BuildPublicRoot(dataRoot, wellKnownPublicRoot, domain);
             var matcherName = $"well_known_{service.Id:N}";
             var contentType = EscapeCaddyValue(service.ContentType);
             var cacheControl = EscapeCaddyValue(
@@ -53,7 +54,18 @@ public static class WellKnownCaddyRouteRenderer
         string forwardAuthUpstream = "127.0.0.1:5000")
     {
         var builder = new StringBuilder();
-        AppendRoutes(builder, services, dataRoot, forwardAuthUpstream);
+        AppendRoutes(builder, services, dataRoot, string.Empty, forwardAuthUpstream);
+        return builder.ToString();
+    }
+
+    public static string Render(
+        IReadOnlyList<WellKnownService> services,
+        string dataRoot,
+        string wellKnownPublicRoot,
+        string forwardAuthUpstream)
+    {
+        var builder = new StringBuilder();
+        AppendRoutes(builder, services, dataRoot, wellKnownPublicRoot, forwardAuthUpstream);
         return builder.ToString();
     }
 
