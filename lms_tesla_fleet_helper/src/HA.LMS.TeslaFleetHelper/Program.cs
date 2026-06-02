@@ -538,6 +538,8 @@ sealed class TeslaFleetStore(IConfiguration configuration)
         configuration["TeslaFleetHelper:DataRoot"] ?? "/data/lms-tesla-fleet-helper");
     private readonly string optionsJsonPath = ResolvePath(
         configuration["TeslaFleetHelper:OptionsJsonPath"] ?? "/data/options.json");
+    private readonly string configuredEdgeGatewayUrl = TeslaFleetDefaults.NormalizeHttpUrl(
+        configuration["TeslaFleetHelper:EdgeGatewayUrl"] ?? "http://127.0.0.1:5000");
 
     public string PrivateKeyPath => Path.Combine(dataRoot, "secrets", "tesla_fleet.key");
 
@@ -597,7 +599,7 @@ sealed class TeslaFleetStore(IConfiguration configuration)
             // Fall back to the standard host-network Edge Gateway control-plane URL.
         }
 
-        return "http://127.0.0.1:5000";
+        return configuredEdgeGatewayUrl;
     }
 
     private static string ResolvePath(string path) =>

@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Start Edge Gateway And Tesla Helper" type="CompoundRunConfigurationType">
+    <toRun name="LMS Edge Gateway Debug" type="DotNetProject" />
+    <toRun name="LMS Tesla Fleet Helper Debug" type="DotNetProject" />
+    <method v="2" />
+  </configuration>
+</component>

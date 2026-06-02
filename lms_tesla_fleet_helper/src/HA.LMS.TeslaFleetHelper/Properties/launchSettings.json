@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Tesla Fleet Helper Debug": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://127.0.0.1:5055",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "TeslaFleetHelper__DataRoot": "data/lms-tesla-fleet-helper",
+        "TeslaFleetHelper__OptionsJsonPath": "data/options.json",
+        "TeslaFleetHelper__EdgeGatewayUrl": "http://127.0.0.1:5000"
+      }
+    }
+  }
+}

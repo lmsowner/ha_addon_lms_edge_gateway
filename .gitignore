@@ -6,6 +6,7 @@ obj/
 TestResults/
 artifacts/
 local-data/
+local-tesla-data/
 **/data/
 *.user
 *.rsuser

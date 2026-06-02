@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="LMS Tesla Fleet Helper Debug" type="DotNetProject" factoryName=".NET Project">
+    <option name="PROJECT_PATH" value="$PROJECT_DIR$/lms_tesla_fleet_helper/src/HA.LMS.TeslaFleetHelper/HA.LMS.TeslaFleetHelper.csproj" />
+    <option name="LAUNCH_PROFILE" value="Tesla Fleet Helper Debug" />
+    <option name="LAUNCH_PROFILE_ENABLED" value="true" />
+    <option name="USE_EXTERNAL_CONSOLE" value="0" />
+    <method v="2">
+      <option name="Build" />
+    </method>
+  </configuration>
+</component>

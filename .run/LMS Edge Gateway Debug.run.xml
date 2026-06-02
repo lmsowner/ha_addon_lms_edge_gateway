@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="LMS Edge Gateway Debug" type="DotNetProject" factoryName=".NET Project">
+    <option name="PROJECT_PATH" value="$PROJECT_DIR$/lms_edge_gateway/src/HA.LMS.EdgeGateway/HA.LMS.EdgeGateway.csproj" />
+    <option name="LAUNCH_PROFILE" value="Edge Gateway Debug" />
+    <option name="LAUNCH_PROFILE_ENABLED" value="true" />
+    <option name="USE_EXTERNAL_CONSOLE" value="0" />
+    <method v="2">
+      <option name="Build" />
+    </method>
+  </configuration>
+</component>

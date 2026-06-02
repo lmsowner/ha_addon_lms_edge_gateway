@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "Start Edge Gateway And Tesla Helper",
+    "Projects": [
+      {
+        "Path": "lms_edge_gateway/src/HA.LMS.EdgeGateway/HA.LMS.EdgeGateway.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "lms_tesla_fleet_helper/src/HA.LMS.TeslaFleetHelper/HA.LMS.TeslaFleetHelper.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]
