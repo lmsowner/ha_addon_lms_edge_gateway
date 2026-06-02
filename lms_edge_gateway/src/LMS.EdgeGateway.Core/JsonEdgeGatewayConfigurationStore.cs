@@ -51,6 +51,7 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
         return configuration with
         {
             Applications = configuration.Applications ?? [],
+            PublicProxyRoutes = NormalizePublicProxyRoutes(configuration.PublicProxyRoutes),
             RelayZones = NormalizeRelayZones(configuration.RelayZones),
             CloudflareTunnel = NormalizeTunnel(configuration.CloudflareTunnel)
         };
@@ -80,5 +81,24 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 TunnelName = relay.TunnelName ?? string.Empty
             })
             .Where(relay => !string.IsNullOrWhiteSpace(relay.DomainName))
+            .ToArray() ?? [];
+
+    private static IReadOnlyList<PublicProxyRouteDefinition> NormalizePublicProxyRoutes(
+        IReadOnlyList<PublicProxyRouteDefinition>? routes) =>
+        routes?
+            .Select(route => route with
+            {
+                Hostname = route.Hostname?.Trim().TrimEnd('.').ToLowerInvariant() ?? string.Empty,
+                PathPrefix = string.IsNullOrWhiteSpace(route.PathPrefix) ? "/" : route.PathPrefix.Trim(),
+                UpstreamUrl = route.UpstreamUrl?.Trim() ?? string.Empty,
+                Description = route.Description?.Trim() ?? string.Empty,
+                CreatedUtc = route.CreatedUtc == default ? DateTimeOffset.UtcNow : route.CreatedUtc,
+                UpdatedUtc = route.UpdatedUtc == default ? DateTimeOffset.UtcNow : route.UpdatedUtc
+            })
+            .Where(route =>
+                route.Id != Guid.Empty &&
+                !string.IsNullOrWhiteSpace(route.Hostname) &&
+                !string.IsNullOrWhiteSpace(route.PathPrefix) &&
+                !string.IsNullOrWhiteSpace(route.UpstreamUrl))
             .ToArray() ?? [];
 }

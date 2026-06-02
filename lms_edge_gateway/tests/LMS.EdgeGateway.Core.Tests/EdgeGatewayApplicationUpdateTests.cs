@@ -79,6 +79,16 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
                     IsEnabled = true,
                     UpstreamUrl = "https://192.168.15.3:8123"
                 }
+            ],
+            PublicProxyRoutes =
+            [
+                new PublicProxyRouteDefinition(
+                    Guid.NewGuid(),
+                    "oauth.example.com",
+                    "/oauth",
+                    "http://127.0.0.1:5055",
+                    "Tesla Fleet Helper OAuth endpoints",
+                    true)
             ]
         };
         var configurationStore = new InMemoryConfigurationStore(configuration);
@@ -121,6 +131,7 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
 
         Assert.True(result.Success);
         Assert.Contains("Reconciled Cloudflare tunnel ingress for example.com", result.Summary);
+        Assert.Contains("1 public proxy route(s)", result.Summary);
         Assert.Contains("Relay example.com validation:", result.Summary);
         Assert.Equal(1, tunnelService.UpdateCount);
         Assert.True(tunnelService.GetTunnelCount > 0);
@@ -133,6 +144,9 @@ public sealed class EdgeGatewayApplicationUpdateTests : IDisposable
             route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(tunnelService.Configuration.Routes, route =>
             route.Hostname.Equals("tesla.example.com", StringComparison.OrdinalIgnoreCase) &&
+            route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(tunnelService.Configuration.Routes, route =>
+            route.Hostname.Equals("oauth.example.com", StringComparison.OrdinalIgnoreCase) &&
             route.Service.Equals("http://localhost:18080", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(tunnelService.Configuration.Routes, route =>
             route.Hostname.Equals("external.example.com", StringComparison.OrdinalIgnoreCase) &&

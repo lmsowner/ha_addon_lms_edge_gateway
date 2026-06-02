@@ -395,23 +395,25 @@ public sealed class WellKnownServiceManager(
             {
                 checks.Add("Public file exists in the well-known store.");
 
-                using var request = new HttpRequestMessage(HttpMethod.Get, service.PublicUrl);
-                request.Headers.UserAgent.ParseAdd("LinuxMadeSane-edge-well-known-verifier");
-                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-                checks.Add($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}.");
-                checks.Add(string.IsNullOrWhiteSpace(contentType) ? "No Content-Type header returned." : $"Content-Type: {contentType}.");
+                var response = await FetchPublicUrlAsync(service.PublicUrl, cancellationToken);
+                AddHttpChecks(checks, response, "HTTP");
+                if (ShouldAttemptTunnelRepair(response))
+                {
+                    checks.Add(await TryRepairRelayForHostnameAsync(service.Domain, cancellationToken));
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                    response = await FetchPublicUrlAsync(service.PublicUrl, cancellationToken);
+                    AddHttpChecks(checks, response, "Retry HTTP");
+                }
 
                 if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect or HttpStatusCode.RedirectMethod or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect)
                 {
                     message = "Verification returned a redirect. The route may be protected by auth or pointed at the wrong service.";
                 }
-                else if (response.StatusCode == HttpStatusCode.Forbidden && LooksLikeCloudflareAccessBlock(response, body))
+                else if (response.StatusCode == HttpStatusCode.Forbidden && LooksLikeCloudflareAccessBlock(response))
                 {
                     message = "Verification was blocked by Cloudflare Access.";
                 }
-                else if (LooksLikeAuthRedirect(body))
+                else if (LooksLikeAuthRedirect(response.Body))
                 {
                     message = "Verification returned an LMS authentication page instead of public .well-known content.";
                 }
@@ -419,12 +421,12 @@ public sealed class WellKnownServiceManager(
                 {
                     message = $"Expected HTTP 200 but received {(int)response.StatusCode}.";
                 }
-                else if (!IsAcceptableContentType(service, contentType, body))
+                else if (!IsAcceptableContentType(service, response.ContentType, response.Body))
                 {
-                    message = $"Content-Type {contentType} was not acceptable for {service.ContentType}.";
+                    message = $"Content-Type {response.ContentType} was not acceptable for {service.ContentType}.";
                 }
                 else if (service.Template.Equals(WellKnownTemplateKind.TeslaFleet.ToString(), StringComparison.OrdinalIgnoreCase) &&
-                         !body.Contains("-----BEGIN PUBLIC KEY-----", StringComparison.Ordinal))
+                         !response.Body.Contains("-----BEGIN PUBLIC KEY-----", StringComparison.Ordinal))
                 {
                     message = "The response did not contain a PEM public key.";
                 }
@@ -710,6 +712,78 @@ public sealed class WellKnownServiceManager(
         !string.IsNullOrWhiteSpace(comment) &&
         comment.Contains(options.Value.ManagedRecordComment, StringComparison.OrdinalIgnoreCase);
 
+    private async Task<WellKnownHttpVerificationResponse> FetchPublicUrlAsync(
+        string publicUrl,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, publicUrl);
+        request.Headers.UserAgent.ParseAdd("LinuxMadeSane-edge-well-known-verifier");
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+        var hasCloudflareAccessHeader = response.Headers.Any(header =>
+            header.Key.Contains("cf-access", StringComparison.OrdinalIgnoreCase));
+
+        return new WellKnownHttpVerificationResponse(
+            response.StatusCode,
+            response.ReasonPhrase ?? string.Empty,
+            contentType,
+            body,
+            hasCloudflareAccessHeader);
+    }
+
+    private static void AddHttpChecks(
+        ICollection<string> checks,
+        WellKnownHttpVerificationResponse response,
+        string label)
+    {
+        checks.Add($"{label} {(int)response.StatusCode} {response.ReasonPhrase}.");
+        checks.Add(string.IsNullOrWhiteSpace(response.ContentType)
+            ? $"{label}: no Content-Type header returned."
+            : $"{label} Content-Type: {response.ContentType}.");
+    }
+
+    private static bool ShouldAttemptTunnelRepair(WellKnownHttpVerificationResponse response) =>
+        response.StatusCode == HttpStatusCode.BadGateway ||
+        (int)response.StatusCode == 530 ||
+        response.Body.Contains("error code: 1033", StringComparison.OrdinalIgnoreCase) ||
+        response.Body.Contains("Cloudflare Tunnel error", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRelayProvisioned(EdgeGatewayRelayZone relay) =>
+        !string.IsNullOrWhiteSpace(relay.TunnelId) &&
+        !string.IsNullOrWhiteSpace(relay.DnsTarget) &&
+        !string.IsNullOrWhiteSpace(relay.WildcardHostname);
+
+    private async Task<string> TryRepairRelayForHostnameAsync(
+        string hostname,
+        CancellationToken cancellationToken)
+    {
+        if (edgeGatewayConfigurationStore is null)
+        {
+            return "Cloudflare tunnel repair was skipped because Edge Gateway configuration is not available.";
+        }
+
+        var normalizedHostname = WellKnownPath.NormalizeDomain(hostname);
+        var configuration = await edgeGatewayConfigurationStore.LoadAsync(cancellationToken);
+        var relay = configuration.RelayZones
+            .Where(IsRelayProvisioned)
+            .OrderByDescending(item => item.DomainName.Length)
+            .FirstOrDefault(item =>
+                normalizedHostname.Equals(item.DomainName, StringComparison.OrdinalIgnoreCase) ||
+                normalizedHostname.EndsWith($".{item.DomainName}", StringComparison.OrdinalIgnoreCase));
+
+        if (relay is null)
+        {
+            return $"Cloudflare tunnel repair was skipped because no managed relay matched {normalizedHostname}.";
+        }
+
+        var repair = await relayProvisioningService.RepairRelayAsync(relay.DomainName, cancellationToken);
+        var detail = string.Join(" ", repair.Steps.Concat(repair.Warnings));
+        return string.IsNullOrWhiteSpace(detail)
+            ? $"Cloudflare tunnel repair for {relay.DomainName}: {repair.Summary}"
+            : $"Cloudflare tunnel repair for {relay.DomainName}: {repair.Summary} {detail}";
+    }
+
     private static bool IsAcceptableContentType(WellKnownService service, string actualContentType, string body)
     {
         if (service.Template.Equals(WellKnownTemplateKind.TeslaFleet.ToString(), StringComparison.OrdinalIgnoreCase) &&
@@ -733,10 +807,10 @@ public sealed class WellKnownServiceManager(
         body.Contains("/lmshaauth/login", StringComparison.OrdinalIgnoreCase) ||
         body.Contains("MFA/passkey", StringComparison.OrdinalIgnoreCase);
 
-    private static bool LooksLikeCloudflareAccessBlock(HttpResponseMessage response, string body) =>
-        response.Headers.Any(header => header.Key.Contains("cf-access", StringComparison.OrdinalIgnoreCase)) ||
-        body.Contains("Cloudflare Access", StringComparison.OrdinalIgnoreCase) ||
-        body.Contains("cloudflareaccess.com", StringComparison.OrdinalIgnoreCase);
+    private static bool LooksLikeCloudflareAccessBlock(WellKnownHttpVerificationResponse response) =>
+        response.HasCloudflareAccessHeader ||
+        response.Body.Contains("Cloudflare Access", StringComparison.OrdinalIgnoreCase) ||
+        response.Body.Contains("cloudflareaccess.com", StringComparison.OrdinalIgnoreCase);
 
     private static void TrySetOwnerOnly(string path)
     {
@@ -754,4 +828,11 @@ public sealed class WellKnownServiceManager(
             // Best-effort hardening; the add-on data directory still owns the file.
         }
     }
+
+    private sealed record WellKnownHttpVerificationResponse(
+        HttpStatusCode StatusCode,
+        string ReasonPhrase,
+        string ContentType,
+        string Body,
+        bool HasCloudflareAccessHeader);
 }

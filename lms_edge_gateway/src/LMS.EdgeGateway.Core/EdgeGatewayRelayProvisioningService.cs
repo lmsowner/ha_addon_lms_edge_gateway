@@ -596,9 +596,14 @@ public sealed class EdgeGatewayRelayProvisioningService(
                     warnings);
             }
 
+            var localConnectorRunning = await processStatusProbe.IsRunningAsync(CloudflaredProcessPattern, cancellationToken);
+            steps.Add(localConnectorRunning
+                ? "Local cloudflared connector process is running."
+                : "Local cloudflared connector process is not running.");
+
             var health = await CheckTunnelHealthAsync(apiToken, accountId, relay.TunnelId, cancellationToken);
             steps.Add($"Cloudflare tunnel status: {health.Status}.");
-            if (!health.Success)
+            if (!health.Success || !localConnectorRunning)
             {
                 await EnsureCloudflaredConnectorTokenAsync(
                     apiToken,
@@ -1624,6 +1629,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
             var applications = configuration.Applications
                 .Where(application => IsApplicationForDomain(application, relay.DomainName))
                 .ToArray();
+            var publicProxyRoutes = (configuration.PublicProxyRoutes ?? [])
+                .Where(route => route.Enabled && IsPublicProxyRouteForDomain(route, relay.DomainName))
+                .ToArray();
             var relayWellKnownServices = wellKnownServices
                 .Where(service => IsWellKnownServiceForDomain(service, relay.DomainName))
                 .ToArray();
@@ -1631,6 +1639,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 existing.Routes,
                 relay,
                 applications,
+                publicProxyRoutes,
                 relayWellKnownServices,
                 caddyServiceUrl);
             if (TunnelRoutesEqual(existing.Routes, reconciledRoutes))
@@ -1645,7 +1654,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 tunnelId,
                 new CloudflareTunnelConfiguration(reconciledRoutes),
                 cancellationToken);
-            steps.Add($"Reconciled Cloudflare tunnel ingress for {relay.DomainName} ({applications.Length} saved app route(s), {relayWellKnownServices.Length} domain service route(s)).");
+            steps.Add($"Reconciled Cloudflare tunnel ingress for {relay.DomainName} ({applications.Length} saved app route(s), {publicProxyRoutes.Length} public proxy route(s), {relayWellKnownServices.Length} domain service route(s)).");
         }
     }
 
@@ -1992,6 +2001,11 @@ public sealed class EdgeGatewayRelayProvisioningService(
             wellKnownServices,
             options.Value.DataRoot,
             options.Value.WellKnownPublicRoot,
+            BuildForwardAuthUpstream());
+
+        PublicProxyRouteCaddyRenderer.AppendRoutes(
+            builder,
+            configuration.PublicProxyRoutes,
             BuildForwardAuthUpstream());
 
         foreach (var route in configuration.Applications
@@ -2810,6 +2824,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         IReadOnlyList<CloudflareTunnelRoute> existingRoutes,
         EdgeGatewayRelayZone relay,
         IReadOnlyList<PublishedApplicationDefinition> applications,
+        IReadOnlyList<PublicProxyRouteDefinition> publicProxyRoutes,
         IReadOnlyList<WellKnownService> wellKnownServices,
         string caddyServiceUrl)
     {
@@ -2823,7 +2838,14 @@ public sealed class EdgeGatewayRelayProvisioningService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(hostname => hostname, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        var publicProxyHostnames = publicProxyRoutes
+            .Select(route => NormalizePublicHostname(route.Hostname))
+            .Where(hostname => !string.IsNullOrWhiteSpace(hostname))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(hostname => hostname, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var managedHostnames = applicationHostnames
+            .Concat(publicProxyHostnames)
             .Concat(wellKnownHostnames)
             .Append(relay.WildcardHostname.Trim().TrimEnd('.'))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -2850,6 +2872,13 @@ public sealed class EdgeGatewayRelayProvisioningService(
         foreach (var hostname in wellKnownHostnames.Where(hostname => !addedHostnames.Contains(hostname)))
         {
             routes.Add(new CloudflareTunnelRoute(hostname, caddyServiceUrl, BuildOriginRequest(caddyServiceUrl)));
+            addedHostnames.Add(hostname);
+        }
+
+        foreach (var hostname in publicProxyHostnames.Where(hostname => !addedHostnames.Contains(hostname)))
+        {
+            routes.Add(new CloudflareTunnelRoute(hostname, caddyServiceUrl, BuildOriginRequest(caddyServiceUrl)));
+            addedHostnames.Add(hostname);
         }
 
         routes.Add(new CloudflareTunnelRoute(relay.WildcardHostname, caddyServiceUrl, BuildOriginRequest(caddyServiceUrl)));
@@ -3027,6 +3056,19 @@ public sealed class EdgeGatewayRelayProvisioningService(
         try
         {
             return GetDomainNameFromPublicHostname(service.Domain)
+                .Equals(domainName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsPublicProxyRouteForDomain(PublicProxyRouteDefinition route, string domainName)
+    {
+        try
+        {
+            return GetDomainNameFromPublicHostname(route.Hostname)
                 .Equals(domainName, StringComparison.OrdinalIgnoreCase);
         }
         catch

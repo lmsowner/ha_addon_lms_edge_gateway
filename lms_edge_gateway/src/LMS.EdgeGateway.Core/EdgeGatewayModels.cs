@@ -34,6 +34,20 @@ public sealed record PublishedApplicationDefinition(
     bool? StripForwardedFor = null,
     bool? SkipUpstreamTlsVerification = null);
 
+public sealed record PublicProxyRouteDefinition(
+    Guid Id,
+    string Hostname,
+    string PathPrefix,
+    string UpstreamUrl,
+    string Description,
+    bool Enabled,
+    bool RequiresAuth = false,
+    bool PreserveHostHeader = true,
+    bool StripForwardedFor = true,
+    bool MatchSubpaths = true,
+    DateTimeOffset CreatedUtc = default,
+    DateTimeOffset UpdatedUtc = default);
+
 public sealed record CloudflareTunnelState(
     string TunnelName,
     string AccountName,
@@ -59,13 +73,15 @@ public sealed record EdgeGatewayConfiguration(
     IReadOnlyList<PublishedApplicationDefinition> Applications,
     IReadOnlyList<EdgeGatewayRelayZone> RelayZones,
     CloudflareTunnelState CloudflareTunnel,
-    DateTimeOffset UpdatedAtUtc)
+    DateTimeOffset UpdatedAtUtc,
+    IReadOnlyList<PublicProxyRouteDefinition>? PublicProxyRoutes = null)
 {
     public static EdgeGatewayConfiguration Empty { get; } = new(
         [],
         [],
         new CloudflareTunnelState(string.Empty, string.Empty, string.Empty, false, null, string.Empty),
-        DateTimeOffset.UtcNow);
+        DateTimeOffset.UtcNow,
+        []);
 }
 
 public sealed record EdgeGatewayRuntimeStatus(

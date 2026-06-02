@@ -4,6 +4,7 @@ using LMS.EdgeGateway.Core;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -12,6 +13,7 @@ using System.Text.Json;
 var builder = WebApplication.CreateBuilder(args);
 var edgeGatewayOptions = builder.Configuration.GetSection("EdgeGateway").Get<EdgeGatewayCoreOptions>() ?? new EdgeGatewayCoreOptions();
 
+builder.WebHost.UseStaticWebAssets();
 builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection", LogLevel.Error);
 
 builder.WebHost.UseUrls(
@@ -163,6 +165,147 @@ app.MapPost("/api/public-assets/{id:guid}/verify", async Task<IResult> (
             result.CheckedUtc
         },
         statusCode: result.Success ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+}).AllowAnonymous().DisableAntiforgery();
+
+app.MapGet("/api/public-routes", async Task<IResult> (
+    HttpContext context,
+    IEdgeGatewayConfigurationStore configurationStore,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var configuration = await configurationStore.LoadAsync(cancellationToken);
+    return Results.Json((configuration.PublicProxyRoutes ?? []).Select(MapPublicProxyRoute));
+}).AllowAnonymous();
+
+app.MapPost("/api/public-routes/publish", async Task<IResult> (
+    HttpContext context,
+    IEdgeGatewayConfigurationStore configurationStore,
+    IEdgeGatewayRelayProvisioningService provisioningService,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var request = await context.Request.ReadFromJsonAsync<PublicProxyRoutePublishRequest>(
+        cancellationToken: cancellationToken);
+    if (request is null)
+    {
+        return Results.BadRequest(new { succeeded = false, summary = "Enter a public route payload." });
+    }
+
+    try
+    {
+        var hostname = WellKnownPath.NormalizeDomain(request.Hostname);
+        var pathPrefix = NormalizePublicProxyPathPrefix(request.PathPrefix);
+        var upstreamUrl = NormalizePublicProxyUpstreamUrl(request.UpstreamUrl);
+        var configuration = await configurationStore.LoadAsync(cancellationToken);
+        if (!HasProvisionedRelayForHostname(configuration, hostname))
+        {
+            return Results.BadRequest(new
+            {
+                succeeded = false,
+                summary = $"Setup Relay must complete for the parent domain before publishing {hostname}{pathPrefix}."
+            });
+        }
+
+        var existing = (configuration.PublicProxyRoutes ?? []).FirstOrDefault(route =>
+            route.Hostname.Equals(hostname, StringComparison.OrdinalIgnoreCase) &&
+            NormalizePublicProxyPathPrefix(route.PathPrefix).Equals(pathPrefix, StringComparison.OrdinalIgnoreCase));
+        var now = DateTimeOffset.UtcNow;
+        var route = existing is null
+            ? new PublicProxyRouteDefinition(
+                Guid.NewGuid(),
+                hostname,
+                pathPrefix,
+                upstreamUrl,
+                string.IsNullOrWhiteSpace(request.Description) ? $"{hostname}{pathPrefix}" : request.Description.Trim(),
+                request.Enabled ?? true,
+                request.RequiresAuth ?? false,
+                request.PreserveHostHeader ?? true,
+                request.StripForwardedFor ?? true,
+                request.MatchSubpaths ?? true,
+                now,
+                now)
+            : existing with
+            {
+                Hostname = hostname,
+                PathPrefix = pathPrefix,
+                UpstreamUrl = upstreamUrl,
+                Description = string.IsNullOrWhiteSpace(request.Description) ? existing.Description : request.Description.Trim(),
+                Enabled = request.Enabled ?? true,
+                RequiresAuth = request.RequiresAuth ?? false,
+                PreserveHostHeader = request.PreserveHostHeader ?? true,
+                StripForwardedFor = request.StripForwardedFor ?? true,
+                MatchSubpaths = request.MatchSubpaths ?? true,
+                UpdatedUtc = now
+            };
+        var routes = (configuration.PublicProxyRoutes ?? [])
+            .Where(candidate => candidate.Id != route.Id)
+            .Append(route)
+            .OrderBy(candidate => candidate.Hostname, StringComparer.OrdinalIgnoreCase)
+            .ThenByDescending(candidate => NormalizePublicProxyPathPrefix(candidate.PathPrefix).Length)
+            .ToArray();
+
+        await configurationStore.SaveAsync(configuration with { PublicProxyRoutes = routes }, cancellationToken);
+        var refresh = await provisioningService.RefreshPublishedConfigurationAsync(cancellationToken);
+        return Results.Json(
+            new
+            {
+                succeeded = refresh.Success,
+                summary = refresh.Success
+                    ? $"Public route {hostname}{pathPrefix} is routed through Edge Gateway."
+                    : $"Saved public route {hostname}{pathPrefix}, but refresh failed: {refresh.Summary}",
+                warnings = refresh.Warnings,
+                route = MapPublicProxyRoute(route)
+            },
+            statusCode: refresh.Success ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+    }
+    catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { succeeded = false, summary = exception.Message });
+    }
+}).AllowAnonymous().DisableAntiforgery();
+
+app.MapDelete("/api/public-routes/{id:guid}", async Task<IResult> (
+    Guid id,
+    HttpContext context,
+    IEdgeGatewayConfigurationStore configurationStore,
+    IEdgeGatewayRelayProvisioningService provisioningService,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var configuration = await configurationStore.LoadAsync(cancellationToken);
+    var existing = (configuration.PublicProxyRoutes ?? []).FirstOrDefault(route => route.Id == id);
+    if (existing is null)
+    {
+        return Results.Json(new { succeeded = true, summary = "Public route was already removed.", warnings = Array.Empty<string>() });
+    }
+
+    var routes = (configuration.PublicProxyRoutes ?? [])
+        .Where(route => route.Id != id)
+        .ToArray();
+    await configurationStore.SaveAsync(configuration with { PublicProxyRoutes = routes }, cancellationToken);
+    var refresh = await provisioningService.RefreshPublishedConfigurationAsync(cancellationToken);
+    return Results.Json(
+        new
+        {
+            succeeded = refresh.Success,
+            summary = refresh.Success
+                ? $"Removed public route {existing.Hostname}{existing.PathPrefix}."
+                : $"Removed public route {existing.Hostname}{existing.PathPrefix}, but refresh failed: {refresh.Summary}",
+            warnings = refresh.Warnings
+        },
+        statusCode: refresh.Success ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
 }).AllowAnonymous().DisableAntiforgery();
 
 app.MapGet("/edge-well-known/{serviceId:guid}", async Task<IResult> (
@@ -639,6 +782,88 @@ static PublicAssetResponse MapPublicAsset(WellKnownService service) =>
         service.LastVerificationStatus,
         service.LastVerificationMessage);
 
+static PublicProxyRouteResponse MapPublicProxyRoute(PublicProxyRouteDefinition route) =>
+    new(
+        route.Id,
+        route.Hostname,
+        route.PathPrefix,
+        route.UpstreamUrl,
+        route.Description,
+        route.Enabled,
+        route.RequiresAuth,
+        route.PreserveHostHeader,
+        route.StripForwardedFor,
+        route.MatchSubpaths,
+        $"https://{route.Hostname}{route.PathPrefix}");
+
+static string NormalizePublicProxyPathPrefix(string value)
+{
+    var normalized = (value ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ArgumentException("Public route path is required.");
+    }
+
+    if (normalized.Contains("://", StringComparison.Ordinal) &&
+        Uri.TryCreate(normalized, UriKind.Absolute, out _))
+    {
+        throw new ArgumentException("Use a relative public route path, not an absolute URL.");
+    }
+
+    if (!normalized.StartsWith("/", StringComparison.Ordinal))
+    {
+        normalized = $"/{normalized}";
+    }
+
+    normalized = Uri.UnescapeDataString(normalized).TrimEnd('/');
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ArgumentException("Public route path cannot be the whole hostname. Use a scoped path such as /oauth.");
+    }
+
+    if (normalized.Contains('\\', StringComparison.Ordinal) ||
+        normalized.Contains('\0', StringComparison.Ordinal) ||
+        normalized.Contains(':', StringComparison.Ordinal) ||
+        normalized.Contains('?', StringComparison.Ordinal) ||
+        normalized.Contains('#', StringComparison.Ordinal) ||
+        normalized.Contains(' ', StringComparison.Ordinal))
+    {
+        throw new ArgumentException("Public route path cannot contain spaces, query strings, fragments, backslashes or invalid characters.");
+    }
+
+    var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Any(segment => segment is "." or ".."))
+    {
+        throw new ArgumentException("Public route path cannot contain traversal segments.");
+    }
+
+    return normalized;
+}
+
+static string NormalizePublicProxyUpstreamUrl(string value)
+{
+    var normalized = (value ?? string.Empty).Trim().TrimEnd('/');
+    if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri) ||
+        (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+    {
+        throw new ArgumentException("Enter a valid HTTP or HTTPS upstream URL.");
+    }
+
+    if (!string.IsNullOrWhiteSpace(uri.Query) || !string.IsNullOrWhiteSpace(uri.Fragment))
+    {
+        throw new ArgumentException("Public route upstream URL cannot include a query string or fragment.");
+    }
+
+    return normalized;
+}
+
+static bool HasProvisionedRelayForHostname(EdgeGatewayConfiguration configuration, string hostname) =>
+    configuration.RelayZones.Any(relay =>
+        !string.IsNullOrWhiteSpace(relay.TunnelId) &&
+        !string.IsNullOrWhiteSpace(relay.RelayHostname) &&
+        (hostname.Equals(relay.DomainName, StringComparison.OrdinalIgnoreCase) ||
+         hostname.EndsWith($".{relay.DomainName}", StringComparison.OrdinalIgnoreCase)));
+
 static string NormalizeForwardedHost(string? host)
 {
     var value = (host ?? string.Empty).Split(',', 2)[0].Trim().TrimEnd('.');
@@ -782,3 +1007,27 @@ sealed record PublicAssetResponse(
     DateTimeOffset? LastVerifiedUtc,
     string LastVerificationStatus,
     string LastVerificationMessage);
+
+sealed record PublicProxyRoutePublishRequest(
+    string Hostname,
+    string PathPrefix,
+    string UpstreamUrl,
+    string Description = "",
+    bool? Enabled = true,
+    bool? RequiresAuth = false,
+    bool? PreserveHostHeader = true,
+    bool? StripForwardedFor = true,
+    bool? MatchSubpaths = true);
+
+sealed record PublicProxyRouteResponse(
+    Guid Id,
+    string Hostname,
+    string PathPrefix,
+    string UpstreamUrl,
+    string Description,
+    bool Enabled,
+    bool RequiresAuth,
+    bool PreserveHostHeader,
+    bool StripForwardedFor,
+    bool MatchSubpaths,
+    string PublicUrl);

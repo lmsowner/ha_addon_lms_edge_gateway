@@ -209,6 +209,29 @@ public sealed class WellKnownServiceTests : IDisposable
     }
 
     [Fact]
+    public void Public_proxy_route_renderer_bypasses_auth_and_preserves_oauth_path()
+    {
+        var route = new PublicProxyRouteDefinition(
+            Guid.NewGuid(),
+            "tesla.example.com",
+            "/oauth",
+            "http://127.0.0.1:5055",
+            "Tesla Fleet Helper OAuth endpoints",
+            true,
+            RequiresAuth: false);
+
+        var caddy = PublicProxyRouteCaddyRenderer.Render([route], "127.0.0.1:5299");
+
+        Assert.Contains("@public_proxy_", caddy, StringComparison.Ordinal);
+        Assert.Contains("host tesla.example.com", caddy, StringComparison.Ordinal);
+        Assert.Contains("path /oauth /oauth/*", caddy, StringComparison.Ordinal);
+        Assert.Contains("reverse_proxy http://127.0.0.1:5055", caddy, StringComparison.Ordinal);
+        Assert.Contains("header_up X-Forwarded-Host {host}", caddy, StringComparison.Ordinal);
+        Assert.DoesNotContain("forward_auth", caddy, StringComparison.Ordinal);
+        Assert.DoesNotContain("uri strip_prefix", caddy, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Generated_caddyfile_includes_well_known_bypass_before_protected_app_route()
     {
         var relay = new EdgeGatewayRelayProvisioningService(
