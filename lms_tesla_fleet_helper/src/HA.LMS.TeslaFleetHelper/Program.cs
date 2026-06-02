@@ -18,6 +18,9 @@ builder.WebHost.UseUrls(
     Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
     ?? "http://0.0.0.0:5055");
 builder.Services.AddSingleton<TeslaFleetStore>();
+builder.Services.AddSingleton<TeslaFleetTokenCoordinator>();
+builder.Services.AddSingleton<TeslaFleetMqttPublisher>();
+builder.Services.AddHostedService<TeslaFleetHomeAssistantPublisherService>();
 builder.Services.AddHttpClient<EdgeGatewayPublicAssetClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(45);
@@ -34,6 +37,11 @@ builder.Services.AddHttpClient<TeslaFleetPartnerClient>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
 });
 builder.Services.AddHttpClient<TeslaFleetApiClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
+});
+builder.Services.AddHttpClient<TeslaFleetDataClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(45);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
@@ -68,6 +76,21 @@ app.MapPost("/actions/save-settings", async (
                 : form["tesla_client_secret"].ToString().Trim(),
             FleetApiAudience = NormalizeHttpUrl(form["fleet_api_audience"].ToString(), DefaultFleetApiAudience),
             TeslaScopes = NormalizeScopes(form["tesla_scopes"].ToString()),
+            HomeAssistantMqttEnabled = IsChecked(form["ha_mqtt_enabled"].ToString()),
+            FetchRealtimeVehicleData = IsChecked(form["fetch_realtime_vehicle_data"].ToString()),
+            MqttHost = NormalizeHost(form["mqtt_host"].ToString(), "core-mosquitto"),
+            MqttPort = NormalizePort(form["mqtt_port"].ToString(), 1883),
+            MqttUsername = form["mqtt_username"].ToString().Trim(),
+            MqttPassword = string.IsNullOrWhiteSpace(form["mqtt_password"].ToString())
+                ? state.MqttPassword
+                : form["mqtt_password"].ToString(),
+            MqttDiscoveryPrefix = NormalizeTopicRoot(form["mqtt_discovery_prefix"].ToString(), "homeassistant"),
+            MqttBaseTopic = NormalizeTopicRoot(form["mqtt_base_topic"].ToString(), "lms/tesla-fleet"),
+            HomeAssistantRefreshIntervalMinutes = NormalizeInt(
+                form["ha_refresh_interval_minutes"].ToString(),
+                defaultValue: 15,
+                min: 5,
+                max: 240),
             LastStatus = "Settings saved",
             LastMessage = "Tesla Fleet Helper settings were saved.",
             LastChecks = []
@@ -401,6 +424,48 @@ app.MapPost("/actions/list-vehicles", async (
         state = state with
         {
             LastStatus = "Tesla API check failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+    }
+
+    await store.SaveAsync(state, context.RequestAborted);
+    return Results.Redirect("/");
+});
+
+app.MapPost("/actions/publish-ha", async (
+    HttpContext context,
+    TeslaFleetStore store,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetMqttPublisher mqttPublisher) =>
+{
+    var state = await store.LoadAsync();
+    try
+    {
+        if (!state.HomeAssistantMqttEnabled)
+        {
+            throw new InvalidOperationException("Enable Home Assistant MQTT publishing and save settings first.");
+        }
+
+        var token = await tokenCoordinator.EnsureUsableAsync(state, context.RequestAborted);
+        var snapshot = await dataClient.FetchSnapshotAsync(token.State, context.RequestAborted);
+        var result = await mqttPublisher.PublishAsync(token.State, snapshot, context.RequestAborted);
+        var checks = token.Checks.Concat(result.Checks).ToList();
+        state = token.State with
+        {
+            LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantPublishSummary = result.Summary,
+            LastStatus = result.Succeeded ? "Home Assistant published" : "Home Assistant publish failed",
+            LastMessage = result.Summary,
+            LastChecks = checks
+        };
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Home Assistant publish failed",
             LastMessage = exception.Message,
             LastChecks = []
         };
@@ -789,6 +854,7 @@ static string RenderPage(TeslaFleetState state)
           <form method="post" action="actions/test-tesla-public-key"><button type="submit">Check Tesla public key</button></form>
           <form method="post" action="actions/refresh-token"><button type="submit">Refresh Tesla token</button></form>
           <form method="post" action="actions/list-vehicles"><button type="submit">Check Tesla vehicles API</button></form>
+          <form method="post" action="actions/publish-ha"><button type="submit">Publish to Home Assistant</button></form>
         """;
     var tokenStatus = hasOAuthToken
         ? state.TokenExpiresUtc.HasValue
@@ -864,6 +930,16 @@ static string RenderPage(TeslaFleetState state)
     .status.warn { color: var(--warning); border-color: rgba(255, 211, 125, .5); }
     .status.fail { color: var(--danger); border-color: rgba(255, 138, 138, .5); }
     label { display: grid; gap: 7px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .check-row {
+      display: flex;
+      grid-template-columns: none;
+      align-items: center;
+      gap: 10px;
+      min-height: 34px;
+      margin-bottom: 10px;
+    }
+    .check-row input { width: 18px; min-height: 18px; height: 18px; margin: 0; }
     input, textarea {
       width: 100%;
       min-height: 42px;
@@ -920,7 +996,7 @@ static string RenderPage(TeslaFleetState state)
     .split-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     @media (max-width: 900px) {
       main { width: min(100vw - 20px, 760px); padding-top: 18px; }
-      header, .grid, .cards, .split-actions { grid-template-columns: 1fr; display: grid; }
+      header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
       header { gap: 10px; }
     }
   </style>
@@ -974,6 +1050,52 @@ static string RenderPage(TeslaFleetState state)
             Tesla OAuth scopes
             <input name="tesla_scopes" value="{{H(state.TeslaScopes)}}" autocomplete="off" />
           </label>
+          <div class="callout" style="margin:14px 0">
+            <strong>Home Assistant MQTT Discovery</strong>
+            <p style="margin:8px 0 0">Publishes Tesla vehicles and energy sites as MQTT-discovered Home Assistant devices. Realtime vehicle data is optional and only fetched for online vehicles.</p>
+          </div>
+          <label class="check-row">
+            <input type="checkbox" name="ha_mqtt_enabled" {{(state.HomeAssistantMqttEnabled ? "checked" : "")}} />
+            Enable Home Assistant MQTT publishing
+          </label>
+          <label class="check-row">
+            <input type="checkbox" name="fetch_realtime_vehicle_data" {{(state.FetchRealtimeVehicleData ? "checked" : "")}} />
+            Fetch realtime vehicle data for online vehicles
+          </label>
+          <div class="form-grid">
+            <label>
+              MQTT host
+              <input name="mqtt_host" value="{{H(state.MqttHost)}}" autocomplete="off" />
+            </label>
+            <label>
+              MQTT port
+              <input name="mqtt_port" value="{{H(state.MqttPort.ToString())}}" inputmode="numeric" autocomplete="off" />
+            </label>
+          </div>
+          <div class="form-grid">
+            <label>
+              MQTT username
+              <input name="mqtt_username" value="{{H(state.MqttUsername)}}" autocomplete="off" />
+            </label>
+            <label>
+              MQTT password
+              <input name="mqtt_password" value="" placeholder="{{(string.IsNullOrWhiteSpace(state.MqttPassword) ? "Not saved" : "Saved - leave blank to keep")}}" autocomplete="off" />
+            </label>
+          </div>
+          <div class="form-grid">
+            <label>
+              Discovery prefix
+              <input name="mqtt_discovery_prefix" value="{{H(state.MqttDiscoveryPrefix)}}" autocomplete="off" />
+            </label>
+            <label>
+              Base topic
+              <input name="mqtt_base_topic" value="{{H(state.MqttBaseTopic)}}" autocomplete="off" />
+            </label>
+          </div>
+          <label>
+            Refresh interval minutes
+            <input name="ha_refresh_interval_minutes" value="{{H(state.HomeAssistantRefreshIntervalMinutes.ToString())}}" inputmode="numeric" autocomplete="off" />
+          </label>
           <div class="actions">
             <button type="submit">Save settings</button>
           </div>
@@ -1024,6 +1146,8 @@ static string RenderPage(TeslaFleetState state)
           <div><span>Last token refresh</span><code>{{FormatDate(state.LastTokenRefreshUtc)}}</code></div>
           <div><span>Last vehicle check</span><code>{{FormatDate(state.LastVehicleDiagnosticsUtc)}}</code></div>
           <div><span>Vehicle check summary</span><code>{{H(string.IsNullOrWhiteSpace(state.LastVehicleDiagnosticsSummary) ? "None" : state.LastVehicleDiagnosticsSummary)}}</code></div>
+          <div><span>Last Home Assistant publish</span><code>{{FormatDate(state.LastHomeAssistantPublishUtc)}}</code></div>
+          <div><span>Home Assistant publish summary</span><code>{{H(string.IsNullOrWhiteSpace(state.LastHomeAssistantPublishSummary) ? "None" : state.LastHomeAssistantPublishSummary)}}</code></div>
           <div><span>Edge Gateway asset id</span><code>{{H(state.PublicAssetId?.ToString("D") ?? "None")}}</code></div>
           <div><span>Edge Gateway OAuth route id</span><code>{{H(state.PublicOAuthRouteId?.ToString("D") ?? "None")}}</code></div>
           <div><span>Private key path</span><code>{{H(string.IsNullOrWhiteSpace(state.PrivateKeyPath) ? "Generate a key first." : state.PrivateKeyPath)}}</code></div>
@@ -1255,6 +1379,89 @@ static string NormalizeDomain(string value, bool required)
     return trimmed;
 }
 
+static bool IsChecked(string value) =>
+    value.Equals("on", StringComparison.OrdinalIgnoreCase) ||
+    value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+    value.Equals("1", StringComparison.OrdinalIgnoreCase);
+
+static string NormalizeHost(string value, string defaultValue)
+{
+    var trimmed = (value ?? string.Empty).Trim();
+    if (string.IsNullOrWhiteSpace(trimmed))
+    {
+        return defaultValue;
+    }
+
+    if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+    {
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
+            string.IsNullOrWhiteSpace(uri.Host))
+        {
+            throw new InvalidOperationException("Enter a valid MQTT host.");
+        }
+
+        trimmed = uri.Host;
+    }
+
+    if (trimmed.Contains('/', StringComparison.Ordinal) ||
+        trimmed.Contains('\\', StringComparison.Ordinal) ||
+        trimmed.Contains(' ', StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException("Enter a valid MQTT host name or IP address.");
+    }
+
+    return trimmed;
+}
+
+static int NormalizePort(string value, int defaultValue)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return defaultValue;
+    }
+
+    if (!int.TryParse(value.Trim(), out var port) || port < 1 || port > 65535)
+    {
+        throw new InvalidOperationException("Enter a valid MQTT port between 1 and 65535.");
+    }
+
+    return port;
+}
+
+static int NormalizeInt(string value, int defaultValue, int min, int max)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return defaultValue;
+    }
+
+    if (!int.TryParse(value.Trim(), out var parsed))
+    {
+        throw new InvalidOperationException($"Enter a number between {min} and {max}.");
+    }
+
+    return Math.Clamp(parsed, min, max);
+}
+
+static string NormalizeTopicRoot(string value, string defaultValue)
+{
+    var trimmed = (value ?? string.Empty).Trim().Trim('/');
+    if (string.IsNullOrWhiteSpace(trimmed))
+    {
+        return defaultValue;
+    }
+
+    if (trimmed.Contains('#', StringComparison.Ordinal) ||
+        trimmed.Contains('+', StringComparison.Ordinal) ||
+        trimmed.Contains('\\', StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException("MQTT topics cannot contain wildcards or backslashes.");
+    }
+
+    return trimmed;
+}
+
 sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment environment)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -1282,7 +1489,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
         Directory.CreateDirectory(dataRoot);
         if (!File.Exists(StatePath))
         {
-            return new TeslaFleetState(EdgeGatewayUrl: ReadDefaultEdgeGatewayUrl());
+            return ReadDefaultState();
         }
 
         await using var stream = File.OpenRead(StatePath);
@@ -1311,6 +1518,13 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             OAuthRedirectUri = ShouldRefreshOAuthRedirectUri(state.OAuthRedirectUri) && !string.IsNullOrWhiteSpace(state.OriginDomain)
                 ? TeslaFleetDefaults.BuildOAuthRedirectUri(state.OriginDomain)
                 : state.OAuthRedirectUri,
+            MqttHost = string.IsNullOrWhiteSpace(state.MqttHost) ? "core-mosquitto" : state.MqttHost,
+            MqttPort = state.MqttPort <= 0 ? 1883 : state.MqttPort,
+            MqttDiscoveryPrefix = string.IsNullOrWhiteSpace(state.MqttDiscoveryPrefix) ? "homeassistant" : state.MqttDiscoveryPrefix,
+            MqttBaseTopic = string.IsNullOrWhiteSpace(state.MqttBaseTopic) ? "lms/tesla-fleet" : state.MqttBaseTopic,
+            HomeAssistantRefreshIntervalMinutes = state.HomeAssistantRefreshIntervalMinutes <= 0
+                ? 15
+                : Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240),
             LastChecks = state.LastChecks ?? []
         };
     }
@@ -1347,6 +1561,106 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
         }
 
         return configuredEdgeGatewayUrl;
+    }
+
+    private TeslaFleetState ReadDefaultState() =>
+        new(
+            EdgeGatewayUrl: ReadDefaultEdgeGatewayUrl(),
+            HomeAssistantMqttEnabled: ReadOptionBool("homeassistant_mqtt_enabled", false),
+            FetchRealtimeVehicleData: ReadOptionBool("fetch_realtime_vehicle_data", false),
+            MqttHost: ReadOptionString("mqtt_host", "core-mosquitto"),
+            MqttPort: ReadOptionInt("mqtt_port", 1883),
+            MqttUsername: ReadOptionString("mqtt_username", string.Empty),
+            MqttPassword: ReadOptionString("mqtt_password", string.Empty),
+            MqttDiscoveryPrefix: ReadOptionString("mqtt_discovery_prefix", "homeassistant"),
+            MqttBaseTopic: ReadOptionString("mqtt_base_topic", "lms/tesla-fleet"),
+            HomeAssistantRefreshIntervalMinutes: Math.Clamp(ReadOptionInt("homeassistant_refresh_interval_minutes", 15), 5, 240));
+
+    private string ReadOptionString(string name, string fallback)
+    {
+        try
+        {
+            if (File.Exists(optionsJsonPath))
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(optionsJsonPath));
+                if (document.RootElement.TryGetProperty(name, out var value) &&
+                    value.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(value.GetString()))
+                {
+                    return value.GetString()!;
+                }
+            }
+        }
+        catch
+        {
+            // Fall back to the compiled default.
+        }
+
+        return fallback;
+    }
+
+    private int ReadOptionInt(string name, int fallback)
+    {
+        try
+        {
+            if (File.Exists(optionsJsonPath))
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(optionsJsonPath));
+                if (document.RootElement.TryGetProperty(name, out var value))
+                {
+                    if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+                    {
+                        return number;
+                    }
+
+                    if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number))
+                    {
+                        return number;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fall back to the compiled default.
+        }
+
+        return fallback;
+    }
+
+    private bool ReadOptionBool(string name, bool fallback)
+    {
+        try
+        {
+            if (File.Exists(optionsJsonPath))
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(optionsJsonPath));
+                if (document.RootElement.TryGetProperty(name, out var value))
+                {
+                    if (value.ValueKind == JsonValueKind.True)
+                    {
+                        return true;
+                    }
+
+                    if (value.ValueKind == JsonValueKind.False)
+                    {
+                        return false;
+                    }
+
+                    if (value.ValueKind == JsonValueKind.String &&
+                        bool.TryParse(value.GetString(), out var boolean))
+                    {
+                        return boolean;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fall back to the compiled default.
+        }
+
+        return fallback;
     }
 
     private static bool ShouldRefreshOAuthRedirectUri(string value) =>
@@ -2010,6 +2324,17 @@ sealed record TeslaFleetState(
     DateTimeOffset? LastTokenRefreshUtc = null,
     DateTimeOffset? LastVehicleDiagnosticsUtc = null,
     string LastVehicleDiagnosticsSummary = "",
+    bool HomeAssistantMqttEnabled = false,
+    bool FetchRealtimeVehicleData = false,
+    string MqttHost = "core-mosquitto",
+    int MqttPort = 1883,
+    string MqttUsername = "",
+    string MqttPassword = "",
+    string MqttDiscoveryPrefix = "homeassistant",
+    string MqttBaseTopic = "lms/tesla-fleet",
+    int HomeAssistantRefreshIntervalMinutes = 15,
+    DateTimeOffset? LastHomeAssistantPublishUtc = null,
+    string LastHomeAssistantPublishSummary = "",
     string PartnerRegistrationAudience = "",
     string PartnerRegistrationStatus = "",
     string PartnerRegistrationMessage = "",

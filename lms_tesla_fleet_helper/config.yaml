@@ -24,5 +24,23 @@ panel_admin: true
 watchdog: http://[HOST]:[PORT:5055]/healthz
 options:
   edge_gateway_url: "http://127.0.0.1:5000"
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_discovery_prefix: "homeassistant"
+  mqtt_base_topic: "lms/tesla-fleet"
+  homeassistant_mqtt_enabled: false
+  fetch_realtime_vehicle_data: false
+  homeassistant_refresh_interval_minutes: 15
 schema:
   edge_gateway_url: str
+  mqtt_host: str
+  mqtt_port: int
+  mqtt_username: str
+  mqtt_password: password
+  mqtt_discovery_prefix: str
+  mqtt_base_topic: str
+  homeassistant_mqtt_enabled: bool
+  fetch_realtime_vehicle_data: bool
+  homeassistant_refresh_interval_minutes: int
