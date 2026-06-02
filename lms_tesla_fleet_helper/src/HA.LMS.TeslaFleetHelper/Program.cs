@@ -20,6 +20,7 @@ builder.WebHost.UseUrls(
 builder.Services.AddSingleton<TeslaFleetStore>();
 builder.Services.AddSingleton<TeslaFleetTokenCoordinator>();
 builder.Services.AddSingleton<TeslaFleetMqttPublisher>();
+builder.Services.AddSingleton<TeslaFleetPropertyHarness>();
 builder.Services.AddHostedService<TeslaFleetHomeAssistantPublisherService>();
 builder.Services.AddHttpClient<EdgeGatewayPublicAssetClient>(client =>
 {
@@ -475,6 +476,106 @@ app.MapPost("/actions/publish-ha", async (
     return Results.Redirect("/");
 });
 
+app.MapPost("/actions/discover-properties", async (
+    HttpContext context,
+    TeslaFleetStore store,
+    TeslaFleetPropertyHarness propertyHarness) =>
+{
+    var state = await store.LoadAsync();
+    try
+    {
+        var run = await propertyHarness.DiscoverAsync(state, context.RequestAborted);
+        state = ApplyPropertyDiscovery(run, "Tesla properties discovered");
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Property discovery failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+    }
+
+    await store.SaveAsync(state, context.RequestAborted);
+    return Results.Redirect("/");
+});
+
+app.MapPost("/actions/clear-properties", async (
+    HttpContext context,
+    TeslaFleetStore store) =>
+{
+    var state = await store.LoadAsync();
+    state = state with
+    {
+        DiscoveredProperties = [],
+        LastPropertyDiscoveryUtc = null,
+        LastPropertyDiscoverySummary = "",
+        LastStatus = "Properties cleared",
+        LastMessage = "Cleared the cached Tesla API property harness results.",
+        LastChecks = []
+    };
+    await store.SaveAsync(state, context.RequestAborted);
+    return Results.Redirect("/");
+});
+
+app.MapGet("/api/test-harness/status", async (
+    TeslaFleetStore store,
+    CancellationToken cancellationToken) =>
+{
+    var state = await store.LoadAsync(cancellationToken);
+    return Results.Json(BuildPropertyHarnessStatus(state));
+});
+
+app.MapGet("/api/test-harness/properties", async (
+    TeslaFleetStore store,
+    CancellationToken cancellationToken) =>
+{
+    var state = await store.LoadAsync(cancellationToken);
+    return Results.Json(new
+    {
+        status = BuildPropertyHarnessStatus(state),
+        properties = state.DiscoveredProperties ?? []
+    });
+});
+
+app.MapPost("/api/test-harness/discover", async (
+    TeslaFleetStore store,
+    TeslaFleetPropertyHarness propertyHarness,
+    CancellationToken cancellationToken) =>
+{
+    var state = await store.LoadAsync(cancellationToken);
+    try
+    {
+        var run = await propertyHarness.DiscoverAsync(state, cancellationToken);
+        state = ApplyPropertyDiscovery(run, "Tesla properties discovered");
+        await store.SaveAsync(state, cancellationToken);
+        return Results.Json(new
+        {
+            succeeded = true,
+            status = BuildPropertyHarnessStatus(state),
+            checks = run.Checks,
+            properties = state.DiscoveredProperties ?? []
+        });
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Property discovery failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+        await store.SaveAsync(state, cancellationToken);
+        return Results.Json(new
+        {
+            succeeded = false,
+            status = BuildPropertyHarnessStatus(state),
+            message = exception.Message
+        }, statusCode: StatusCodes.Status500InternalServerError);
+    }
+});
+
 app.MapGet("/tesla_fleet.key", async (
     TeslaFleetStore store,
     CancellationToken cancellationToken) =>
@@ -669,6 +770,39 @@ static async Task<TeslaFleetState> GenerateKeyAsync(
     };
     await store.SaveAsync(updated, cancellationToken);
     return updated;
+}
+
+static TeslaFleetState ApplyPropertyDiscovery(TeslaPropertyDiscoveryRun run, string status) =>
+    run.State with
+    {
+        DiscoveredProperties = run.Properties,
+        LastPropertyDiscoveryUtc = DateTimeOffset.UtcNow,
+        LastPropertyDiscoverySummary = run.Summary,
+        LastStatus = status,
+        LastMessage = run.Summary,
+        LastChecks = run.Checks
+    };
+
+static object BuildPropertyHarnessStatus(TeslaFleetState state)
+{
+    var properties = state.DiscoveredProperties ?? [];
+    return new
+    {
+        configured = !string.IsNullOrWhiteSpace(state.RefreshToken),
+        lastDiscoveryUtc = state.LastPropertyDiscoveryUtc,
+        summary = string.IsNullOrWhiteSpace(state.LastPropertyDiscoverySummary)
+            ? "No Tesla API property discovery has been run yet."
+            : state.LastPropertyDiscoverySummary,
+        propertyCount = properties.Count,
+        vehiclePropertyCount = properties.Count(property => property.Scope.Equals("vehicle", StringComparison.OrdinalIgnoreCase)),
+        energyPropertyCount = properties.Count(property => property.Scope.Equals("energy", StringComparison.OrdinalIgnoreCase)),
+        userPropertyCount = properties.Count(property => property.Scope.Equals("user", StringComparison.OrdinalIgnoreCase)),
+        regionPropertyCount = properties.Count(property => property.Scope.Equals("region", StringComparison.OrdinalIgnoreCase)),
+        fetchRealtimeVehicleData = state.FetchRealtimeVehicleData,
+        fleetApiAudience = state.FleetApiAudience,
+        lastStatus = state.LastStatus,
+        lastMessage = state.LastMessage
+    };
 }
 
 static async Task<TeslaPartnerRegistrationResult> TryRegisterPartnerAccountAsync(
@@ -868,6 +1002,11 @@ static string RenderPage(TeslaFleetState state)
     var checks = lastChecks.Count == 0
         ? "<li>No detailed checks yet.</li>"
         : string.Concat(lastChecks.Select(check => $"<li>{H(check)}</li>"));
+    var discoveredProperties = state.DiscoveredProperties ?? [];
+    var propertyRows = RenderPropertyRows(discoveredProperties);
+    var propertySummary = string.IsNullOrWhiteSpace(state.LastPropertyDiscoverySummary)
+        ? "No discovery run yet."
+        : state.LastPropertyDiscoverySummary;
 
     return $$"""
 <!doctype html>
@@ -994,6 +1133,21 @@ static string RenderPage(TeslaFleetState state)
     .callout.warn { border-color: rgba(255, 211, 125, .45); }
     ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); line-height: 1.55; }
     .split-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: #0c1118; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th, td { padding: 9px 10px; border-bottom: 1px solid rgba(51, 65, 85, .72); text-align: left; vertical-align: top; font-size: 13px; }
+    th { color: var(--muted); font-weight: 700; background: rgba(29, 39, 52, .7); position: sticky; top: 0; }
+    td code { padding: 0; border: 0; background: transparent; color: var(--accent-2); }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      white-space: nowrap;
+    }
     @media (max-width: 900px) {
       main { width: min(100vw - 20px, 760px); padding-top: 18px; }
       header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
@@ -1163,6 +1317,39 @@ static string RenderPage(TeslaFleetState state)
         <textarea readonly>{{H(string.IsNullOrWhiteSpace(state.PublicKeyPem) ? "Generate a key to see the public key." : state.PublicKeyPem)}}</textarea>
       </div>
     </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>Tesla API Property Harness</h2>
+      <p class="meta">Discover the fields Tesla returns before mapping them into Home Assistant. Values are sanitized, VINs are masked, and token-like fields are redacted.</p>
+      <div class="fact-grid" style="margin:12px 0">
+        <div><span>Last property discovery</span><code>{{FormatDate(state.LastPropertyDiscoveryUtc)}}</code></div>
+        <div><span>Discovery summary</span><code>{{H(propertySummary)}}</code></div>
+        <div><span>Cached property count</span><code>{{H(discoveredProperties.Count.ToString())}}</code></div>
+        <div><span>JSON endpoints</span><code>GET /api/test-harness/status | GET /api/test-harness/properties | POST /api/test-harness/discover</code></div>
+      </div>
+      <div class="split-actions" style="margin:12px 0">
+        <form method="post" action="actions/discover-properties"><button class="primary" type="submit">Discover / refresh properties</button></form>
+        <form method="post" action="actions/clear-properties"><button type="submit">Clear cached properties</button></form>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Scope</th>
+              <th>Resource</th>
+              <th>Path</th>
+              <th>Display</th>
+              <th>Type</th>
+              <th>Suggestion</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{propertyRows}}
+          </tbody>
+        </table>
+      </div>
+    </section>
   </main>
 </body>
 </html>
@@ -1191,6 +1378,55 @@ static string BuildStatusClass(string? status)
 
 static string FormatDate(DateTimeOffset? value) =>
     value.HasValue ? H(value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")) : "Never";
+
+static string RenderPropertyRows(IReadOnlyList<TeslaDiscoveredProperty> properties)
+{
+    if (properties.Count == 0)
+    {
+        return """
+            <tr><td colspan="7">No properties discovered yet.</td></tr>
+        """;
+    }
+
+    return string.Concat(properties
+        .Take(160)
+        .Select(property =>
+        {
+            var suggestion = string.Join(" / ", new[]
+                {
+                    property.SuggestedEntityType,
+                    property.SuggestedDeviceClass,
+                    property.SuggestedUnit
+                }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
+            return $"""
+            <tr>
+              <td><span class="pill">{H(property.Scope)}</span></td>
+              <td>{H(property.ResourceName)}<br><code>{H(property.ResourceId)}</code></td>
+              <td><code>{H(property.Path)}</code></td>
+              <td>{H(property.DisplayName)}</td>
+              <td>{H(property.ValueType)}</td>
+              <td>{H(suggestion)}</td>
+              <td>{H(TruncateForUi(property.Value, 140))}</td>
+            </tr>
+""";
+        })) +
+        (properties.Count > 160
+            ? $"""
+            <tr><td colspan="7">Showing first 160 of {properties.Count} discovered properties.</td></tr>
+"""
+            : string.Empty);
+}
+
+static string TruncateForUi(string value, int maxLength)
+{
+    if (string.IsNullOrWhiteSpace(value) || value.Length <= maxLength)
+    {
+        return value;
+    }
+
+    return $"{value[..maxLength]}...";
+}
 
 static string BuildPublicKeyUrl(string domain) =>
     string.IsNullOrWhiteSpace(domain)
@@ -1525,6 +1761,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             HomeAssistantRefreshIntervalMinutes = state.HomeAssistantRefreshIntervalMinutes <= 0
                 ? 15
                 : Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240),
+            DiscoveredProperties = state.DiscoveredProperties ?? [],
             LastChecks = state.LastChecks ?? []
         };
     }
@@ -2335,6 +2572,9 @@ sealed record TeslaFleetState(
     int HomeAssistantRefreshIntervalMinutes = 15,
     DateTimeOffset? LastHomeAssistantPublishUtc = null,
     string LastHomeAssistantPublishSummary = "",
+    DateTimeOffset? LastPropertyDiscoveryUtc = null,
+    string LastPropertyDiscoverySummary = "",
+    List<TeslaDiscoveredProperty>? DiscoveredProperties = null,
     string PartnerRegistrationAudience = "",
     string PartnerRegistrationStatus = "",
     string PartnerRegistrationMessage = "",
