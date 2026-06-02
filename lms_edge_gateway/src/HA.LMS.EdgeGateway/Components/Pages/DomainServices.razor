@@ -81,8 +81,8 @@
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Origin host</span>
-                        <input @bind="editorHostLabel" placeholder="tesla" />
-                        <span class="ui-field-helper">Required. Use tesla for tesla.example.com.</span>
+                        <input @bind="editorHostLabel" placeholder="@BuildOriginHostPlaceholder()" />
+                        <span class="ui-field-helper">@BuildOriginHostHelperText()</span>
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Service name</span>
@@ -380,6 +380,7 @@
         editorEnabled = true;
         editorRequiresAuth = false;
         editorCacheControl = "no-store";
+        editorHostLabel = string.Empty;
         advancedContentTypeConfirmed = false;
         sensitivePublicBodyConfirmed = false;
 
@@ -570,6 +571,28 @@
         selectedTemplate == WellKnownTemplateKind.TeslaFleet
             ? "Generate command-signing keys and publish the Tesla public key at the required app-specific path."
             : "Review the generated path, content type, body, and public URL before publishing.";
+
+    private string BuildOriginHostPlaceholder() => selectedTemplate switch
+    {
+        WellKnownTemplateKind.TeslaFleet => "tesla",
+        WellKnownTemplateKind.SecurityTxt => "security",
+        WellKnownTemplateKind.WebFinger => "id",
+        WellKnownTemplateKind.AppleAppSiteAssociation => "app",
+        WellKnownTemplateKind.AndroidAssetLinks => "app",
+        WellKnownTemplateKind.OpenIdConfiguration => "auth",
+        _ => "service"
+    };
+
+    private string BuildOriginHostHelperText() => selectedTemplate switch
+    {
+        WellKnownTemplateKind.TeslaFleet => "Required. Example: tesla publishes tesla.example.com.",
+        WellKnownTemplateKind.SecurityTxt => "Required. Example: security publishes security.example.com.",
+        WellKnownTemplateKind.WebFinger => "Required. Example: id publishes id.example.com.",
+        WellKnownTemplateKind.AppleAppSiteAssociation => "Required. Example: app publishes app.example.com.",
+        WellKnownTemplateKind.AndroidAssetLinks => "Required. Example: app publishes app.example.com.",
+        WellKnownTemplateKind.OpenIdConfiguration => "Required. Example: auth publishes auth.example.com.",
+        _ => "Required. Example: service publishes service.example.com."
+    };
 
     private DateTimeOffset ParseSecurityExpires()
     {

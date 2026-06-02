@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.38
+
+- Clears the Domain Services origin host when switching templates so template-specific hostnames do not leak into other service types.
+- Makes Domain Services origin host placeholder and helper text template-aware instead of showing Tesla wording for every template.
+
 ## 0.1.37
 
 - Makes the Domain Services origin host mandatory and stops pre-filling Tesla as the default host.
