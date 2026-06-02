@@ -82,7 +82,7 @@
                     <label class="ui-field">
                         <span class="ui-field-label">Origin host</span>
                         <input @bind="editorHostLabel" placeholder="tesla" />
-                        <span class="ui-field-helper">Use tesla for tesla.example.com. Leave blank or use @@ for the apex domain.</span>
+                        <span class="ui-field-helper">Required. Use tesla for tesla.example.com.</span>
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Service name</span>
@@ -319,7 +319,7 @@
     private bool actionIsError;
     private WellKnownTemplateKind selectedTemplate = WellKnownTemplateKind.TeslaFleet;
     private string editorRelayDomain = string.Empty;
-    private string editorHostLabel = "tesla";
+    private string editorHostLabel = string.Empty;
     private string editorDisplayName = string.Empty;
     private string editorRelativePath = string.Empty;
     private string editorContentType = string.Empty;
@@ -387,16 +387,6 @@
             AvailableRelayDomains.Count > 0)
         {
             editorRelayDomain = AvailableRelayDomains[0].DomainName;
-        }
-
-        if (template.Kind == WellKnownTemplateKind.TeslaFleet && string.IsNullOrWhiteSpace(editorHostLabel))
-        {
-            editorHostLabel = "tesla";
-        }
-        else if (template.Kind != WellKnownTemplateKind.TeslaFleet &&
-                 editorHostLabel.Equals("tesla", StringComparison.OrdinalIgnoreCase))
-        {
-            editorHostLabel = string.Empty;
         }
 
         if (template.Kind == WellKnownTemplateKind.SecurityTxt)
@@ -597,7 +587,7 @@
         var hostLabel = (editorHostLabel ?? string.Empty).Trim().TrimEnd('.');
         if (string.IsNullOrWhiteSpace(hostLabel) || hostLabel.Equals("@", StringComparison.Ordinal))
         {
-            return relayDomain;
+            throw new ArgumentException("Origin host is required.");
         }
 
         if (hostLabel.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.37
+
+- Makes the Domain Services origin host mandatory and stops pre-filling Tesla as the default host.
+- Aligns Domain Services editor controls with fixed label/control/helper rows and matching input/select heights.
+
 ## 0.1.36
 
 - Moves public `.well-known` files served by Caddy to `/share/lms-edge-gateway/well-known/public` in the Home Assistant add-on.

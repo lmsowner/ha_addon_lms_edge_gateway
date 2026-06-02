@@ -1906,6 +1906,35 @@ textarea {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.domain-editor-grid {
+    --domain-editor-field-gap: 0.34rem;
+    --domain-editor-label-row: 1.15rem;
+    --domain-editor-control-row: 2.35rem;
+    --domain-editor-helper-row: 2.1rem;
+    align-items: stretch;
+}
+
+.domain-editor-grid > .ui-field {
+    gap: var(--domain-editor-field-gap);
+    grid-template-rows:
+        minmax(var(--domain-editor-label-row), auto)
+        var(--domain-editor-control-row)
+        minmax(var(--domain-editor-helper-row), auto);
+    height: 100%;
+}
+
+.domain-editor-grid > .ui-field > .ui-field-label,
+.domain-editor-grid > .ui-field > .ui-field-helper {
+    align-self: start;
+}
+
+.domain-editor-grid > .ui-field > input,
+.domain-editor-grid > .ui-field > select {
+    align-self: stretch;
+    height: var(--domain-editor-control-row);
+    min-height: var(--domain-editor-control-row);
+}
+
 .domain-body-editor {
     display: grid;
     gap: 0.35rem;
@@ -3709,8 +3738,14 @@ textarea {
     }
 
     .edge-route-main-grid > .ui-field,
-    .edge-form-grid-target > .ui-field {
+    .edge-form-grid-target > .ui-field,
+    .domain-editor-grid > .ui-field {
         grid-template-rows: none;
+        height: auto;
+    }
+
+    .domain-editor-grid > .ui-field > input,
+    .domain-editor-grid > .ui-field > select {
         height: auto;
     }
 
