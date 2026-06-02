@@ -39,22 +39,25 @@
         }
         else
         {
-            <div class="domain-template-grid">
-                @foreach (var template in templates)
-                {
-                    <button class="domain-template-card @(selectedTemplate == template.Kind ? "active" : string.Empty)"
-                            type="button"
-                            @onclick="@(() => SelectTemplate(template))">
-                        <strong>@template.Name</strong>
-                        <span>@template.Description</span>
-                    </button>
-                }
-            </div>
+            @if (!IsEditingService)
+            {
+                <div class="domain-template-grid">
+                    @foreach (var template in templates)
+                    {
+                        <button class="domain-template-card @(selectedTemplate == template.Kind ? "active" : string.Empty)"
+                                type="button"
+                                @onclick="@(() => SelectTemplate(template))">
+                            <strong>@template.Name</strong>
+                            <span>@template.Description</span>
+                        </button>
+                    }
+                </div>
+            }
 
             <section class="surface-subcard domain-editor">
                 <div class="table-header">
                     <div>
-                        <p class="eyebrow">Add Service</p>
+                        <p class="eyebrow">@BuildEditorEyebrow()</p>
                         <h2>@BuildEditorTitle()</h2>
                         <p class="meta-text">@BuildEditorDescription()</p>
                     </div>
@@ -110,7 +113,7 @@
                     </label>
                 </div>
 
-                @if (selectedTemplate == WellKnownTemplateKind.SecurityTxt)
+                @if (!IsEditingService && selectedTemplate == WellKnownTemplateKind.SecurityTxt)
                 {
                     <div class="edge-form-grid domain-security-grid">
                         <label class="ui-field">
@@ -187,16 +190,23 @@
                 </div>
 
                 <div class="edge-actions">
-                    <LmsButton Label="@(isSaving ? "Publishing..." : selectedTemplate == WellKnownTemplateKind.TeslaFleet ? "Generate Tesla service" : "Publish service")"
+                    <LmsButton Label="@BuildSaveButtonLabel()"
                                Icon="save"
                                Primary="true"
                                Busy="@isSaving"
                                Disabled="@(isSaving || AvailableRelayDomains.Count == 0 || !CanBuildOriginDomain())"
                                OnClick="SaveEditorAsync" />
-                    <LmsButton Label="Reset"
+                    <LmsButton Label="@(IsEditingService ? "Reset changes" : "Reset")"
                                Icon="refresh"
                                Disabled="@isSaving"
                                OnClick="ResetEditor" />
+                    @if (IsEditingService)
+                    {
+                        <LmsButton Label="Cancel edit"
+                                   Icon="close"
+                                   Disabled="@isSaving"
+                                   OnClick="CancelEdit" />
+                    }
                 </div>
             </section>
 
@@ -235,6 +245,10 @@
                                     </div>
                                     <div class="edge-route-actions">
                                         <LmsButton Label="Copy URL" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" />
+                                        <LmsButton Label="Edit"
+                                                   Icon="edit"
+                                                   Disabled="@isServiceActionBusy"
+                                                   OnClick="@(() => EditService(service))" />
                                         <LmsButton Label="@(IsBusy(service.Id, "verify") ? "Verifying..." : "Verify")"
                                                    Icon="test"
                                                    Busy="@IsBusy(service.Id, "verify")"
@@ -314,6 +328,7 @@
     private bool isSaving;
     private bool isServiceActionBusy;
     private Guid? busyServiceId;
+    private Guid? editingServiceId;
     private string busyAction = string.Empty;
     private string actionMessage = string.Empty;
     private bool actionIsError;
@@ -342,6 +357,8 @@
             .Where(HasRelayProvisioningData)
             .OrderBy(relay => relay.DomainName, StringComparer.OrdinalIgnoreCase)
             .ToArray() ?? [];
+
+    private bool IsEditingService => editingServiceId.HasValue;
 
     protected override async Task OnInitializedAsync()
     {
@@ -414,7 +431,25 @@
         {
             var originDomain = BuildOriginDomain();
             WellKnownServiceSaveResult result;
-            if (selectedTemplate == WellKnownTemplateKind.TeslaFleet)
+            if (editingServiceId.HasValue)
+            {
+                result = await WellKnownManager.SaveAsync(new WellKnownServiceSaveRequest(
+                    editingServiceId.Value,
+                    editorDisplayName,
+                    originDomain,
+                    editorRelativePath,
+                    editorContentType,
+                    editorBody,
+                    editorSourceType,
+                    editorEnabled,
+                    editorRequiresAuth,
+                    true,
+                    editorCacheControl,
+                    selectedTemplate.ToString(),
+                    advancedContentTypeConfirmed,
+                    sensitivePublicBodyConfirmed));
+            }
+            else if (selectedTemplate == WellKnownTemplateKind.TeslaFleet)
             {
                 result = await WellKnownManager.CreateTeslaFleetAsync(originDomain, editorDisplayName);
             }
@@ -451,6 +486,11 @@
             actionMessage = result.Summary;
             actionIsError = !result.Success;
             await LoadAsync();
+            if (result.Success && editingServiceId.HasValue)
+            {
+                editingServiceId = null;
+                ResetEditor();
+            }
         }
         catch (Exception exception)
         {
@@ -536,8 +576,61 @@
 
     private void ResetEditor()
     {
+        if (editingServiceId.HasValue)
+        {
+            var service = configuration?.Services.FirstOrDefault(service => service.Id == editingServiceId.Value);
+            if (service is not null)
+            {
+                EditService(service, showMessage: false);
+                return;
+            }
+        }
+
         var template = templates.FirstOrDefault(template => template.Kind == selectedTemplate) ?? templates[0];
         SelectTemplate(template);
+    }
+
+    private void CancelEdit()
+    {
+        editingServiceId = null;
+        ResetEditor();
+        actionMessage = string.Empty;
+        actionIsError = false;
+    }
+
+    private void EditService(WellKnownService service, bool showMessage = true)
+    {
+        editingServiceId = service.Id;
+        selectedTemplate = ResolveTemplateKind(service);
+        editorDisplayName = service.DisplayName;
+        editorRelativePath = service.RelativePath;
+        editorContentType = service.ContentType;
+        editorBody = service.Body;
+        editorSourceType = service.SourceType;
+        editorEnabled = service.Enabled;
+        editorRequiresAuth = service.RequiresAuth;
+        editorCacheControl = string.IsNullOrWhiteSpace(service.CacheControl) ? "no-store" : service.CacheControl;
+        advancedContentTypeConfirmed = service.AdvancedContentTypeConfirmed;
+        sensitivePublicBodyConfirmed = service.SensitivePublicBodyConfirmed;
+
+        var relay = FindRelayForDomain(service.Domain);
+        editorRelayDomain = relay?.DomainName ?? editorRelayDomain;
+        if (string.IsNullOrWhiteSpace(editorRelayDomain) && AvailableRelayDomains.Count > 0)
+        {
+            editorRelayDomain = AvailableRelayDomains[0].DomainName;
+        }
+
+        editorHostLabel = BuildHostLabelForEditor(service.Domain, editorRelayDomain);
+        securityContact = string.Empty;
+        securityCanonicalUrl = string.Empty;
+        securityPolicyUrl = string.Empty;
+        securityHiringUrl = string.Empty;
+
+        if (showMessage)
+        {
+            actionMessage = $"Editing {service.DisplayName}.";
+            actionIsError = false;
+        }
     }
 
     private async Task CopyAsync(string value)
@@ -562,15 +655,39 @@
         }
     }
 
+    private string BuildEditorEyebrow() =>
+        IsEditingService ? "Edit Service" : "Add Service";
+
     private string BuildEditorTitle() =>
-        selectedTemplate == WellKnownTemplateKind.TeslaFleet
+        IsEditingService
+            ? $"Edit {editorDisplayName}"
+            : selectedTemplate == WellKnownTemplateKind.TeslaFleet
             ? "Tesla Fleet guided template"
             : $"{editorDisplayName} template";
 
     private string BuildEditorDescription() =>
-        selectedTemplate == WellKnownTemplateKind.TeslaFleet
+        IsEditingService
+            ? "Update the saved service settings, then rebuild Caddy and Cloudflare routing."
+            : selectedTemplate == WellKnownTemplateKind.TeslaFleet
             ? "Generate command-signing keys and publish the Tesla public key at the required app-specific path."
             : "Review the generated path, content type, body, and public URL before publishing.";
+
+    private string BuildSaveButtonLabel()
+    {
+        if (isSaving)
+        {
+            return IsEditingService ? "Saving..." : "Publishing...";
+        }
+
+        if (IsEditingService)
+        {
+            return "Save changes";
+        }
+
+        return selectedTemplate == WellKnownTemplateKind.TeslaFleet
+            ? "Generate Tesla service"
+            : "Publish service";
+    }
 
     private string BuildOriginHostPlaceholder() => selectedTemplate switch
     {
@@ -684,6 +801,13 @@
         AvailableRelayDomains.Any(relay =>
             relay.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase));
 
+    private EdgeGatewayRelayZone? FindRelayForDomain(string domain) =>
+        AvailableRelayDomains
+            .Where(relay => domain.Equals(relay.DomainName, StringComparison.OrdinalIgnoreCase) ||
+                            domain.EndsWith($".{relay.DomainName}", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(relay => relay.DomainName.Length)
+            .FirstOrDefault();
+
     private static bool HasRelayProvisioningData(EdgeGatewayRelayZone relay) =>
         !string.IsNullOrWhiteSpace(relay.TunnelId) &&
         !string.IsNullOrWhiteSpace(relay.DnsTarget) &&
@@ -695,6 +819,32 @@
             ? "unknown"
             : relay.TunnelStatus.Trim().ToLowerInvariant();
         return $"{relay.DomainName} ({relay.RelayHostname}, tunnel {status})";
+    }
+
+    private static string BuildHostLabelForEditor(string domain, string relayDomain)
+    {
+        if (string.IsNullOrWhiteSpace(relayDomain))
+        {
+            return domain;
+        }
+
+        var suffix = $".{relayDomain.Trim().TrimEnd('.')}";
+        return domain.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            ? domain[..^suffix.Length].TrimEnd('.')
+            : domain;
+    }
+
+    private static WellKnownTemplateKind ResolveTemplateKind(WellKnownService service)
+    {
+        if (!string.IsNullOrWhiteSpace(service.Template) &&
+            Enum.TryParse<WellKnownTemplateKind>(service.Template, ignoreCase: true, out var template))
+        {
+            return template;
+        }
+
+        return service.SourceType == WellKnownSourceType.Json
+            ? WellKnownTemplateKind.CustomJson
+            : WellKnownTemplateKind.CustomText;
     }
 
     private static string TruncateBody(string body) =>

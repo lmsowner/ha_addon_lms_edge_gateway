@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.41
+
+- Adds edit support for Domain Services entries so saved `.well-known` services can update Content-Type, path, cache headers, auth state, and body without recreating the service.
+- Preserves generated Tesla Fleet public key content and private key paths when editing the saved service.
+
 ## 0.1.40
 
 - Reconciles enabled Domain Services `.well-known` hostnames into Cloudflare tunnel ingress during startup and Setup refresh.

@@ -76,6 +76,43 @@ public sealed class WellKnownServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_updates_existing_service_content_type_without_creating_duplicate()
+    {
+        Directory.CreateDirectory(tempRoot);
+        var manager = CreateManager(new StaticResponseHandler(HttpStatusCode.OK, "text/plain", "ok"));
+        var save = await manager.SaveAsync(new WellKnownServiceSaveRequest(
+            null,
+            "Tesla public key",
+            "tesla.example.com",
+            "/.well-known/appspecific/com.tesla.3p.public-key.pem",
+            "text/plain; charset=utf-8",
+            "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+            WellKnownSourceType.Generated,
+            Template: WellKnownTemplateKind.TeslaFleet.ToString()));
+        Assert.True(save.Success);
+        Assert.NotNull(save.Service);
+
+        var update = await manager.SaveAsync(new WellKnownServiceSaveRequest(
+            save.Service!.Id,
+            save.Service.DisplayName,
+            save.Service.Domain,
+            save.Service.RelativePath,
+            "application/x-pem-file",
+            save.Service.Body,
+            save.Service.SourceType,
+            save.Service.Enabled,
+            save.Service.RequiresAuth,
+            save.Service.PublicReadOnly,
+            save.Service.CacheControl,
+            save.Service.Template));
+
+        var configuration = await manager.GetConfigurationAsync();
+        Assert.True(update.Success);
+        Assert.Single(configuration.Services);
+        Assert.Equal("application/x-pem-file", configuration.Services[0].ContentType);
+    }
+
+    [Fact]
     public async Task Save_rejects_private_key_material_in_public_body_without_confirmation()
     {
         Directory.CreateDirectory(tempRoot);
