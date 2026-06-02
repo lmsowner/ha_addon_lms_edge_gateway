@@ -18,7 +18,6 @@ public static class WellKnownCaddyRouteRenderer
         {
             var domain = WellKnownPath.NormalizeDomain(service.Domain);
             var relativePath = WellKnownPath.NormalizeRelativePath(service.RelativePath);
-            var publicRoot = WellKnownPath.BuildPublicRoot(dataRoot, wellKnownPublicRoot, domain);
             var matcherName = $"well_known_{service.Id:N}";
             var contentType = EscapeCaddyValue(service.ContentType);
             var cacheControl = EscapeCaddyValue(
@@ -41,8 +40,13 @@ public static class WellKnownCaddyRouteRenderer
 
             builder.AppendLine($"            header Content-Type \"{contentType}\"");
             builder.AppendLine($"            header Cache-Control \"{cacheControl}\"");
-            builder.AppendLine($"            root * {EscapeCaddyPath(publicRoot)}");
-            builder.AppendLine("            file_server");
+            builder.AppendLine($"            rewrite * /edge-well-known/{service.Id:N}");
+            builder.AppendLine($"            reverse_proxy {forwardAuthUpstream} {{");
+            builder.AppendLine("                header_up Host {host}");
+            builder.AppendLine("                header_up X-Forwarded-Host {host}");
+            builder.AppendLine("                header_up X-Forwarded-Proto https");
+            builder.AppendLine("                header_up X-LMS-Well-Known-Proxy 1");
+            builder.AppendLine("            }");
             builder.AppendLine("        }");
             builder.AppendLine();
         }
@@ -75,11 +79,6 @@ public static class WellKnownCaddyRouteRenderer
         .Replace("\"", "\\\"", StringComparison.Ordinal)
         .Replace("\r", string.Empty, StringComparison.Ordinal)
         .Replace("\n", string.Empty, StringComparison.Ordinal);
-
-    private static string EscapeCaddyPath(string path) =>
-        path.Contains(' ', StringComparison.Ordinal)
-            ? $"\"{EscapeCaddyValue(path)}\""
-            : path;
 
     private static string SanitizeComment(string value) =>
         (value ?? string.Empty)

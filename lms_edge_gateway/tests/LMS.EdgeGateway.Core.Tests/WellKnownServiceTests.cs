@@ -164,7 +164,10 @@ public sealed class WellKnownServiceTests : IDisposable
         Assert.Contains("host example.com", caddy, StringComparison.Ordinal);
         Assert.Contains("path /.well-known/security.txt", caddy, StringComparison.Ordinal);
         Assert.Contains("header Content-Type \"text/plain; charset=utf-8\"", caddy, StringComparison.Ordinal);
-        Assert.Contains("file_server", caddy, StringComparison.Ordinal);
+        Assert.Contains($"rewrite * /edge-well-known/{service.Id:N}", caddy, StringComparison.Ordinal);
+        Assert.Contains("reverse_proxy 127.0.0.1:5299", caddy, StringComparison.Ordinal);
+        Assert.Contains("header_up X-LMS-Well-Known-Proxy 1", caddy, StringComparison.Ordinal);
+        Assert.DoesNotContain("file_server", caddy, StringComparison.Ordinal);
         Assert.DoesNotContain("forward_auth", caddy, StringComparison.Ordinal);
     }
 
@@ -265,7 +268,9 @@ public sealed class WellKnownServiceTests : IDisposable
         Assert.Contains("PRIVATE KEY", await File.ReadAllTextAsync(service.SecretFilePath), StringComparison.OrdinalIgnoreCase);
 
         var caddy = WellKnownCaddyRouteRenderer.Render([service], dataRoot, publicRoot, "127.0.0.1:5299");
-        Assert.Contains($"root * {Path.Combine(publicRoot, "tesla.example.com")}", caddy, StringComparison.Ordinal);
+        Assert.Contains($"rewrite * /edge-well-known/{service.Id:N}", caddy, StringComparison.Ordinal);
+        Assert.DoesNotContain("file_server", caddy, StringComparison.Ordinal);
+        Assert.DoesNotContain(publicRoot, caddy, StringComparison.Ordinal);
         Assert.DoesNotContain(Path.Combine(dataRoot, "well-known", "public"), caddy, StringComparison.Ordinal);
     }
 

@@ -52,6 +52,43 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = "Linux Made Sane - Edge Gateway Add-on" }));
+app.MapGet("/edge-well-known/{serviceId:guid}", async Task<IResult> (
+    Guid serviceId,
+    HttpContext context,
+    IWellKnownServiceStore store,
+    CancellationToken cancellationToken) =>
+{
+    if (!string.Equals(context.Request.Headers["X-LMS-Well-Known-Proxy"].ToString(), "1", StringComparison.Ordinal))
+    {
+        return Results.NotFound();
+    }
+
+    var configuration = await store.LoadAsync(cancellationToken);
+    var service = configuration.Services.FirstOrDefault(candidate => candidate.Id == serviceId && candidate.Enabled);
+    if (service is null)
+    {
+        return Results.NotFound();
+    }
+
+    var forwardedHost = context.Request.Headers["X-Forwarded-Host"].ToString();
+    var requestedHost = NormalizeForwardedHost(string.IsNullOrWhiteSpace(forwardedHost)
+        ? context.Request.Host.Host
+        : forwardedHost);
+    if (!requestedHost.Equals(service.Domain, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.NotFound();
+    }
+
+    context.Response.Headers.CacheControl = string.IsNullOrWhiteSpace(service.CacheControl)
+        ? "no-store"
+        : service.CacheControl.Trim();
+    context.Response.Headers["X-LMS-Well-Known-Service"] = service.Id.ToString("N");
+
+    return Results.Bytes(
+        Encoding.UTF8.GetBytes(service.Body ?? string.Empty),
+        string.IsNullOrWhiteSpace(service.ContentType) ? "text/plain; charset=utf-8" : service.ContentType.Trim());
+}).AllowAnonymous();
+
 app.MapPost("/api/setup/cloudflare-api-token", async (
     HttpContext httpContext,
     ICloudflareApiTokenStore tokenStore,
@@ -448,6 +485,13 @@ app.Run();
 
 static string ResolvePath(string path) =>
     Path.IsPathRooted(path) ? path : Path.GetFullPath(path);
+
+static string NormalizeForwardedHost(string? host)
+{
+    var value = (host ?? string.Empty).Split(',', 2)[0].Trim().TrimEnd('.');
+    var portIndex = value.IndexOf(':', StringComparison.Ordinal);
+    return portIndex > -1 ? value[..portIndex] : value;
+}
 
 static string NormalizeReturnUrl(string? returnUrl)
 {

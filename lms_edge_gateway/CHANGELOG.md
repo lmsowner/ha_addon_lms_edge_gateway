@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.39
+
+- Serves public `.well-known` responses through an internal Edge Gateway endpoint instead of Caddy `file_server`, while still writing files under `/share/lms-edge-gateway/well-known/public` for visibility and diagnostics.
+- Avoids public verification failures caused by add-on share mount or Caddy file-serving permission issues.
+
 ## 0.1.38
 
 - Clears the Domain Services origin host when switching templates so template-specific hostnames do not leak into other service types.
