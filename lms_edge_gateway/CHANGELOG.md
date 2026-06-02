@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.35
+
+- Adds an origin host field to Domain Services so .well-known services can publish on subdomains such as `tesla.example.com` while still selecting from provisioned relay domains.
+- Uses the computed origin hostname for Cloudflare DNS, tunnel ingress, Caddy host matching, Tesla Developer values, and public URL preview.
+
 ## 0.1.34
 
 - Changes Domain Services to use a fixed dropdown of provisioned external relay domains instead of accepting arbitrary typed/app-derived domains.

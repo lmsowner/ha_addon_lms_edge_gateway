@@ -69,15 +69,20 @@
 
                 <div class="edge-form-grid domain-editor-grid">
                     <label class="ui-field">
-                        <span class="ui-field-label">External relay domain</span>
-                        <select @bind="editorDomain" disabled="@(AvailableRelayDomains.Count == 0)">
+                        <span class="ui-field-label">Relay domain</span>
+                        <select @bind="editorRelayDomain" disabled="@(AvailableRelayDomains.Count == 0)">
                             <option value="">Select a provisioned relay domain</option>
                             @foreach (var relay in AvailableRelayDomains)
                             {
                                 <option value="@relay.DomainName">@BuildRelayOptionLabel(relay)</option>
                             }
                         </select>
-                        <span class="ui-field-helper">Caddy matches this host and the .well-known path before normal app routes.</span>
+                        <span class="ui-field-helper">The Cloudflare relay namespace that will carry this public hostname.</span>
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Origin host</span>
+                        <input @bind="editorHostLabel" placeholder="tesla" />
+                        <span class="ui-field-helper">Use tesla for tesla.example.com. Leave blank or use @@ for the apex domain.</span>
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Service name</span>
@@ -177,7 +182,7 @@
                     <code>@BuildPreviewUrl()</code>
                     <LmsButton Label="Copy"
                                Icon="copy"
-                               Disabled="@string.IsNullOrWhiteSpace(editorDomain)"
+                               Disabled="@(!CanBuildOriginDomain())"
                                OnClick="@(() => CopyAsync(BuildPreviewUrl()))" />
                 </div>
 
@@ -186,7 +191,7 @@
                                Icon="save"
                                Primary="true"
                                Busy="@isSaving"
-                               Disabled="@(isSaving || AvailableRelayDomains.Count == 0)"
+                               Disabled="@(isSaving || AvailableRelayDomains.Count == 0 || !CanBuildOriginDomain())"
                                OnClick="SaveEditorAsync" />
                     <LmsButton Label="Reset"
                                Icon="refresh"
@@ -313,7 +318,8 @@
     private string actionMessage = string.Empty;
     private bool actionIsError;
     private WellKnownTemplateKind selectedTemplate = WellKnownTemplateKind.TeslaFleet;
-    private string editorDomain = string.Empty;
+    private string editorRelayDomain = string.Empty;
+    private string editorHostLabel = "tesla";
     private string editorDisplayName = string.Empty;
     private string editorRelativePath = string.Empty;
     private string editorContentType = string.Empty;
@@ -351,10 +357,10 @@
         {
             configuration = await WellKnownManager.GetConfigurationAsync();
             runtimeStatus = await StatusService.GetStatusAsync();
-            if ((string.IsNullOrWhiteSpace(editorDomain) || !IsAvailableRelayDomain(editorDomain)) &&
+            if ((string.IsNullOrWhiteSpace(editorRelayDomain) || !IsAvailableRelayDomain(editorRelayDomain)) &&
                 AvailableRelayDomains.Count > 0)
             {
-                editorDomain = AvailableRelayDomains[0].DomainName;
+                editorRelayDomain = AvailableRelayDomains[0].DomainName;
             }
         }
         finally
@@ -377,18 +383,29 @@
         advancedContentTypeConfirmed = false;
         sensitivePublicBodyConfirmed = false;
 
-        if ((string.IsNullOrWhiteSpace(editorDomain) || !IsAvailableRelayDomain(editorDomain)) &&
+        if ((string.IsNullOrWhiteSpace(editorRelayDomain) || !IsAvailableRelayDomain(editorRelayDomain)) &&
             AvailableRelayDomains.Count > 0)
         {
-            editorDomain = AvailableRelayDomains[0].DomainName;
+            editorRelayDomain = AvailableRelayDomains[0].DomainName;
+        }
+
+        if (template.Kind == WellKnownTemplateKind.TeslaFleet && string.IsNullOrWhiteSpace(editorHostLabel))
+        {
+            editorHostLabel = "tesla";
+        }
+        else if (template.Kind != WellKnownTemplateKind.TeslaFleet &&
+                 editorHostLabel.Equals("tesla", StringComparison.OrdinalIgnoreCase))
+        {
+            editorHostLabel = string.Empty;
         }
 
         if (template.Kind == WellKnownTemplateKind.SecurityTxt)
         {
-            securityContact = $"mailto:security@{editorDomain}";
-            securityCanonicalUrl = string.IsNullOrWhiteSpace(editorDomain)
+            var originDomain = TryBuildOriginDomain();
+            securityContact = string.IsNullOrWhiteSpace(originDomain) ? "mailto:security@example.com" : $"mailto:security@{originDomain}";
+            securityCanonicalUrl = string.IsNullOrWhiteSpace(originDomain)
                 ? string.Empty
-                : $"https://{editorDomain}/.well-known/security.txt";
+                : $"https://{originDomain}/.well-known/security.txt";
         }
     }
 
@@ -404,15 +421,16 @@
         actionIsError = false;
         try
         {
+            var originDomain = BuildOriginDomain();
             WellKnownServiceSaveResult result;
             if (selectedTemplate == WellKnownTemplateKind.TeslaFleet)
             {
-                result = await WellKnownManager.CreateTeslaFleetAsync(editorDomain, editorDisplayName);
+                result = await WellKnownManager.CreateTeslaFleetAsync(originDomain, editorDisplayName);
             }
             else if (selectedTemplate == WellKnownTemplateKind.SecurityTxt)
             {
                 result = await WellKnownManager.CreateSecurityTxtAsync(new SecurityTxtTemplateRequest(
-                    editorDomain,
+                    originDomain,
                     securityContact,
                     ParseSecurityExpires(),
                     securityPreferredLanguages,
@@ -425,7 +443,7 @@
                 result = await WellKnownManager.SaveAsync(new WellKnownServiceSaveRequest(
                     null,
                     editorDisplayName,
-                    editorDomain,
+                    originDomain,
                     editorRelativePath,
                     editorContentType,
                     editorBody,
@@ -545,11 +563,11 @@
     {
         try
         {
-            return WellKnownPath.BuildPublicUrl(editorDomain, editorRelativePath);
+            return WellKnownPath.BuildPublicUrl(BuildOriginDomain(), editorRelativePath);
         }
         catch
         {
-            return "Complete domain and path to preview the URL.";
+            return "Complete relay domain, origin host, and path to preview the URL.";
         }
     }
 
@@ -572,6 +590,49 @@
 
         return DateTimeOffset.UtcNow.AddYears(1);
     }
+
+    private string BuildOriginDomain()
+    {
+        var relayDomain = WellKnownPath.NormalizeDomain(editorRelayDomain);
+        var hostLabel = (editorHostLabel ?? string.Empty).Trim().TrimEnd('.');
+        if (string.IsNullOrWhiteSpace(hostLabel) || hostLabel.Equals("@", StringComparison.Ordinal))
+        {
+            return relayDomain;
+        }
+
+        if (hostLabel.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            hostLabel.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Enter a host label or hostname, not a URL.");
+        }
+
+        if (hostLabel.EndsWith($".{relayDomain}", StringComparison.OrdinalIgnoreCase))
+        {
+            return WellKnownPath.NormalizeDomain(hostLabel);
+        }
+
+        if (hostLabel.Contains('.', StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"The origin hostname must be inside {relayDomain}.");
+        }
+
+        return WellKnownPath.NormalizeDomain($"{hostLabel}.{relayDomain}");
+    }
+
+    private string TryBuildOriginDomain()
+    {
+        try
+        {
+            return BuildOriginDomain();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private bool CanBuildOriginDomain() =>
+        !string.IsNullOrWhiteSpace(TryBuildOriginDomain());
 
     private static string BuildVerificationLabel(WellKnownService service) =>
         string.IsNullOrWhiteSpace(service.LastVerificationStatus)
