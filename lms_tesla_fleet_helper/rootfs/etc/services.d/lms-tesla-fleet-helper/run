@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bashio
+
+set -euo pipefail
+
+bashio::log.info "Starting Linux Made Sane - Tesla Fleet Helper."
+cd /app
+exec /app/HA.LMS.TeslaFleetHelper

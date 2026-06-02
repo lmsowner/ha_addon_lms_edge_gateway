@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.42
+
+- Adds a local-only generic public asset API for trusted companion add-ons to publish, list, delete, and verify public `/.well-known/` assets through the existing Edge Gateway routing foundation.
+- Keeps the existing Domain Services and Tesla Fleet UI in Edge Gateway unchanged while allowing companion add-ons to publish generic hostname/path/content assets.
+
 ## 0.1.41
 
 - Adds edit support for Domain Services entries so saved `.well-known` services can update Content-Type, path, cache headers, auth state, and body without recreating the service.

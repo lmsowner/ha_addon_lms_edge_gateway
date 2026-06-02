@@ -4,6 +4,7 @@ using LMS.EdgeGateway.Core;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using System.Net;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -52,6 +53,118 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = "Linux Made Sane - Edge Gateway Add-on" }));
+app.MapGet("/api/public-assets", async Task<IResult> (
+    HttpContext context,
+    IWellKnownServiceManager wellKnownManager,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var configuration = await wellKnownManager.GetConfigurationAsync(cancellationToken);
+    return Results.Json(configuration.Services.Select(MapPublicAsset));
+}).AllowAnonymous();
+
+app.MapPost("/api/public-assets/publish", async Task<IResult> (
+    HttpContext context,
+    IWellKnownServiceManager wellKnownManager,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var request = await context.Request.ReadFromJsonAsync<PublicAssetPublishRequest>(
+        cancellationToken: cancellationToken);
+    if (request is null)
+    {
+        return Results.BadRequest(new { succeeded = false, summary = "Enter a public asset payload." });
+    }
+
+    var hostname = WellKnownPath.NormalizeDomain(request.Hostname);
+    var path = WellKnownPath.NormalizeRelativePath(request.Path);
+    var configuration = await wellKnownManager.GetConfigurationAsync(cancellationToken);
+    var existing = configuration.Services.FirstOrDefault(service =>
+        service.Domain.Equals(hostname, StringComparison.OrdinalIgnoreCase) &&
+        service.RelativePath.Equals(path, StringComparison.OrdinalIgnoreCase));
+    var sourceType = IsJsonPublicAsset(request.ContentType, path)
+        ? WellKnownSourceType.Json
+        : WellKnownSourceType.StaticText;
+    var result = await wellKnownManager.SaveAsync(
+        new WellKnownServiceSaveRequest(
+            existing?.Id,
+            string.IsNullOrWhiteSpace(request.Description) ? $"{hostname}{path}" : request.Description.Trim(),
+            hostname,
+            path,
+            request.ContentType,
+            request.Content,
+            sourceType,
+            Enabled: true,
+            RequiresAuth: false,
+            PublicReadOnly: true,
+            CacheControl: string.IsNullOrWhiteSpace(request.CacheControl) ? "no-store" : request.CacheControl.Trim()),
+        cancellationToken);
+
+    return Results.Json(
+        new
+        {
+            succeeded = result.Success,
+            summary = result.Summary,
+            warnings = result.Warnings,
+            asset = result.Service is null ? null : MapPublicAsset(result.Service)
+        },
+        statusCode: result.Success ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+}).AllowAnonymous().DisableAntiforgery();
+
+app.MapDelete("/api/public-assets/{id:guid}", async Task<IResult> (
+    Guid id,
+    HttpContext context,
+    IWellKnownServiceManager wellKnownManager,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var result = await wellKnownManager.DeleteAsync(id, cancellationToken);
+    return Results.Json(
+        new
+        {
+            succeeded = result.Success,
+            summary = result.Summary,
+            warnings = result.Warnings
+        },
+        statusCode: result.Success ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+}).AllowAnonymous().DisableAntiforgery();
+
+app.MapPost("/api/public-assets/{id:guid}/verify", async Task<IResult> (
+    Guid id,
+    HttpContext context,
+    IWellKnownServiceManager wellKnownManager,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var result = await wellKnownManager.VerifyAsync(id, cancellationToken);
+    return Results.Json(
+        new
+        {
+            succeeded = result.Success,
+            result.Status,
+            result.Message,
+            result.Checks,
+            result.CheckedUtc
+        },
+        statusCode: result.Success ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+}).AllowAnonymous().DisableAntiforgery();
+
 app.MapGet("/edge-well-known/{serviceId:guid}", async Task<IResult> (
     Guid serviceId,
     HttpContext context,
@@ -486,6 +599,46 @@ app.Run();
 static string ResolvePath(string path) =>
     Path.IsPathRooted(path) ? path : Path.GetFullPath(path);
 
+static bool IsTrustedLocalPublicAssetRequest(HttpContext context)
+{
+    if (!string.IsNullOrWhiteSpace(context.Request.Headers["X-Forwarded-For"].ToString()))
+    {
+        return false;
+    }
+
+    var remoteIp = context.Connection.RemoteIpAddress;
+    if (remoteIp is null)
+    {
+        return false;
+    }
+
+    return IPAddress.IsLoopback(remoteIp) ||
+           remoteIp.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(remoteIp.MapToIPv4());
+}
+
+static bool IsJsonPublicAsset(string contentType, string path)
+{
+    var contentTypeOnly = (contentType ?? string.Empty).Split(';', 2)[0].Trim();
+    return contentTypeOnly.Equals("application/json", StringComparison.OrdinalIgnoreCase) ||
+           contentTypeOnly.EndsWith("+json", StringComparison.OrdinalIgnoreCase) ||
+           path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+}
+
+static PublicAssetResponse MapPublicAsset(WellKnownService service) =>
+    new(
+        service.Id,
+        service.Domain,
+        service.RelativePath,
+        service.ContentType,
+        service.PublicUrl,
+        service.Enabled,
+        service.RequiresAuth,
+        service.CacheControl,
+        service.LastPublishedUtc,
+        service.LastVerifiedUtc,
+        service.LastVerificationStatus,
+        service.LastVerificationMessage);
+
 static string NormalizeForwardedHost(string? host)
 {
     var value = (host ?? string.Empty).Split(',', 2)[0].Trim().TrimEnd('.');
@@ -607,3 +760,25 @@ static async Task<(string StateId, string CredentialJson, string? Error)> ReadPa
 sealed record PasskeyEnrollmentOptionsRequest(string? FriendlyName);
 
 sealed record PasskeyLoginOptionsRequest(string? Email);
+
+sealed record PublicAssetPublishRequest(
+    string Hostname,
+    string Path,
+    string ContentType,
+    string Content,
+    string Description,
+    string CacheControl = "no-store");
+
+sealed record PublicAssetResponse(
+    Guid Id,
+    string Hostname,
+    string Path,
+    string ContentType,
+    string PublicUrl,
+    bool Enabled,
+    bool RequiresAuth,
+    string CacheControl,
+    DateTimeOffset? LastPublishedUtc,
+    DateTimeOffset? LastVerifiedUtc,
+    string LastVerificationStatus,
+    string LastVerificationMessage);

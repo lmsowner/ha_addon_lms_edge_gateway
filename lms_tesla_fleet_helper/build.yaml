@@ -1,0 +1,9 @@
+args:
+  BUILD_FROM: ghcr.io/home-assistant/{arch}-base:latest
+  BUILD_ARCH: "{arch}"
+  DOTNET_CONFIGURATION: Release
+labels:
+  org.opencontainers.image.title: LMS Tesla Fleet Helper
+  org.opencontainers.image.version: "0.1.0"
+  org.opencontainers.image.description: Tesla Fleet key helper for Home Assistant using LMS Edge Gateway public publishing.
+  org.opencontainers.image.source: https://github.com/lmsowner/ha_addon_lms_edge_gateway

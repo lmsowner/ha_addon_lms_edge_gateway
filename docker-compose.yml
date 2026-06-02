@@ -5,11 +5,24 @@ services:
       args:
         BUILD_FROM: ghcr.io/home-assistant/amd64-base:latest
         BUILD_ARCH: amd64
-        BUILD_VERSION: 0.1.41
+        BUILD_VERSION: 0.1.42
     ports:
       - "5000:5000"
       - "18080:18080"
     volumes:
       - ./local-data:/data
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+  lms-tesla-fleet-helper:
+    build:
+      context: ./lms_tesla_fleet_helper
+      args:
+        BUILD_FROM: ghcr.io/home-assistant/amd64-base:latest
+        BUILD_ARCH: amd64
+        BUILD_VERSION: 0.1.0
+    ports:
+      - "5055:5055"
+    volumes:
+      - ./local-tesla-data:/data
     environment:
       ASPNETCORE_ENVIRONMENT: Production

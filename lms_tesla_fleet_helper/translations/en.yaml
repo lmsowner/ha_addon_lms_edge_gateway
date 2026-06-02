@@ -1,0 +1,4 @@
+configuration:
+  edge_gateway_url:
+    name: Edge Gateway API URL
+    description: Local LMS Edge Gateway control-plane URL used to publish the Tesla public key.

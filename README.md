@@ -1,8 +1,9 @@
-# LMS Edge Gateway for Home Assistant
+# LMS Home Assistant Add-ons
 
-LMS Edge Gateway for Home Assistant is a Home Assistant Add-on for secure self-hosted application publishing.
+This repository contains Linux Made Sane Home Assistant add-ons.
 
-It is designed to let Home Assistant users publish Home Assistant and other LAN applications through Cloudflare, Cloudflare Access, Cloudflare Tunnel, Caddy, and LMS authentication policy without hand-writing reverse proxy or Linux service configuration.
+- **LMS Edge Gateway for Home Assistant**: secure self-hosted application publishing through Cloudflare Tunnel, Caddy, and LMS authentication policy.
+- **LMS Tesla Fleet Helper**: a companion Tesla Fleet key helper that uses Edge Gateway for public HTTPS publishing.
 
 ## Project links
 
@@ -23,7 +24,8 @@ https://github.com/lmsowner/ha_addon_lms_edge_gateway
 ```
 
 5. Install **LMS Edge Gateway for Home Assistant**.
-6. Start the add-on and open the web UI through Home Assistant ingress.
+6. Optionally install **LMS Tesla Fleet Helper** after Edge Gateway is running.
+7. Start the add-on and open the web UI through Home Assistant ingress.
 
 ### Install progress in Home Assistant
 
@@ -37,13 +39,15 @@ That progress display is not the same as the Edge Gateway web app being ready. A
 
 This repository is a dedicated Home Assistant product, not a fork of LMS.
 
-The add-on source is split into reusable layers:
+The Edge Gateway add-on source is split into reusable layers:
 
 - `LMS.Shared`: LMS-style UI primitives, navigation, status pills, panels, and shared contracts.
 - `LMS.EdgeGateway.Core`: reusable edge gateway status, configuration, and orchestration abstractions.
 - `HA.LMS.EdgeGateway`: Home Assistant-specific Blazor host and ingress surface.
 
 The Home Assistant folder is intentionally thin. HA-specific concerns are packaging, ingress, persistent `/data`, and add-on lifecycle.
+
+The Tesla Fleet Helper is a separate add-on folder. It owns Tesla-specific key generation, Home Assistant key export, Tesla Developer setup values, virtual key URL guidance, and diagnostics. It publishes the public key through Edge Gateway rather than embedding Cloudflare or Caddy management itself.
 
 ## Current scope
 
@@ -77,8 +81,14 @@ Docker Compose:
 docker compose up --build
 ```
 
-Then open:
+Then open Edge Gateway:
 
 ```text
 http://localhost:5000
+```
+
+The Tesla helper runs locally at:
+
+```text
+http://localhost:5055
 ```

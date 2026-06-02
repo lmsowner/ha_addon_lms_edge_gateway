@@ -8,4 +8,8 @@
   <Folder Name="/lms_edge_gateway/tests/">
     <Project Path="lms_edge_gateway/tests/LMS.EdgeGateway.Core.Tests/LMS.EdgeGateway.Core.Tests.csproj" />
   </Folder>
+  <Folder Name="/lms_tesla_fleet_helper/" />
+  <Folder Name="/lms_tesla_fleet_helper/src/">
+    <Project Path="lms_tesla_fleet_helper/src/HA.LMS.TeslaFleetHelper/HA.LMS.TeslaFleetHelper.csproj" />
+  </Folder>
 </Solution>
