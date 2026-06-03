@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Adds a Home Assistant add-on option for the Helper upstream URL used by Edge Gateway OAuth forwarding.
+- Documents the cross-host Edge Gateway and Helper URL requirements for production Home Assistant testing.
+
 ## 0.2.0
 
 - Adds Tesla Fleet API property discovery and a Home Assistant MQTT projection preview.

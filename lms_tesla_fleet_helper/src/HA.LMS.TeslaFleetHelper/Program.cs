@@ -72,7 +72,7 @@ app.MapPost("/actions/save-settings", async (
         {
             EdgeGatewayUrl = NormalizeHttpUrl(form["edge_gateway_url"].ToString()),
             OriginDomain = NormalizeDomain(form["origin_domain"].ToString(), required: false),
-            PublicUpstreamUrl = NormalizeHttpUrl(form["public_upstream_url"].ToString(), "http://127.0.0.1:5055"),
+            PublicUpstreamUrl = NormalizeHttpUrl(form["public_upstream_url"].ToString(), state.PublicUpstreamUrl),
             TeslaClientId = form["tesla_client_id"].ToString().Trim(),
             TeslaClientSecret = string.IsNullOrWhiteSpace(form["tesla_client_secret"].ToString())
                 ? state.TeslaClientSecret
@@ -2011,7 +2011,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
                 ? ReadDefaultEdgeGatewayUrl()
                 : state.EdgeGatewayUrl,
             PublicUpstreamUrl = string.IsNullOrWhiteSpace(state.PublicUpstreamUrl)
-                ? configuredPublicUpstreamUrl
+                ? ReadDefaultPublicUpstreamUrl()
                 : state.PublicUpstreamUrl,
             FleetApiAudience = string.IsNullOrWhiteSpace(state.FleetApiAudience)
                 ? TeslaFleetDefaults.DefaultFleetApiAudience
@@ -2075,9 +2075,15 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
         return configuredEdgeGatewayUrl;
     }
 
+    private string ReadDefaultPublicUpstreamUrl() =>
+        TeslaFleetDefaults.NormalizeHttpUrl(
+            ReadOptionString("public_upstream_url", configuredPublicUpstreamUrl),
+            configuredPublicUpstreamUrl);
+
     private TeslaFleetState ReadDefaultState() =>
         new(
             EdgeGatewayUrl: ReadDefaultEdgeGatewayUrl(),
+            PublicUpstreamUrl: ReadDefaultPublicUpstreamUrl(),
             HomeAssistantMqttEnabled: ReadOptionBool("homeassistant_mqtt_enabled", false),
             FetchRealtimeVehicleData: ReadOptionBool("fetch_realtime_vehicle_data", false),
             MqttHost: ReadOptionString("mqtt_host", "core-mosquitto"),
