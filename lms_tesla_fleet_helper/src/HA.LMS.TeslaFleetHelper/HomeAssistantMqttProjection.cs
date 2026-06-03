@@ -3,6 +3,23 @@ sealed record HomeAssistantMqttProjection(
     IReadOnlyList<HomeAssistantMqttEntityProjection> Entities,
     IReadOnlyList<HomeAssistantMqttStateProjection> States);
 
+sealed record HomeAssistantProjectionPreviewRun(
+    TeslaFleetState State,
+    List<HomeAssistantProjectionPreviewEntity> Entities,
+    List<string> Checks,
+    string Summary);
+
+sealed record HomeAssistantProjectionPreviewEntity(
+    string Id,
+    string DeviceName,
+    string Component,
+    string Name,
+    string StateTopic,
+    string ValueTemplate,
+    string? DeviceClass,
+    string? UnitOfMeasurement,
+    bool EnabledByDefault);
+
 sealed record HomeAssistantMqttDeviceProjection(
     string Id,
     string Name,

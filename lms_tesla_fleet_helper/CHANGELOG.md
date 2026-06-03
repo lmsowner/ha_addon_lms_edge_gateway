@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Adds Tesla Fleet API property discovery and a Home Assistant MQTT projection preview.
+- Publishes typed Home Assistant MQTT Discovery entities through the Tesla projection mapper.
+- Improves the standalone harness table layout for reviewing vehicle, energy, and MQTT mapping data before HA testing.
+
 ## 0.1.0
 
 - Adds the initial LMS Tesla Fleet Helper companion add-on.

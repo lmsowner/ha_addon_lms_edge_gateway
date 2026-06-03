@@ -473,7 +473,9 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
             : $"{value[..600]}...";
 }
 
-sealed class TeslaFleetMqttPublisher
+sealed class TeslaFleetMqttPublisher(
+    TeslaFleetStateMapper stateMapper,
+    HomeAssistantMqttProjectionMapper projectionMapper)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -514,208 +516,80 @@ sealed class TeslaFleetMqttPublisher
         checks.Add($"Connected to MQTT broker {settings.Host}:{settings.Port}.");
 
         await PublishStringAsync(client, $"{settings.BaseTopic}/availability", "online", retain: true, cancellationToken);
-
-        foreach (var vehicle in snapshot.Vehicles)
+        var normalized = stateMapper.Map(snapshot, state.FleetApiAudience);
+        var projection = projectionMapper.Map(normalized, settings.BaseTopic);
+        var devices = projection.Devices.ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var entity in projection.Entities)
         {
-            await PublishVehicleDiscoveryAsync(client, settings, vehicle, cancellationToken);
-            await PublishJsonAsync(
-                client,
-                $"{settings.BaseTopic}/vehicles/{SafeTopic(vehicle.Vin)}/state",
-                BuildVehicleState(vehicle, snapshot.CapturedUtc),
-                retain: true,
-                cancellationToken);
+            if (!devices.TryGetValue(entity.DeviceId, out var device))
+            {
+                continue;
+            }
+
+            await PublishEntityDiscoveryAsync(client, settings, entity, device, cancellationToken);
         }
 
-        foreach (var site in snapshot.EnergySites)
+        foreach (var stateProjection in projection.States)
         {
-            await PublishEnergyDiscoveryAsync(client, settings, site, cancellationToken);
-            await PublishJsonAsync(
-                client,
-                $"{settings.BaseTopic}/energy/{SafeTopic(site.SiteId)}/state",
-                BuildEnergyState(site, snapshot.CapturedUtc),
-                retain: true,
-                cancellationToken);
+            await PublishJsonAsync(client, stateProjection.Topic, stateProjection.Payload, retain: true, cancellationToken);
         }
 
         await client.DisconnectAsync(cancellationToken: cancellationToken);
-        checks.Add($"Published discovery/state for {snapshot.Vehicles.Count} vehicle(s) and {snapshot.EnergySites.Count} energy site(s).");
+        checks.Add($"Published {projection.Entities.Count} MQTT entit{(projection.Entities.Count == 1 ? "y" : "ies")} for {projection.Devices.Count} device(s).");
+        checks.Add($"Snapshot source contained {snapshot.Vehicles.Count} vehicle(s) and {snapshot.EnergySites.Count} energy site(s).");
         checks.AddRange(snapshot.Checks);
         return new TeslaHomeAssistantPublishResult(
             true,
-            $"Published {snapshot.Vehicles.Count} vehicle(s) and {snapshot.EnergySites.Count} energy site(s) to Home Assistant MQTT Discovery.",
+            $"Published {projection.Entities.Count} Home Assistant MQTT Discovery entit{(projection.Entities.Count == 1 ? "y" : "ies")} from typed LMS Tesla projection.",
             checks);
     }
 
-    private static async Task PublishVehicleDiscoveryAsync(
+    private static async Task PublishEntityDiscoveryAsync(
         IMqttClient client,
         TeslaMqttSettings settings,
-        TeslaVehicleSnapshot vehicle,
+        HomeAssistantMqttEntityProjection entity,
+        HomeAssistantMqttDeviceProjection device,
         CancellationToken cancellationToken)
     {
-        var id = SafeId(vehicle.Vin);
-        var stateTopic = $"{settings.BaseTopic}/vehicles/{SafeTopic(vehicle.Vin)}/state";
-        var availabilityTopic = $"{settings.BaseTopic}/availability";
-        var device = new
+        var devicePayload = new Dictionary<string, object?>
         {
-            identifiers = new[] { $"lms_tesla_{id}" },
-            name = vehicle.DisplayName,
-            manufacturer = "Tesla",
-            model = "Tesla Vehicle",
-            sw_version = GetValue(vehicle.Values, "fleet_status.firmware_version")
+            ["identifiers"] = new[] { device.Id },
+            ["name"] = device.Name,
+            ["manufacturer"] = device.Manufacturer,
+            ["model"] = device.Model
         };
-        var sensors = new[]
+        if (!string.IsNullOrWhiteSpace(device.SoftwareVersion))
         {
-            Sensor("state", "State", null, null, "{{ value_json.state }}"),
-            Sensor("battery_level", "Battery", "battery", "%", "{{ value_json.battery_level }}"),
-            Sensor("charging_state", "Charging State", null, null, "{{ value_json.charging_state }}"),
-            Sensor("charge_limit_soc", "Charge Limit", "battery", "%", "{{ value_json.charge_limit_soc }}"),
-            Sensor("plugged_in", "Plugged In", null, null, "{{ value_json.plugged_in }}"),
-            Sensor("inside_temp", "Inside Temperature", "temperature", "\u00b0C", "{{ value_json.inside_temp }}"),
-            Sensor("outside_temp", "Outside Temperature", "temperature", "\u00b0C", "{{ value_json.outside_temp }}"),
-            Sensor("latitude", "Latitude", null, null, "{{ value_json.latitude }}"),
-            Sensor("longitude", "Longitude", null, null, "{{ value_json.longitude }}"),
-            Sensor("firmware_version", "Firmware", null, null, "{{ value_json.firmware_version }}"),
-            Sensor("virtual_key_required", "Command Protocol Required", null, null, "{{ value_json.vehicle_command_protocol_required }}"),
-            Sensor("total_keys", "Total Keys", null, null, "{{ value_json.total_number_of_keys }}")
-        };
-
-        foreach (var sensor in sensors)
-        {
-            var payload = new Dictionary<string, object?>
-            {
-                ["name"] = sensor.Name,
-                ["unique_id"] = $"lms_tesla_{id}_{sensor.Id}",
-                ["state_topic"] = stateTopic,
-                ["value_template"] = sensor.ValueTemplate,
-                ["availability_topic"] = availabilityTopic,
-                ["device"] = device
-            };
-            if (!string.IsNullOrWhiteSpace(sensor.DeviceClass))
-            {
-                payload["device_class"] = sensor.DeviceClass;
-            }
-
-            if (!string.IsNullOrWhiteSpace(sensor.Unit))
-            {
-                payload["unit_of_measurement"] = sensor.Unit;
-            }
-
-            await PublishJsonAsync(
-                client,
-                $"{settings.DiscoveryPrefix}/sensor/lms_tesla_fleet/{id}_{sensor.Id}/config",
-                payload,
-                retain: true,
-                cancellationToken);
+            devicePayload["sw_version"] = device.SoftwareVersion;
         }
-    }
-
-    private static async Task PublishEnergyDiscoveryAsync(
-        IMqttClient client,
-        TeslaMqttSettings settings,
-        TeslaEnergySiteSnapshot site,
-        CancellationToken cancellationToken)
-    {
-        var id = SafeId(site.SiteId);
-        var stateTopic = $"{settings.BaseTopic}/energy/{SafeTopic(site.SiteId)}/state";
-        var availabilityTopic = $"{settings.BaseTopic}/availability";
-        var device = new
+        var payload = new Dictionary<string, object?>
         {
-            identifiers = new[] { $"lms_tesla_energy_{id}" },
-            name = site.DisplayName,
-            manufacturer = "Tesla",
-            model = "Tesla Energy Site"
+            ["name"] = entity.Name,
+            ["unique_id"] = entity.Id,
+            ["state_topic"] = entity.StateTopic,
+            ["value_template"] = entity.ValueTemplate,
+            ["availability_topic"] = $"{settings.BaseTopic}/availability",
+            ["device"] = devicePayload
         };
-        var sensors = new[]
+        if (!string.IsNullOrWhiteSpace(entity.DeviceClass))
         {
-            Sensor("grid_status", "Grid Status", null, null, "{{ value_json.grid_status }}"),
-            Sensor("battery_percentage", "Battery", "battery", "%", "{{ value_json.battery_percentage }}"),
-            Sensor("solar_power", "Solar Power", "power", "W", "{{ value_json.solar_power }}"),
-            Sensor("load_power", "Load Power", "power", "W", "{{ value_json.load_power }}"),
-            Sensor("battery_power", "Battery Power", "power", "W", "{{ value_json.battery_power }}"),
-            Sensor("grid_power", "Grid Power", "power", "W", "{{ value_json.grid_power }}"),
-            Sensor("backup_reserve_percent", "Backup Reserve", "battery", "%", "{{ value_json.backup_reserve_percent }}")
-        };
-
-        foreach (var sensor in sensors)
-        {
-            var payload = new Dictionary<string, object?>
-            {
-                ["name"] = sensor.Name,
-                ["unique_id"] = $"lms_tesla_energy_{id}_{sensor.Id}",
-                ["state_topic"] = stateTopic,
-                ["value_template"] = sensor.ValueTemplate,
-                ["availability_topic"] = availabilityTopic,
-                ["device"] = device
-            };
-            if (!string.IsNullOrWhiteSpace(sensor.DeviceClass))
-            {
-                payload["device_class"] = sensor.DeviceClass;
-            }
-
-            if (!string.IsNullOrWhiteSpace(sensor.Unit))
-            {
-                payload["unit_of_measurement"] = sensor.Unit;
-            }
-
-            await PublishJsonAsync(
-                client,
-                $"{settings.DiscoveryPrefix}/sensor/lms_tesla_fleet/energy_{id}_{sensor.Id}/config",
-                payload,
-                retain: true,
-                cancellationToken);
+            payload["device_class"] = entity.DeviceClass;
         }
-    }
-
-    private static Dictionary<string, object?> BuildVehicleState(TeslaVehicleSnapshot vehicle, DateTimeOffset capturedUtc) =>
-        new(StringComparer.OrdinalIgnoreCase)
+        if (!string.IsNullOrWhiteSpace(entity.UnitOfMeasurement))
         {
-            ["captured_utc"] = capturedUtc,
-            ["vin"] = vehicle.Vin,
-            ["display_name"] = vehicle.DisplayName,
-            ["state"] = vehicle.State,
-            ["battery_level"] = GetValue(vehicle.Values, "charge_state.battery_level"),
-            ["charging_state"] = GetValue(vehicle.Values, "charge_state.charging_state"),
-            ["charge_limit_soc"] = GetValue(vehicle.Values, "charge_state.charge_limit_soc"),
-            ["plugged_in"] = GetValue(vehicle.Values, "charge_state.conn_charge_cable", "charge_state.fast_charger_present"),
-            ["inside_temp"] = GetValue(vehicle.Values, "climate_state.inside_temp"),
-            ["outside_temp"] = GetValue(vehicle.Values, "climate_state.outside_temp"),
-            ["latitude"] = GetValue(vehicle.Values, "drive_state.latitude", "location_data.latitude"),
-            ["longitude"] = GetValue(vehicle.Values, "drive_state.longitude", "location_data.longitude"),
-            ["firmware_version"] = GetValue(vehicle.Values, "fleet_status.firmware_version"),
-            ["vehicle_command_protocol_required"] = GetValue(vehicle.Values, "fleet_status.vehicle_command_protocol_required"),
-            ["total_number_of_keys"] = GetValue(vehicle.Values, "fleet_status.total_number_of_keys")
-        };
-
-    private static Dictionary<string, object?> BuildEnergyState(TeslaEnergySiteSnapshot site, DateTimeOffset capturedUtc) =>
-        new(StringComparer.OrdinalIgnoreCase)
+            payload["unit_of_measurement"] = entity.UnitOfMeasurement;
+        }
+        if (!entity.EnabledByDefault)
         {
-            ["captured_utc"] = capturedUtc,
-            ["site_id"] = site.SiteId,
-            ["display_name"] = site.DisplayName,
-            ["resource_type"] = site.ResourceType,
-            ["grid_status"] = GetValue(site.Values, "grid_status"),
-            ["battery_percentage"] = GetValue(site.Values, "percentage_charged", "battery_percentage"),
-            ["solar_power"] = GetValue(site.Values, "solar_power"),
-            ["load_power"] = GetValue(site.Values, "load_power"),
-            ["battery_power"] = GetValue(site.Values, "battery_power"),
-            ["grid_power"] = GetValue(site.Values, "grid_power"),
-            ["backup_reserve_percent"] = GetValue(site.Values, "backup_reserve_percent")
-        };
-
-    private static TeslaMqttSensor Sensor(string id, string name, string? deviceClass, string? unit, string valueTemplate) =>
-        new(id, name, deviceClass, unit, valueTemplate);
-
-    private static object? GetValue(IReadOnlyDictionary<string, object?> values, params string[] keys)
-    {
-        foreach (var key in keys)
-        {
-            if (values.TryGetValue(key, out var value))
-            {
-                return value;
-            }
+            payload["enabled_by_default"] = false;
         }
 
-        return null;
+        await PublishJsonAsync(
+            client,
+            $"{settings.DiscoveryPrefix}/{entity.Component}/lms_tesla_fleet/{entity.Id}/config",
+            payload,
+            retain: true,
+            cancellationToken);
     }
 
     private static async Task PublishJsonAsync(
@@ -867,13 +741,6 @@ sealed record TeslaMqttSettings(
         return string.IsNullOrWhiteSpace(normalized) ? fallback : normalized;
     }
 }
-
-sealed record TeslaMqttSensor(
-    string Id,
-    string Name,
-    string? DeviceClass,
-    string? Unit,
-    string ValueTemplate);
 
 sealed record TeslaHomeAssistantPublishResult(
     bool Succeeded,

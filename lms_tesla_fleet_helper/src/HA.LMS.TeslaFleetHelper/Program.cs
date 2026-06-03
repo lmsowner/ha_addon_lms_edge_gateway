@@ -21,6 +21,8 @@ builder.Services.AddSingleton<TeslaFleetStore>();
 builder.Services.AddSingleton<TeslaFleetTokenCoordinator>();
 builder.Services.AddSingleton<TeslaFleetMqttPublisher>();
 builder.Services.AddSingleton<TeslaFleetPropertyHarness>();
+builder.Services.AddSingleton<TeslaFleetStateMapper>();
+builder.Services.AddSingleton<HomeAssistantMqttProjectionMapper>();
 builder.Services.AddHostedService<TeslaFleetHomeAssistantPublisherService>();
 builder.Services.AddHttpClient<EdgeGatewayPublicAssetClient>(client =>
 {
@@ -519,6 +521,40 @@ app.MapPost("/actions/clear-properties", async (
     return Results.Redirect("/");
 });
 
+app.MapPost("/actions/preview-ha-projection", async (
+    HttpContext context,
+    TeslaFleetStore store,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetStateMapper stateMapper,
+    HomeAssistantMqttProjectionMapper projectionMapper) =>
+{
+    var state = await store.LoadAsync();
+    try
+    {
+        var run = await BuildHomeAssistantProjectionPreviewAsync(
+            state,
+            tokenCoordinator,
+            dataClient,
+            stateMapper,
+            projectionMapper,
+            context.RequestAborted);
+        state = ApplyHomeAssistantProjectionPreview(run, "Home Assistant projection previewed");
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Projection preview failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+    }
+
+    await store.SaveAsync(state, context.RequestAborted);
+    return Results.Redirect("/");
+});
+
 app.MapGet("/api/test-harness/status", async (
     TeslaFleetStore store,
     CancellationToken cancellationToken) =>
@@ -537,6 +573,66 @@ app.MapGet("/api/test-harness/properties", async (
         status = BuildPropertyHarnessStatus(state),
         properties = state.DiscoveredProperties ?? []
     });
+});
+
+app.MapGet("/api/test-harness/ha-projection", async (
+    TeslaFleetStore store,
+    CancellationToken cancellationToken) =>
+{
+    var state = await store.LoadAsync(cancellationToken);
+    return Results.Json(new
+    {
+        lastPreviewUtc = state.LastHomeAssistantProjectionPreviewUtc,
+        summary = string.IsNullOrWhiteSpace(state.LastHomeAssistantProjectionPreviewSummary)
+            ? "No Home Assistant projection preview has been run yet."
+            : state.LastHomeAssistantProjectionPreviewSummary,
+        entities = state.HomeAssistantProjectionPreviewEntities ?? []
+    });
+});
+
+app.MapPost("/api/test-harness/ha-projection/refresh", async (
+    TeslaFleetStore store,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetStateMapper stateMapper,
+    HomeAssistantMqttProjectionMapper projectionMapper,
+    CancellationToken cancellationToken) =>
+{
+    var state = await store.LoadAsync(cancellationToken);
+    try
+    {
+        var run = await BuildHomeAssistantProjectionPreviewAsync(
+            state,
+            tokenCoordinator,
+            dataClient,
+            stateMapper,
+            projectionMapper,
+            cancellationToken);
+        state = ApplyHomeAssistantProjectionPreview(run, "Home Assistant projection previewed");
+        await store.SaveAsync(state, cancellationToken);
+        return Results.Json(new
+        {
+            succeeded = true,
+            summary = run.Summary,
+            checks = run.Checks,
+            entities = state.HomeAssistantProjectionPreviewEntities ?? []
+        });
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Projection preview failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+        await store.SaveAsync(state, cancellationToken);
+        return Results.Json(new
+        {
+            succeeded = false,
+            message = exception.Message
+        }, statusCode: StatusCodes.Status500InternalServerError);
+    }
 });
 
 app.MapPost("/api/test-harness/discover", async (
@@ -783,6 +879,57 @@ static TeslaFleetState ApplyPropertyDiscovery(TeslaPropertyDiscoveryRun run, str
         LastChecks = run.Checks
     };
 
+static async Task<HomeAssistantProjectionPreviewRun> BuildHomeAssistantProjectionPreviewAsync(
+    TeslaFleetState state,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetStateMapper stateMapper,
+    HomeAssistantMqttProjectionMapper projectionMapper,
+    CancellationToken cancellationToken)
+{
+    var token = await tokenCoordinator.EnsureUsableAsync(state, cancellationToken);
+    var snapshot = await dataClient.FetchSnapshotAsync(token.State, cancellationToken);
+    var normalized = stateMapper.Map(snapshot, token.State.FleetApiAudience);
+    var projection = projectionMapper.Map(normalized, token.State.MqttBaseTopic);
+    var devices = projection.Devices.ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
+    var entities = projection.Entities
+        .Select(entity =>
+        {
+            devices.TryGetValue(entity.DeviceId, out var device);
+            return new HomeAssistantProjectionPreviewEntity(
+                entity.Id,
+                device?.Name ?? entity.DeviceId,
+                entity.Component,
+                entity.Name,
+                entity.StateTopic,
+                entity.ValueTemplate,
+                entity.DeviceClass,
+                entity.UnitOfMeasurement,
+                entity.EnabledByDefault);
+        })
+        .OrderBy(entity => entity.DeviceName, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    var checks = token.Checks.Concat(snapshot.Checks).ToList();
+    checks.Add($"Projection contains {projection.Devices.Count} device(s), {projection.Entities.Count} MQTT discoverable entit{(projection.Entities.Count == 1 ? "y" : "ies")}, and {projection.States.Count} state topic(s).");
+    return new HomeAssistantProjectionPreviewRun(
+        token.State,
+        entities,
+        checks,
+        $"Previewed {entities.Count} Home Assistant MQTT entit{(entities.Count == 1 ? "y" : "ies")} from {projection.Devices.Count} device(s).");
+}
+
+static TeslaFleetState ApplyHomeAssistantProjectionPreview(HomeAssistantProjectionPreviewRun run, string status) =>
+    run.State with
+    {
+        HomeAssistantProjectionPreviewEntities = run.Entities,
+        LastHomeAssistantProjectionPreviewUtc = DateTimeOffset.UtcNow,
+        LastHomeAssistantProjectionPreviewSummary = run.Summary,
+        LastStatus = status,
+        LastMessage = run.Summary,
+        LastChecks = run.Checks
+    };
+
 static object BuildPropertyHarnessStatus(TeslaFleetState state)
 {
     var properties = state.DiscoveredProperties ?? [];
@@ -1007,6 +1154,11 @@ static string RenderPage(TeslaFleetState state)
     var propertySummary = string.IsNullOrWhiteSpace(state.LastPropertyDiscoverySummary)
         ? "No discovery run yet."
         : state.LastPropertyDiscoverySummary;
+    var projectionPreviewEntities = state.HomeAssistantProjectionPreviewEntities ?? [];
+    var projectionPreviewRows = RenderProjectionPreviewRows(projectionPreviewEntities);
+    var projectionPreviewSummary = string.IsNullOrWhiteSpace(state.LastHomeAssistantProjectionPreviewSummary)
+        ? "No Home Assistant projection preview has been run yet."
+        : state.LastHomeAssistantProjectionPreviewSummary;
 
     return $$"""
 <!doctype html>
@@ -1367,12 +1519,43 @@ static string RenderPage(TeslaFleetState state)
         <div><span>Last property discovery</span><code>{{FormatDate(state.LastPropertyDiscoveryUtc)}}</code></div>
         <div><span>Discovery summary</span><code>{{H(propertySummary)}}</code></div>
         <div><span>Cached property count</span><code>{{H(discoveredProperties.Count.ToString())}}</code></div>
-        <div><span>JSON endpoints</span><code>GET /api/test-harness/status | GET /api/test-harness/properties | POST /api/test-harness/discover</code></div>
+        <div><span>Projection preview</span><code>{{H(projectionPreviewSummary)}}</code></div>
+        <div><span>JSON endpoints</span><code>GET /api/test-harness/status | GET /api/test-harness/properties | GET /api/test-harness/ha-projection | POST /api/test-harness/discover | POST /api/test-harness/ha-projection/refresh</code></div>
       </div>
       <div class="split-actions" style="margin:12px 0">
         <form method="post" action="actions/discover-properties"><button class="primary" type="submit">Discover / refresh properties</button></form>
+        <form method="post" action="actions/preview-ha-projection"><button type="submit">Preview HA MQTT projection</button></form>
         <form method="post" action="actions/clear-properties"><button type="submit">Clear cached properties</button></form>
       </div>
+      <h3>Home Assistant Entity Projection</h3>
+      <div class="table-wrap" style="margin-bottom:12px">
+        <table class="property-table">
+          <colgroup>
+            <col class="resource-col" />
+            <col class="display-col" />
+            <col class="type-col" />
+            <col class="path-col" />
+            <col class="value-col" />
+            <col class="hint-col" />
+            <col class="scope-col" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Entity</th>
+              <th>Type</th>
+              <th>Topic</th>
+              <th>Template</th>
+              <th>Class / Unit</th>
+              <th>Enabled</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{projectionPreviewRows}}
+          </tbody>
+        </table>
+      </div>
+      <h3>Discovered Tesla Properties</h3>
       <div class="table-wrap">
         <table class="property-table">
           <colgroup>
@@ -1466,6 +1649,45 @@ static string RenderPropertyRows(IReadOnlyList<TeslaDiscoveredProperty> properti
         (properties.Count > 160
             ? $"""
             <tr><td colspan="7">Showing first 160 of {properties.Count} discovered properties.</td></tr>
+"""
+            : string.Empty);
+}
+
+static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionPreviewEntity> entities)
+{
+    if (entities.Count == 0)
+    {
+        return """
+            <tr><td colspan="7">No Home Assistant MQTT projection preview has been run yet.</td></tr>
+        """;
+    }
+
+    return string.Concat(entities
+        .Take(200)
+        .Select(entity =>
+        {
+            var hint = string.Join(" / ", new[]
+                {
+                    entity.DeviceClass,
+                    entity.UnitOfMeasurement
+                }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
+            var enabled = entity.EnabledByDefault ? "Yes" : "No";
+            return $"""
+            <tr>
+              <td title="{H(entity.DeviceName)}"><span class="resource-main">{H(entity.DeviceName)}</span><span class="resource-id">{H(entity.Id)}</span></td>
+              <td title="{H(entity.Name)}">{H(entity.Name)}</td>
+              <td title="{H(entity.Component)}">{H(entity.Component)}</td>
+              <td title="{H(entity.StateTopic)}"><code>{H(entity.StateTopic)}</code></td>
+              <td class="value-cell" title="{H(entity.ValueTemplate)}">{H(TruncateForUi(entity.ValueTemplate, 260))}</td>
+              <td title="{H(hint)}">{H(hint)}</td>
+              <td title="{H(enabled)}"><span class="pill">{H(enabled)}</span></td>
+            </tr>
+""";
+        })) +
+        (entities.Count > 200
+            ? $"""
+            <tr><td colspan="7">Showing first 200 of {entities.Count} projected entities.</td></tr>
 """
             : string.Empty);
 }
@@ -1814,6 +2036,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
                 ? 15
                 : Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240),
             DiscoveredProperties = state.DiscoveredProperties ?? [],
+            HomeAssistantProjectionPreviewEntities = state.HomeAssistantProjectionPreviewEntities ?? [],
             LastChecks = state.LastChecks ?? []
         };
     }
@@ -2627,6 +2850,9 @@ sealed record TeslaFleetState(
     DateTimeOffset? LastPropertyDiscoveryUtc = null,
     string LastPropertyDiscoverySummary = "",
     List<TeslaDiscoveredProperty>? DiscoveredProperties = null,
+    DateTimeOffset? LastHomeAssistantProjectionPreviewUtc = null,
+    string LastHomeAssistantProjectionPreviewSummary = "",
+    List<HomeAssistantProjectionPreviewEntity>? HomeAssistantProjectionPreviewEntities = null,
     string PartnerRegistrationAudience = "",
     string PartnerRegistrationStatus = "",
     string PartnerRegistrationMessage = "",
