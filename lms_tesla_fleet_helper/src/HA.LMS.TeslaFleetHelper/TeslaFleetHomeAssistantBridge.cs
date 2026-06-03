@@ -543,6 +543,18 @@ sealed class TeslaFleetMqttPublisher(
     TeslaFleetStateMapper stateMapper,
     HomeAssistantMqttProjectionMapper projectionMapper)
 {
+    private static readonly string[] KnownDiscoveryComponents =
+    [
+        "sensor",
+        "binary_sensor",
+        "number",
+        "select",
+        "switch",
+        "button",
+        "lock",
+        "device_tracker"
+    ];
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = false,
@@ -552,11 +564,12 @@ sealed class TeslaFleetMqttPublisher(
     public async Task<TeslaHomeAssistantPublishResult> PublishAsync(
         TeslaFleetState state,
         TeslaFleetSnapshot snapshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool resetDiscovery = false)
     {
         if (!state.HomeAssistantMqttEnabled)
         {
-            return new TeslaHomeAssistantPublishResult(false, "Home Assistant MQTT publishing is disabled.", []);
+            return new TeslaHomeAssistantPublishResult(false, "Home Assistant MQTT publishing is disabled.", [], []);
         }
 
         var settings = TeslaMqttSettings.FromState(state);
@@ -581,9 +594,16 @@ sealed class TeslaFleetMqttPublisher(
         await client.ConnectAsync(optionsBuilder.Build(), cancellationToken);
         checks.Add($"Connected to MQTT broker {settings.Host}:{settings.Port}.");
 
-        await PublishStringAsync(client, $"{settings.BaseTopic}/availability", "online", retain: true, cancellationToken);
         var normalized = stateMapper.Map(snapshot, state.FleetApiAudience);
         var projection = projectionMapper.Map(normalized, settings.BaseTopic);
+        if (resetDiscovery)
+        {
+            var resetResult = await ResetHomeAssistantDiscoveryAsync(client, settings, projection, state.LastHomeAssistantDiscoveryTopics ?? [], cancellationToken);
+            checks.Add(
+                $"Reset Home Assistant MQTT discovery: cleared {resetResult.DiscoveryTopicCount} retained discovery config topic(s) and {resetResult.StateTopicCount} retained state topic(s).");
+        }
+
+        await PublishStringAsync(client, $"{settings.BaseTopic}/availability", "online", retain: true, cancellationToken);
         var devices = projection.Devices.ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
         var discoveryTopics = new List<string>();
         var publishedByDevice = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -596,10 +616,7 @@ sealed class TeslaFleetMqttPublisher(
 
             await PublishEntityDiscoveryAsync(client, settings, entity, device, cancellationToken);
             publishedByDevice[device.Name] = publishedByDevice.GetValueOrDefault(device.Name) + 1;
-            if (discoveryTopics.Count < 6)
-            {
-                discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
-            }
+            discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
         }
         var retiredDiscoveryCount = await PublishRetiredEnergyDiscoveryAsync(client, settings, projection, cancellationToken);
 
@@ -622,7 +639,7 @@ sealed class TeslaFleetMqttPublisher(
         checks.Add($"Published {projection.States.Count} retained state topic(s).");
         if (discoveryTopics.Count > 0)
         {
-            checks.Add($"Sample discovery topics: {string.Join(", ", discoveryTopics)}.");
+            checks.Add($"Sample discovery topics: {string.Join(", ", discoveryTopics.Take(6))}.");
         }
         if (projection.States.Count > 0)
         {
@@ -633,7 +650,8 @@ sealed class TeslaFleetMqttPublisher(
         return new TeslaHomeAssistantPublishResult(
             true,
             $"Published {projection.Entities.Count} Home Assistant MQTT Discovery config(s) from typed LMS Tesla projection.",
-            checks);
+            checks,
+            discoveryTopics);
     }
 
     private static async Task PublishEntityDiscoveryAsync(
@@ -722,6 +740,77 @@ sealed class TeslaFleetMqttPublisher(
         HomeAssistantMqttProjection projection,
         CancellationToken cancellationToken)
     {
+        var topics = BuildRetiredEnergyDiscoveryTopics(settings, projection);
+        var count = 0;
+        foreach (var topic in topics)
+        {
+            await PublishStringAsync(client, topic, string.Empty, retain: true, cancellationToken);
+            count++;
+        }
+
+        return count;
+    }
+
+    private static string BuildDiscoveryTopic(TeslaMqttSettings settings, HomeAssistantMqttEntityProjection entity) =>
+        BuildDiscoveryTopic(settings, entity.Component, entity.Id);
+
+    private static string BuildDiscoveryTopic(TeslaMqttSettings settings, string component, string entityId) =>
+        $"{settings.DiscoveryPrefix}/{component}/lms_tesla_fleet/{entityId}/config";
+
+    private static async Task<(int DiscoveryTopicCount, int StateTopicCount)> ResetHomeAssistantDiscoveryAsync(
+        IMqttClient client,
+        TeslaMqttSettings settings,
+        HomeAssistantMqttProjection projection,
+        IReadOnlyCollection<string> previousDiscoveryTopics,
+        CancellationToken cancellationToken)
+    {
+        var discoveryTopics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var topic in previousDiscoveryTopics)
+        {
+            if (!string.IsNullOrWhiteSpace(topic))
+            {
+                discoveryTopics.Add(topic.Trim());
+            }
+        }
+
+        foreach (var entity in projection.Entities)
+        {
+            discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
+            foreach (var component in KnownDiscoveryComponents)
+            {
+                discoveryTopics.Add(BuildDiscoveryTopic(settings, component, entity.Id));
+            }
+        }
+
+        foreach (var topic in BuildRetiredEnergyDiscoveryTopics(settings, projection))
+        {
+            discoveryTopics.Add(topic);
+        }
+
+        foreach (var topic in discoveryTopics.Order(StringComparer.OrdinalIgnoreCase))
+        {
+            await PublishStringAsync(client, topic, string.Empty, retain: true, cancellationToken);
+        }
+
+        var stateTopics = projection.States
+            .Select(state => state.Topic)
+            .Append($"{settings.BaseTopic}/availability")
+            .Where(topic => !string.IsNullOrWhiteSpace(topic))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var topic in stateTopics)
+        {
+            await PublishStringAsync(client, topic, string.Empty, retain: true, cancellationToken);
+        }
+
+        return (discoveryTopics.Count, stateTopics.Count);
+    }
+
+    private static List<string> BuildRetiredEnergyDiscoveryTopics(
+        TeslaMqttSettings settings,
+        HomeAssistantMqttProjection projection)
+    {
         var energyDeviceIds = projection.Devices
             .Select(device => device.Id)
             .Where(id => id.StartsWith("lms_tesla_energy_", StringComparison.OrdinalIgnoreCase) &&
@@ -734,26 +823,11 @@ sealed class TeslaFleetMqttPublisher(
             ("switch", "grid_charging"),
             ("select", "energy_export_rule")
         };
-        var count = 0;
-        foreach (var deviceId in energyDeviceIds)
-        {
-            foreach (var item in retired)
-            {
-                await PublishStringAsync(
-                    client,
-                    $"{settings.DiscoveryPrefix}/{item.Component}/lms_tesla_fleet/{deviceId}_{item.IdSuffix}/config",
-                    string.Empty,
-                    retain: true,
-                    cancellationToken);
-                count++;
-            }
-        }
-
-        return count;
+        return energyDeviceIds
+            .SelectMany(deviceId => retired.Select(item => BuildDiscoveryTopic(settings, item.Component, $"{deviceId}_{item.IdSuffix}")))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
-
-    private static string BuildDiscoveryTopic(TeslaMqttSettings settings, HomeAssistantMqttEntityProjection entity) =>
-        $"{settings.DiscoveryPrefix}/{entity.Component}/lms_tesla_fleet/{entity.Id}/config";
 
     private static async Task PublishJsonAsync(
         IMqttClient client,
@@ -1894,6 +1968,7 @@ sealed class TeslaFleetHomeAssistantCommandService(
                     {
                         LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
                         LastHomeAssistantPublishSummary = publishResult.Summary,
+                        LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : updated.LastHomeAssistantDiscoveryTopics,
                         LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
                         LastMessage = publishResult.Summary,
                         LastChecks = checks.Concat(publishResult.Checks).ToList()
@@ -1925,6 +2000,7 @@ sealed class TeslaFleetHomeAssistantCommandService(
                     {
                         LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
                         LastHomeAssistantPublishSummary = publishResult.Summary,
+                        LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : updated.LastHomeAssistantDiscoveryTopics,
                         LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
                         LastMessage = publishResult.Summary,
                         LastChecks = checks.Concat(publishResult.Checks).ToList()
@@ -2155,6 +2231,7 @@ sealed class TeslaFleetHomeAssistantPublisherService(
         {
             LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : token.State.LastHomeAssistantPublishUtc,
             LastHomeAssistantPublishSummary = result.Summary,
+            LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
             LastStatus = result.Succeeded ? "Home Assistant auto-published" : "Home Assistant auto-publish failed",
             LastMessage = result.Summary,
             LastChecks = token.Checks.Concat(result.Checks).ToList()
@@ -2212,7 +2289,8 @@ sealed record TeslaMqttSettings(
 sealed record TeslaHomeAssistantPublishResult(
     bool Succeeded,
     string Summary,
-    List<string> Checks);
+    List<string> Checks,
+    List<string> DiscoveryTopics);
 
 sealed record TeslaEnergyCommand(
     string DisplayName,

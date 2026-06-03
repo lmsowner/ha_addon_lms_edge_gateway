@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.19
+
+- Adds a Home Assistant MQTT Discovery reset and republish action for stale or renamed entities after helper updates.
+- Tracks the retained discovery topics published by the helper so old entity configs can be cleared safely across restarts.
+- Clears current retained Tesla Fleet state topics during discovery reset before republishing fresh state.
+
 ## 0.2.18
 
 - Removes row caps from the Tesla API property harness and Home Assistant projection preview.

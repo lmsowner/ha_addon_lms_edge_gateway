@@ -551,6 +551,7 @@ app.MapPost("/actions/publish-ha", async (
         {
             LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
             LastHomeAssistantPublishSummary = result.Summary,
+            LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
             LastStatus = result.Succeeded ? "Home Assistant published" : "Home Assistant publish failed",
             LastMessage = result.Summary,
             LastChecks = checks
@@ -561,6 +562,49 @@ app.MapPost("/actions/publish-ha", async (
         state = state with
         {
             LastStatus = "Home Assistant publish failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+    }
+
+    await store.SaveAsync(state, context.RequestAborted);
+    return RedirectToAppRoot();
+});
+
+app.MapPost("/actions/reset-ha-discovery", async (
+    HttpContext context,
+    TeslaFleetStore store,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetMqttPublisher mqttPublisher) =>
+{
+    var state = await store.LoadAsync();
+    try
+    {
+        if (!state.HomeAssistantMqttEnabled)
+        {
+            throw new InvalidOperationException("Enable Home Assistant MQTT publishing and save settings first.");
+        }
+
+        var token = await tokenCoordinator.EnsureUsableAsync(state, context.RequestAborted);
+        var snapshot = await dataClient.FetchSnapshotAsync(token.State, context.RequestAborted);
+        var result = await mqttPublisher.PublishAsync(token.State, snapshot, context.RequestAborted, resetDiscovery: true);
+        var checks = token.Checks.Concat(result.Checks).ToList();
+        state = token.State with
+        {
+            LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantPublishSummary = result.Summary,
+            LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
+            LastStatus = result.Succeeded ? "Home Assistant discovery reset" : "Home Assistant discovery reset failed",
+            LastMessage = result.Summary,
+            LastChecks = checks
+        };
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Home Assistant discovery reset failed",
             LastMessage = exception.Message,
             LastChecks = []
         };
@@ -1245,6 +1289,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
           <form method="post" action="actions/refresh-token"><button type="submit">Refresh Tesla token</button></form>
           <form method="post" action="actions/list-vehicles"><button type="submit">Check Tesla vehicles API</button></form>
           <form method="post" action="actions/publish-ha"><button type="submit">Publish to Home Assistant</button></form>
+          <form method="post" action="actions/reset-ha-discovery"><button type="submit">Reset HA discovery + republish</button></form>
         """;
     var tokenStatus = hasOAuthToken
         ? state.TokenExpiresUtc.HasValue
@@ -2506,6 +2551,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             HomeAssistantRefreshIntervalMinutes = state.HomeAssistantRefreshIntervalMinutes <= 0
                 ? 15
                 : Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240),
+            LastHomeAssistantDiscoveryTopics = state.LastHomeAssistantDiscoveryTopics ?? [],
             DiscoveredProperties = state.DiscoveredProperties ?? [],
             HomeAssistantProjectionPreviewEntities = state.HomeAssistantProjectionPreviewEntities ?? [],
             LastChecks = state.LastChecks ?? []
@@ -3612,6 +3658,7 @@ sealed record TeslaFleetState(
     int HomeAssistantRefreshIntervalMinutes = 15,
     DateTimeOffset? LastHomeAssistantPublishUtc = null,
     string LastHomeAssistantPublishSummary = "",
+    List<string>? LastHomeAssistantDiscoveryTopics = null,
     DateTimeOffset? LastPropertyDiscoveryUtc = null,
     string LastPropertyDiscoverySummary = "",
     List<TeslaDiscoveredProperty>? DiscoveredProperties = null,
