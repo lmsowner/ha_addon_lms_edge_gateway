@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Fixes Home Assistant Supervisor source builds by using the proper `build_from` architecture map instead of passing a literal `{arch}` Docker build argument.
+- Makes the Docker publish stage tolerate stale `{arch}` build arguments by falling back to Docker BuildKit `TARGETARCH`.
+
 ## 0.2.2
 
 - Adds a companion-link diagnostics action for same-host LMS Edge Gateway add-on installs.

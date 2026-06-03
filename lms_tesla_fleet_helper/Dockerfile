@@ -1,17 +1,20 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
-ARG BUILD_VERSION=0.2.2
+ARG BUILD_VERSION=0.2.3
 ARG BUILD_ARCH=amd64
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 ARG BUILD_ARCH=amd64
+ARG TARGETARCH=amd64
 ARG DOTNET_CONFIGURATION=Release
 WORKDIR /src
 COPY src ./src
 RUN \
-    case "${BUILD_ARCH}" in \
-      amd64) export DOTNET_RID=linux-musl-x64 ;; \
-      aarch64) export DOTNET_RID=linux-musl-arm64 ;; \
-      *) echo "Unsupported BUILD_ARCH=${BUILD_ARCH}" >&2; exit 1 ;; \
+    EFFECTIVE_BUILD_ARCH="${BUILD_ARCH}" \
+    && if [ "${EFFECTIVE_BUILD_ARCH}" = "{arch}" ] || [ -z "${EFFECTIVE_BUILD_ARCH}" ]; then EFFECTIVE_BUILD_ARCH="${TARGETARCH}"; fi \
+    && case "${EFFECTIVE_BUILD_ARCH}" in \
+      amd64|x86_64) export DOTNET_RID=linux-musl-x64 ;; \
+      aarch64|arm64) export DOTNET_RID=linux-musl-arm64 ;; \
+      *) echo "Unsupported BUILD_ARCH=${EFFECTIVE_BUILD_ARCH}" >&2; exit 1 ;; \
     esac \
     && dotnet publish src/HA.LMS.TeslaFleetHelper/HA.LMS.TeslaFleetHelper.csproj \
       --configuration "${DOTNET_CONFIGURATION}" \
@@ -21,7 +24,7 @@ RUN \
       /p:UseAppHost=true
 
 FROM ${BUILD_FROM}
-ARG BUILD_VERSION=0.2.2
+ARG BUILD_VERSION=0.2.3
 ARG BUILD_ARCH=amd64
 
 LABEL \
