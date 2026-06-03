@@ -106,9 +106,9 @@ sealed class HomeAssistantMqttProjectionMapper
             var stateTopic = $"{normalizedBaseTopic}/energy/{SafeTopic(site.SiteId)}/state";
             devices.Add(new HomeAssistantMqttDeviceProjection(
                 deviceId,
-                site.DisplayName,
+                ResolveEnergyDeviceName(site),
                 "Tesla",
-                "Tesla Energy Site",
+                ResolveEnergyModel(site),
                 null));
             entities.AddRange(BuildEnergyEntities(deviceId, stateTopic));
             entities.AddRange(BuildRawEntities(deviceId, stateTopic, site.RawProperties));
@@ -162,6 +162,8 @@ sealed class HomeAssistantMqttProjectionMapper
 
     private static IEnumerable<HomeAssistantMqttEntityProjection> BuildEnergyEntities(string deviceId, string stateTopic) =>
     [
+        Sensor(deviceId, "display_name", "Display Name", stateTopic, "{{ value_json.display_name }}"),
+        Sensor(deviceId, "site_id", "Site ID", stateTopic, "{{ value_json.site_id }}", enabledByDefault: false, entityCategory: "diagnostic"),
         Sensor(deviceId, "resource_type", "Resource Type", stateTopic, "{{ value_json.resource_type }}"),
         Sensor(deviceId, "grid_status", "Grid Status", stateTopic, "{{ value_json.grid_status }}"),
         Sensor(deviceId, "battery_percentage", "Battery", stateTopic, "{{ value_json.battery_percentage }}", "battery", "%", stateClass: "measurement"),
@@ -347,6 +349,32 @@ sealed class HomeAssistantMqttProjectionMapper
                 ["json_attributes_topic"] = stateTopic,
                 ["source_type"] = "gps"
             });
+
+    private static string ResolveEnergyDeviceName(LmsTeslaEnergySiteState site)
+    {
+        var displayName = string.IsNullOrWhiteSpace(site.DisplayName)
+            ? $"Energy Site {site.SiteId}"
+            : site.DisplayName.Trim();
+        if (displayName.Contains("powerwall", StringComparison.OrdinalIgnoreCase) ||
+            displayName.Contains("energy", StringComparison.OrdinalIgnoreCase))
+        {
+            return displayName;
+        }
+
+        return IsPowerwallLike(site)
+            ? $"Tesla Powerwall - {displayName}"
+            : $"Tesla Energy - {displayName}";
+    }
+
+    private static string ResolveEnergyModel(LmsTeslaEnergySiteState site) =>
+        IsPowerwallLike(site) ? "Tesla Powerwall / Energy Site" : "Tesla Energy Site";
+
+    private static bool IsPowerwallLike(LmsTeslaEnergySiteState site) =>
+        site.ResourceType.Contains("battery", StringComparison.OrdinalIgnoreCase) ||
+        site.RawProperties.Keys.Any(key =>
+            key.Contains("battery", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("backup_reserve", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("percentage_charged", StringComparison.OrdinalIgnoreCase));
 
     private static void AddRawPayload(
         Dictionary<string, object?> payload,

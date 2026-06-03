@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.8
+
+- Names battery-backed Tesla energy sites as Tesla Powerwall devices in Home Assistant MQTT Discovery so they are easier to find.
+- Adds visible energy display-name metadata and disabled diagnostic site ID entities.
+- Adds per-device MQTT Discovery publish counts to Helper diagnostics.
+
 ## 0.2.7
 
 - Expands Home Assistant MQTT Discovery for Tesla vehicles with richer battery, charging, climate, drive, security, firmware, location, and Fleet key entities.

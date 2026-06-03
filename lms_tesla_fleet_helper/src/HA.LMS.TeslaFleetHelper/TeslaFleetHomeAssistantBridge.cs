@@ -520,6 +520,7 @@ sealed class TeslaFleetMqttPublisher(
         var projection = projectionMapper.Map(normalized, settings.BaseTopic);
         var devices = projection.Devices.ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
         var discoveryTopics = new List<string>();
+        var publishedByDevice = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var entity in projection.Entities)
         {
             if (!devices.TryGetValue(entity.DeviceId, out var device))
@@ -528,6 +529,7 @@ sealed class TeslaFleetMqttPublisher(
             }
 
             await PublishEntityDiscoveryAsync(client, settings, entity, device, cancellationToken);
+            publishedByDevice[device.Name] = publishedByDevice.GetValueOrDefault(device.Name) + 1;
             if (discoveryTopics.Count < 6)
             {
                 discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
@@ -542,6 +544,10 @@ sealed class TeslaFleetMqttPublisher(
         await client.DisconnectAsync(cancellationToken: cancellationToken);
         checks.Add($"Discovery prefix: {settings.DiscoveryPrefix}; base topic: {settings.BaseTopic}.");
         checks.Add($"Published {projection.Entities.Count} MQTT discovery config(s) for {projection.Devices.Count} device(s).");
+        if (publishedByDevice.Count > 0)
+        {
+            checks.Add($"Discovery configs by device: {string.Join(", ", publishedByDevice.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase).Select(item => $"{item.Key}={item.Value}"))}.");
+        }
         checks.Add($"Published {projection.States.Count} retained state topic(s).");
         if (discoveryTopics.Count > 0)
         {
