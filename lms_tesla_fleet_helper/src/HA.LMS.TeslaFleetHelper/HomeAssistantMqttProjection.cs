@@ -25,7 +25,8 @@ sealed record HomeAssistantMqttDeviceProjection(
     string Name,
     string Manufacturer,
     string Model,
-    string? SoftwareVersion);
+    string? SoftwareVersion,
+    string? ViaDeviceId = null);
 
 sealed record HomeAssistantMqttEntityProjection(
     string Id,
@@ -106,12 +107,25 @@ sealed class HomeAssistantMqttProjectionMapper
             var stateTopic = $"{normalizedBaseTopic}/energy/{SafeTopic(site.SiteId)}/state";
             devices.Add(new HomeAssistantMqttDeviceProjection(
                 deviceId,
-                ResolveEnergyDeviceName(site),
+                ResolveGatewayDeviceName(site),
                 "Tesla",
-                ResolveEnergyModel(site),
+                "Tesla Backup Gateway / Energy Site",
                 null));
             entities.AddRange(BuildEnergyEntities(deviceId, stateTopic));
             entities.AddRange(BuildRawEntities(deviceId, stateTopic, site.RawProperties));
+            var powerwallCount = ResolvePowerwallCount(site);
+            for (var index = 1; index <= powerwallCount; index++)
+            {
+                var powerwallDeviceId = $"{deviceId}_powerwall_{index}";
+                devices.Add(new HomeAssistantMqttDeviceProjection(
+                    powerwallDeviceId,
+                    $"Tesla Powerwall {index} - {site.DisplayName}",
+                    "Tesla",
+                    "Tesla Powerwall",
+                    null,
+                    deviceId));
+                entities.AddRange(BuildPowerwallUnitEntities(powerwallDeviceId, stateTopic, index));
+            }
             states.Add(new HomeAssistantMqttStateProjection(stateTopic, BuildEnergyPayload(site)));
         }
 
@@ -165,6 +179,7 @@ sealed class HomeAssistantMqttProjectionMapper
         Sensor(deviceId, "display_name", "Display Name", stateTopic, "{{ value_json.display_name }}"),
         Sensor(deviceId, "site_id", "Site ID", stateTopic, "{{ value_json.site_id }}", enabledByDefault: false, entityCategory: "diagnostic"),
         Sensor(deviceId, "resource_type", "Resource Type", stateTopic, "{{ value_json.resource_type }}"),
+        Sensor(deviceId, "powerwall_count", "Powerwall Count", stateTopic, "{{ value_json.powerwall_count }}", stateClass: "measurement"),
         Sensor(deviceId, "grid_status", "Grid Status", stateTopic, "{{ value_json.grid_status }}"),
         Sensor(deviceId, "battery_percentage", "Battery", stateTopic, "{{ value_json.battery_percentage }}", "battery", "%", stateClass: "measurement"),
         Sensor(deviceId, "solar_power", "Solar Power", stateTopic, "{{ value_json.solar_power }}", "power", "W", stateClass: "measurement"),
@@ -172,6 +187,16 @@ sealed class HomeAssistantMqttProjectionMapper
         Sensor(deviceId, "battery_power", "Battery Power", stateTopic, "{{ value_json.battery_power }}", "power", "W", stateClass: "measurement"),
         Sensor(deviceId, "grid_power", "Grid Power", stateTopic, "{{ value_json.grid_power }}", "power", "W", stateClass: "measurement"),
         Sensor(deviceId, "backup_reserve", "Backup Reserve", stateTopic, "{{ value_json.backup_reserve }}", "battery", "%", stateClass: "measurement")
+    ];
+
+    private static IEnumerable<HomeAssistantMqttEntityProjection> BuildPowerwallUnitEntities(
+        string deviceId,
+        string stateTopic,
+        int index) =>
+    [
+        Sensor(deviceId, "status", "Status", stateTopic, $"{{{{ value_json.powerwall_{index}_status }}}}"),
+        Sensor(deviceId, "gateway", "Gateway", stateTopic, "{{ value_json.display_name }}"),
+        Sensor(deviceId, "unit_index", "Unit Index", stateTopic, $"{{{{ value_json.powerwall_{index}_unit_index }}}}", stateClass: "measurement")
     ];
 
     private static IEnumerable<HomeAssistantMqttEntityProjection> BuildRawEntities(
@@ -256,6 +281,13 @@ sealed class HomeAssistantMqttProjectionMapper
             ["grid_power"] = site.Live.GridPowerWatts,
             ["backup_reserve"] = site.Live.BackupReservePercent
         };
+        var powerwallCount = ResolvePowerwallCount(site);
+        payload["powerwall_count"] = powerwallCount;
+        for (var index = 1; index <= powerwallCount; index++)
+        {
+            payload[$"powerwall_{index}_status"] = "present";
+            payload[$"powerwall_{index}_unit_index"] = index;
+        }
         AddRawPayload(payload, site.RawProperties);
         return payload;
     }
@@ -350,31 +382,102 @@ sealed class HomeAssistantMqttProjectionMapper
                 ["source_type"] = "gps"
             });
 
-    private static string ResolveEnergyDeviceName(LmsTeslaEnergySiteState site)
+    private static string ResolveGatewayDeviceName(LmsTeslaEnergySiteState site)
     {
         var displayName = string.IsNullOrWhiteSpace(site.DisplayName)
             ? $"Energy Site {site.SiteId}"
             : site.DisplayName.Trim();
-        if (displayName.Contains("powerwall", StringComparison.OrdinalIgnoreCase) ||
-            displayName.Contains("energy", StringComparison.OrdinalIgnoreCase))
+        if (displayName.Contains("gateway", StringComparison.OrdinalIgnoreCase))
         {
             return displayName;
         }
 
-        return IsPowerwallLike(site)
-            ? $"Tesla Powerwall - {displayName}"
-            : $"Tesla Energy - {displayName}";
+        return $"Tesla Gateway - {displayName}";
     }
 
-    private static string ResolveEnergyModel(LmsTeslaEnergySiteState site) =>
-        IsPowerwallLike(site) ? "Tesla Powerwall / Energy Site" : "Tesla Energy Site";
+    private static int ResolvePowerwallCount(LmsTeslaEnergySiteState site)
+    {
+        var explicitCounts = new[]
+            {
+                "battery_count",
+                "powerwall_count",
+                "powerwall_count_on_site",
+                "battery_block_count",
+                "site_info.battery_count",
+                "site_info.powerwall_count",
+                "site_info.powerwall_count_on_site",
+                "site_info.battery_block_count"
+            }
+            .Select(key => ReadPositiveInt(site.RawProperties, key))
+            .Where(value => value > 0);
+        var arrayCounts = site.RawProperties
+            .Where(item => IsPowerwallArrayPath(item.Key))
+            .Select(item => ReadJsonArrayCount(item.Value))
+            .Where(value => value > 0);
+        var count = explicitCounts.Concat(arrayCounts).DefaultIfEmpty(0).Max();
+        if (count > 0)
+        {
+            return Math.Clamp(count, 1, 16);
+        }
 
-    private static bool IsPowerwallLike(LmsTeslaEnergySiteState site) =>
+        return LooksBatteryBacked(site) ? 1 : 0;
+    }
+
+    private static bool LooksBatteryBacked(LmsTeslaEnergySiteState site) =>
         site.ResourceType.Contains("battery", StringComparison.OrdinalIgnoreCase) ||
+        site.Live.BatteryPercentage.HasValue ||
+        site.Live.BackupReservePercent.HasValue ||
         site.RawProperties.Keys.Any(key =>
             key.Contains("battery", StringComparison.OrdinalIgnoreCase) ||
             key.Contains("backup_reserve", StringComparison.OrdinalIgnoreCase) ||
             key.Contains("percentage_charged", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsPowerwallArrayPath(string path)
+    {
+        var key = path.ToLowerInvariant();
+        return key.Contains("battery_blocks", StringComparison.Ordinal) ||
+               key.Contains("battery_units", StringComparison.Ordinal) ||
+               key.Contains("powerwalls", StringComparison.Ordinal) ||
+               key.EndsWith("batteries", StringComparison.Ordinal);
+    }
+
+    private static int ReadPositiveInt(IReadOnlyDictionary<string, object?> values, string key)
+    {
+        if (!values.TryGetValue(key, out var value) || value is null)
+        {
+            return 0;
+        }
+
+        return value switch
+        {
+            int intValue when intValue > 0 => intValue,
+            long longValue when longValue is > 0 and <= int.MaxValue => (int)longValue,
+            double doubleValue when doubleValue > 0 && doubleValue <= int.MaxValue => (int)Math.Round(doubleValue),
+            decimal decimalValue when decimalValue > 0 && decimalValue <= int.MaxValue => (int)Math.Round(decimalValue),
+            _ => int.TryParse(value.ToString(), out var parsed) && parsed > 0 ? parsed : 0
+        };
+    }
+
+    private static int ReadJsonArrayCount(object? value)
+    {
+        var text = value?.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(text) || !text.StartsWith('['))
+        {
+            return 0;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(text);
+            return document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array
+                ? document.RootElement.GetArrayLength()
+                : 0;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return 0;
+        }
+    }
 
     private static void AddRawPayload(
         Dictionary<string, object?> payload,

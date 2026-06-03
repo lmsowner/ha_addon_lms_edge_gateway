@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.9
+
+- Fetches Tesla energy `site_info` alongside live status so Gateway/Powerwall asset details can be projected into Home Assistant.
+- Publishes the Tesla energy site as a Gateway parent device while preserving the existing MQTT device identifier.
+- Publishes detected Powerwall units as child devices connected through the Gateway using Home Assistant MQTT `via_device`.
+
 ## 0.2.8
 
 - Names battery-backed Tesla energy sites as Tesla Powerwall devices in Home Assistant MQTT Discovery so they are easier to find.

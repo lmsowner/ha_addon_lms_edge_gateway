@@ -170,15 +170,30 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
         var updated = new List<TeslaEnergySiteSnapshot>();
         foreach (var site in sites)
         {
+            var values = new Dictionary<string, object?>(site.Values, StringComparer.OrdinalIgnoreCase);
+            var siteInfo = await TryGetResponseAsync(
+                audience,
+                $"/api/1/energy_sites/{Uri.EscapeDataString(site.SiteId)}/site_info",
+                accessToken,
+                checks,
+                cancellationToken);
+            if (siteInfo.HasValue)
+            {
+                values = Merge(values, FlattenObject(ReadResponse(siteInfo.Value), "site_info"));
+            }
+
             var liveStatus = await TryGetResponseAsync(
                 audience,
                 $"/api/1/energy_sites/{Uri.EscapeDataString(site.SiteId)}/live_status",
                 accessToken,
                 checks,
                 cancellationToken);
-            updated.Add(liveStatus.HasValue
-                ? site with { Values = Merge(site.Values, FlattenObject(ReadResponse(liveStatus.Value), null)) }
-                : site);
+            if (liveStatus.HasValue)
+            {
+                values = Merge(values, FlattenObject(ReadResponse(liveStatus.Value), null));
+            }
+
+            updated.Add(site with { Values = values });
         }
 
         return updated;
@@ -582,6 +597,10 @@ sealed class TeslaFleetMqttPublisher(
         if (!string.IsNullOrWhiteSpace(device.SoftwareVersion))
         {
             devicePayload["sw_version"] = device.SoftwareVersion;
+        }
+        if (!string.IsNullOrWhiteSpace(device.ViaDeviceId))
+        {
+            devicePayload["via_device"] = device.ViaDeviceId;
         }
         var payload = new Dictionary<string, object?>
         {
