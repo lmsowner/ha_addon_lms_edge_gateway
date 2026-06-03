@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.17
+
+- Separates Tesla OAuth reconnect from virtual-key installation.
+- Removes the forced Tesla keypair step from the OAuth authorize URL so adding scopes does not try to reinstall the vehicle virtual key.
+- Keeps virtual-key install as an explicit setup action for first install, new vehicles, or Fleet key rotation.
+
 ## 0.2.16
 
 - Adds Tesla's official vehicle-command HTTP proxy to the add-on image and supervises it from the Helper using the generated Fleet private key.

@@ -1217,6 +1217,9 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     var isPartnerRegistered = state.PartnerRegistrationStatus.Equals("Registered", StringComparison.OrdinalIgnoreCase);
     var keyActionLabel = hasKey ? "Rotate key" : "Generate key";
     var publishActionLabel = isPartnerRegistered ? "Republish Edge Gateway assets" : "Publish + register";
+    var virtualKeyActionClass = hasKey && isPartnerRegistered && !string.IsNullOrWhiteSpace(state.OriginDomain)
+        ? string.Empty
+        : "disabled";
     var companionStatusClass = companion.EdgeGatewayHealthy ? "ready" : companion.EdgeGatewayInstalled ? "warn" : "fail";
     var companionLabel = companion.EdgeGatewayHealthy
         ? "Auto-detected"
@@ -1664,6 +1667,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
           <form method="post" action="actions/verify"><button type="submit">Verify public URL</button></form>
           {{manualRegisterButton}}
           <a class="button" href="{{H(oauthStartUrl)}}" target="_blank" rel="noopener noreferrer">Start Tesla OAuth</a>
+          <a class="button {{virtualKeyActionClass}}" href="{{H(virtualKeyUrl)}}" target="_blank" rel="noopener noreferrer">Install virtual key</a>
           <a class="button {{(hasKey ? "" : "disabled")}}" href="tesla_fleet.key">Export tesla_fleet.key</a>
         </div>
       </div>
@@ -1680,6 +1684,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         </div>
         <div class="callout" style="margin-top:12px">
           Register the Tesla OAuth redirect URI exactly as shown above in the Tesla Developer app for this client ID. Do not use the OAuth start URL or the Home Assistant redirect URL for this helper flow.
+          Install the virtual key only once per vehicle, or after rotating the Fleet key; OAuth reconnects do not require reinstalling it.
         </div>
       </div>
     </section>
@@ -1992,8 +1997,7 @@ static string BuildTeslaAuthorizeUrl(TeslaFleetState state, string oauthState, s
         ["nonce"] = nonce,
         ["locale"] = "en-US",
         ["prompt"] = "login",
-        ["prompt_missing_scopes"] = "true",
-        ["show_keypair_step"] = "true"
+        ["prompt_missing_scopes"] = "true"
     };
 
     return $"{TeslaAuthorizeEndpoint}?{string.Join('&', query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"))}";
@@ -2056,9 +2060,6 @@ static string ResolveFleetApiAudience(string configuredAudience, string accessTo
 
 static string RenderOAuthCompletePage(TeslaFleetState state)
 {
-    var virtualKeyUrl = string.IsNullOrWhiteSpace(state.OriginDomain)
-        ? string.Empty
-        : $"https://tesla.com/_ak/{state.OriginDomain}";
     return $$"""
 <!doctype html>
 <html lang="en">
@@ -2072,14 +2073,8 @@ static string RenderOAuthCompletePage(TeslaFleetState state)
   <main>
     <h1>Tesla OAuth Connected</h1>
     <p>The Tesla authorization completed and tokens were saved locally in {{ProductName}}.</p>
-    <div class="box">
-      <span>Virtual key install URL</span>
-      <code>{{H(virtualKeyUrl)}}</code>
-    </div>
-    <p>Return to the Tesla Fleet Helper tab in Home Assistant after installing the virtual key.</p>
-    <div class="actions">
-      <a href="{{H(virtualKeyUrl)}}" target="_blank" rel="noopener noreferrer">Install virtual key</a>
-    </div>
+    <p>No virtual-key install was started. Return to the Tesla Fleet Helper tab in Home Assistant.</p>
+    <p>Use the separate Install virtual key action only for first setup, a new vehicle, or after rotating the Fleet key.</p>
   </main>
 </body>
 </html>
