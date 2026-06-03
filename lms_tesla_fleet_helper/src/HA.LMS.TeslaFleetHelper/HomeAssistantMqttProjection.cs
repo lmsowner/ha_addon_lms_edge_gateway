@@ -203,10 +203,10 @@ sealed class HomeAssistantMqttProjectionMapper
         Sensor(deviceId, "grid_power", "Grid Power", stateTopic, "{{ value_json.grid_power }}", "power", "W", stateClass: "measurement"),
         Sensor(deviceId, "generator_power", "Generator Power", stateTopic, "{{ value_json.generator_power }}", "power", "W", stateClass: "measurement", enabledByDefault: false),
         Sensor(deviceId, "backup_reserve", "Backup Reserve", stateTopic, "{{ value_json.backup_reserve }}", "battery", "%", stateClass: "measurement"),
-        Number(deviceId, "backup_reserve_target", "Backup Reserve Target", stateTopic, "{{ value_json.backup_reserve }}", BuildCommandTopic(stateTopic, "backup_reserve"), "battery", "%", 0, 100, 1, "slider", icon: "mdi:battery-sync"),
-        Select(deviceId, "operation_mode", "Operation Mode", stateTopic, "{{ value_json.operation_mode }}", BuildCommandTopic(stateTopic, "operation_mode"), ["self_consumption", "backup", "autonomous"], icon: "mdi:home-battery"),
-        Switch(deviceId, "grid_charging", "Grid Charging", stateTopic, "{{ value_json.grid_charging | lower }}", BuildCommandTopic(stateTopic, "grid_charging"), icon: "mdi:transmission-tower-import"),
-        Select(deviceId, "energy_export_rule", "Energy Export Rule", stateTopic, "{{ value_json.energy_export_rule }}", BuildCommandTopic(stateTopic, "energy_export_rule"), ["pv_only", "battery_ok"], icon: "mdi:transmission-tower-export"),
+        Number(deviceId, "backup_reserve_number", "Backup reserve", stateTopic, "{{ value_json.backup_reserve }}", BuildCommandTopic(stateTopic, "backup_reserve"), "battery", "%", 0, 100, 1, "auto", icon: "mdi:battery"),
+        Select(deviceId, "operation_mode", "Operation mode", stateTopic, "{{ value_json.operation_mode }}", BuildCommandTopic(stateTopic, "operation_mode"), ["Self-Powered", "Time-Based Control", "Backup"], icon: "mdi:home-battery"),
+        Select(deviceId, "grid_charging", "Grid charging", stateTopic, "{{ value_json.grid_charging }}", BuildCommandTopic(stateTopic, "grid_charging"), ["Yes", "No"], icon: "mdi:transmission-tower-export"),
+        Select(deviceId, "energy_exports", "Energy exports", stateTopic, "{{ value_json.energy_exports }}", BuildCommandTopic(stateTopic, "energy_exports"), ["Nothing", "Solar", "Everything"], icon: "mdi:home-export-outline"),
         BinarySensor(deviceId, "grid_services_active", "Grid Services Active", stateTopic, "{{ value_json.grid_services_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
         BinarySensor(deviceId, "storm_mode_active", "Storm Mode Active", stateTopic, "{{ value_json.storm_mode_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic")
     ];
@@ -322,7 +322,7 @@ sealed class HomeAssistantMqttProjectionMapper
             ["backup_reserve"] = site.Live.BackupReservePercent,
             ["operation_mode"] = ResolveOperationMode(site),
             ["grid_charging"] = ResolveGridCharging(site),
-            ["energy_export_rule"] = ResolveEnergyExportRule(site),
+            ["energy_exports"] = ResolveEnergyExports(site),
             ["grid_services_active"] = site.Live.GridServicesActive,
             ["storm_mode_active"] = site.Live.StormModeActive
         };
@@ -442,38 +442,6 @@ sealed class HomeAssistantMqttProjectionMapper
             },
             commandTopic);
 
-    private static HomeAssistantMqttEntityProjection Switch(
-        string deviceId,
-        string id,
-        string name,
-        string stateTopic,
-        string valueTemplate,
-        string commandTopic,
-        bool enabledByDefault = true,
-        string? entityCategory = null,
-        string? icon = null) =>
-        new(
-            $"{deviceId}_{id}",
-            deviceId,
-            "switch",
-            name,
-            stateTopic,
-            valueTemplate,
-            null,
-            null,
-            enabledByDefault,
-            entityCategory,
-            null,
-            icon,
-            new Dictionary<string, object?>
-            {
-                ["payload_on"] = "true",
-                ["payload_off"] = "false",
-                ["state_on"] = "true",
-                ["state_off"] = "false"
-            },
-            commandTopic);
-
     private static HomeAssistantMqttEntityProjection BinarySensor(
         string deviceId,
         string id,
@@ -558,14 +526,14 @@ sealed class HomeAssistantMqttProjectionMapper
     }
 
     private static string? ResolveOperationMode(LmsTeslaEnergySiteState site) =>
-        ReadString(
+        MapOperationModeToHomeAssistant(ReadString(
             site.RawProperties,
             "site_info.default_real_mode",
             "site_info.operation",
             "default_real_mode",
-            "operation");
+            "operation"));
 
-    private static bool? ResolveGridCharging(LmsTeslaEnergySiteState site)
+    private static string? ResolveGridCharging(LmsTeslaEnergySiteState site)
     {
         var disallowChargeFromGrid = ReadBool(
             site.RawProperties,
@@ -574,7 +542,7 @@ sealed class HomeAssistantMqttProjectionMapper
             "disallow_charge_from_grid_with_solar_installed");
         if (disallowChargeFromGrid.HasValue)
         {
-            return !disallowChargeFromGrid.Value;
+            return !disallowChargeFromGrid.Value ? "Yes" : "No";
         }
 
         return ReadString(
@@ -582,16 +550,36 @@ sealed class HomeAssistantMqttProjectionMapper
             "site_info.components.customer_preferred_export_rule",
             "components.customer_preferred_export_rule",
             "customer_preferred_export_rule") is not null
-            ? true
+            ? "Yes"
             : null;
     }
 
-    private static string? ResolveEnergyExportRule(LmsTeslaEnergySiteState site) =>
-        ReadString(
+    private static string? ResolveEnergyExports(LmsTeslaEnergySiteState site) =>
+        MapEnergyExportsToHomeAssistant(ReadString(
             site.RawProperties,
             "site_info.components.customer_preferred_export_rule",
             "components.customer_preferred_export_rule",
-            "customer_preferred_export_rule");
+            "customer_preferred_export_rule"));
+
+    private static string? MapOperationModeToHomeAssistant(string? value) =>
+        value?.Trim() switch
+        {
+            "self_consumption" => "Self-Powered",
+            "autonomous" => "Time-Based Control",
+            "backup" => "Backup",
+            "" or null => null,
+            _ => value
+        };
+
+    private static string? MapEnergyExportsToHomeAssistant(string? value) =>
+        value?.Trim() switch
+        {
+            "never" => "Nothing",
+            "pv_only" => "Solar",
+            "battery_ok" => "Everything",
+            "" or null => null,
+            _ => value
+        };
 
     private static int ResolvePowerwallCount(LmsTeslaEnergySiteState site)
     {

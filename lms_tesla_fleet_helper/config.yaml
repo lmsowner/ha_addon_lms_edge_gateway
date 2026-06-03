@@ -1,5 +1,5 @@
 name: LMS Tesla Fleet Helper
-version: "0.2.13"
+version: "0.2.14"
 slug: lms_tesla_fleet_helper
 description: "Tesla Fleet key helper for Home Assistant using LMS Edge Gateway for public HTTPS publishing."
 url: https://github.com/lmsowner/ha_addon_lms_edge_gateway

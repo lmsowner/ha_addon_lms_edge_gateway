@@ -752,14 +752,21 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
     private static readonly string[] OperationModes =
     [
         "self_consumption",
+        "autonomous",
         "backup",
-        "autonomous"
+        "Self-Powered",
+        "Time-Based Control",
+        "Backup"
     ];
 
     private static readonly string[] ExportRules =
     [
+        "never",
         "pv_only",
-        "battery_ok"
+        "battery_ok",
+        "Nothing",
+        "Solar",
+        "Everything"
     ];
 
     public async Task<TeslaEnergyCommandResult> ExecuteAsync(
@@ -815,15 +822,15 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
             "operation_mode" => new TeslaEnergyCommand(
                 "Operation mode",
                 $"/api/1/energy_sites/{escapedSiteId}/operation",
-                new { default_real_mode = RequireAllowed(value, OperationModes, "operation mode") }),
+                new { default_real_mode = MapOperationMode(value) }),
             "grid_charging" => new TeslaEnergyCommand(
                 "Grid charging",
                 $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
                 new { disallow_charge_from_grid_with_solar_installed = !ParseBoolean(value) }),
-            "energy_export_rule" => new TeslaEnergyCommand(
-                "Energy export rule",
+            "energy_exports" or "energy_export_rule" => new TeslaEnergyCommand(
+                "Energy exports",
                 $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
-                new { customer_preferred_export_rule = RequireAllowed(value, ExportRules, "energy export rule") }),
+                new { customer_preferred_export_rule = MapEnergyExports(value) }),
             _ => throw new InvalidOperationException($"Unsupported Energy command action '{action}'.")
         };
     }
@@ -930,6 +937,30 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
         }
 
         throw new InvalidOperationException($"Expected true/false payload. Received '{value}'.");
+    }
+
+    private static string MapOperationMode(string value)
+    {
+        var normalized = RequireAllowed(value, OperationModes, "operation mode");
+        return normalized switch
+        {
+            "Self-Powered" => "self_consumption",
+            "Time-Based Control" => "autonomous",
+            "Backup" => "backup",
+            _ => normalized
+        };
+    }
+
+    private static string MapEnergyExports(string value)
+    {
+        var normalized = RequireAllowed(value, ExportRules, "energy exports");
+        return normalized switch
+        {
+            "Nothing" => "never",
+            "Solar" => "pv_only",
+            "Everything" => "battery_ok",
+            _ => normalized
+        };
     }
 
     private static string RequireAllowed(string value, IReadOnlyList<string> allowed, string label)

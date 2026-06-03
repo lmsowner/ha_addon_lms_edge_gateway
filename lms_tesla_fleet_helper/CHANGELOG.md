@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.14
+
+- Renames writable Powerwall controls to match Tesla Custom Integration labels.
+- Publishes friendly select values for Energy exports, Grid charging, and Operation mode.
+- Maps friendly Home Assistant command values back to Tesla Fleet API command payloads.
+
 ## 0.2.13
 
 - Adds writable Home Assistant MQTT controls for Tesla Energy backup reserve, operation mode, grid charging, and export rule.
