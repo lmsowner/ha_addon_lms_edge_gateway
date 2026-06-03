@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -110,7 +111,7 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
                 .ToList();
         }
 
-        if (state.FetchRealtimeVehicleData)
+        if (state.FetchRealtimeVehicleData || state.HomeAssistantMqttEnabled)
         {
             vehicles = await FetchRealtimeVehicleDataAsync(audience, state.AccessToken, vehicles, checks, cancellationToken);
         }
@@ -597,6 +598,7 @@ sealed class TeslaFleetMqttPublisher(
                 discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
             }
         }
+        var retiredDiscoveryCount = await PublishRetiredEnergyDiscoveryAsync(client, settings, projection, cancellationToken);
 
         foreach (var stateProjection in projection.States)
         {
@@ -609,6 +611,10 @@ sealed class TeslaFleetMqttPublisher(
         if (publishedByDevice.Count > 0)
         {
             checks.Add($"Discovery configs by device: {string.Join(", ", publishedByDevice.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase).Select(item => $"{item.Key}={item.Value}"))}.");
+        }
+        if (retiredDiscoveryCount > 0)
+        {
+            checks.Add($"Cleared {retiredDiscoveryCount} retired Energy MQTT discovery config(s).");
         }
         checks.Add($"Published {projection.States.Count} retained state topic(s).");
         if (discoveryTopics.Count > 0)
@@ -699,6 +705,42 @@ sealed class TeslaFleetMqttPublisher(
         }
 
         await PublishJsonAsync(client, BuildDiscoveryTopic(settings, entity), payload, retain: true, cancellationToken);
+    }
+
+    private static async Task<int> PublishRetiredEnergyDiscoveryAsync(
+        IMqttClient client,
+        TeslaMqttSettings settings,
+        HomeAssistantMqttProjection projection,
+        CancellationToken cancellationToken)
+    {
+        var energyDeviceIds = projection.Devices
+            .Select(device => device.Id)
+            .Where(id => id.StartsWith("lms_tesla_energy_", StringComparison.OrdinalIgnoreCase) &&
+                         !id.Contains("_powerwall_", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var retired = new (string Component, string IdSuffix)[]
+        {
+            ("number", "backup_reserve_target"),
+            ("switch", "grid_charging"),
+            ("select", "energy_export_rule")
+        };
+        var count = 0;
+        foreach (var deviceId in energyDeviceIds)
+        {
+            foreach (var item in retired)
+            {
+                await PublishStringAsync(
+                    client,
+                    $"{settings.DiscoveryPrefix}/{item.Component}/lms_tesla_fleet/{deviceId}_{item.IdSuffix}/config",
+                    string.Empty,
+                    retain: true,
+                    cancellationToken);
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static string BuildDiscoveryTopic(TeslaMqttSettings settings, HomeAssistantMqttEntityProjection entity) =>
@@ -799,6 +841,8 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
             command.Path,
             state.AccessToken,
             command.Payload,
+            siteId,
+            command.StatePatch,
             checks,
             cancellationToken);
 
@@ -815,24 +859,71 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
         var escapedSiteId = Uri.EscapeDataString(siteId);
         return action switch
         {
-            "backup_reserve" => new TeslaEnergyCommand(
-                "Backup reserve",
-                $"/api/1/energy_sites/{escapedSiteId}/backup",
-                new { backup_reserve_percent = ParsePercent(value) }),
-            "operation_mode" => new TeslaEnergyCommand(
-                "Operation mode",
-                $"/api/1/energy_sites/{escapedSiteId}/operation",
-                new { default_real_mode = MapOperationMode(value) }),
-            "grid_charging" => new TeslaEnergyCommand(
-                "Grid charging",
-                $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
-                new { disallow_charge_from_grid_with_solar_installed = !ParseBoolean(value) }),
-            "energy_exports" or "energy_export_rule" => new TeslaEnergyCommand(
-                "Energy exports",
-                $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
-                new { customer_preferred_export_rule = MapEnergyExports(value) }),
+            "backup_reserve" => BuildBackupReserveCommand(escapedSiteId, value),
+            "operation_mode" => BuildOperationModeCommand(escapedSiteId, value),
+            "grid_charging" => BuildGridChargingCommand(escapedSiteId, value),
+            "energy_exports" or "energy_export_rule" => BuildEnergyExportsCommand(escapedSiteId, value),
             _ => throw new InvalidOperationException($"Unsupported Energy command action '{action}'.")
         };
+    }
+
+    private static TeslaEnergyCommand BuildBackupReserveCommand(string escapedSiteId, string value)
+    {
+        var percent = ParsePercent(value);
+        return new TeslaEnergyCommand(
+            "Backup reserve",
+            $"/api/1/energy_sites/{escapedSiteId}/backup",
+            new { backup_reserve_percent = percent },
+            new Dictionary<string, object?>
+            {
+                ["backup_reserve_percent"] = percent,
+                ["site_info.backup_reserve_percent"] = percent,
+                ["site_info.backup.backup_reserve_percent"] = percent
+            });
+    }
+
+    private static TeslaEnergyCommand BuildOperationModeCommand(string escapedSiteId, string value)
+    {
+        var mode = MapOperationMode(value);
+        return new TeslaEnergyCommand(
+            "Operation mode",
+            $"/api/1/energy_sites/{escapedSiteId}/operation",
+            new { default_real_mode = mode },
+            new Dictionary<string, object?>
+            {
+                ["default_real_mode"] = mode,
+                ["site_info.default_real_mode"] = mode,
+                ["site_info.operation"] = mode
+            });
+    }
+
+    private static TeslaEnergyCommand BuildGridChargingCommand(string escapedSiteId, string value)
+    {
+        var enabled = ParseBoolean(value);
+        var disallowChargeFromGrid = !enabled;
+        return new TeslaEnergyCommand(
+            "Grid charging",
+            $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
+            new { disallow_charge_from_grid_with_solar_installed = disallowChargeFromGrid },
+            new Dictionary<string, object?>
+            {
+                ["disallow_charge_from_grid_with_solar_installed"] = disallowChargeFromGrid,
+                ["site_info.components.disallow_charge_from_grid_with_solar_installed"] = disallowChargeFromGrid
+            });
+    }
+
+    private static TeslaEnergyCommand BuildEnergyExportsCommand(string escapedSiteId, string value)
+    {
+        var exportRule = MapEnergyExports(value);
+        return new TeslaEnergyCommand(
+            "Energy exports",
+            $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
+            new { customer_preferred_export_rule = exportRule },
+            new Dictionary<string, object?>
+            {
+                ["customer_preferred_export_rule"] = exportRule,
+                ["site_info.components.customer_preferred_export_rule"] = exportRule
+            });
     }
 
     private async Task<TeslaEnergyCommandResult> PostCommandAsync(
@@ -840,6 +931,8 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
         string path,
         string accessToken,
         object payload,
+        string siteId,
+        IReadOnlyDictionary<string, object?> statePatch,
         List<string> checks,
         CancellationToken cancellationToken)
     {
@@ -859,7 +952,7 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
                 checks.Add("Tesla Energy writes require the energy_cmds OAuth scope. Start Tesla OAuth again from the Helper setup page so writable Energy controls can be authorized.");
             }
 
-            return new TeslaEnergyCommandResult(false, "Tesla Energy command failed.", checks);
+            return new TeslaEnergyCommandResult(false, "Tesla Energy command failed.", checks, siteId, new Dictionary<string, object?>());
         }
 
         if (!string.IsNullOrWhiteSpace(body))
@@ -867,11 +960,11 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
             checks.Add($"POST {path} response: {TruncateForDiagnostics(body)}");
             if (!IsAcceptedCommandResponse(body, checks))
             {
-                return new TeslaEnergyCommandResult(false, "Tesla Energy command was not accepted by the Fleet API response body.", checks);
+                return new TeslaEnergyCommandResult(false, "Tesla Energy command was not accepted by the Fleet API response body.", checks, siteId, new Dictionary<string, object?>());
             }
         }
 
-        return new TeslaEnergyCommandResult(true, "Tesla Energy command accepted.", checks);
+        return new TeslaEnergyCommandResult(true, "Tesla Energy command accepted.", checks, siteId, statePatch);
     }
 
     private static string NormalizePayload(string payload)
@@ -902,11 +995,13 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
 
     private static int ParsePercent(string value)
     {
-        if (!int.TryParse(value, out var percent))
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+            !double.TryParse(value, out parsed))
         {
             throw new InvalidOperationException($"Backup reserve must be a whole percentage from 0 to 100. Received '{value}'.");
         }
 
+        var percent = (int)Math.Round(parsed);
         if (percent is < 0 or > 100)
         {
             throw new InvalidOperationException($"Backup reserve must be between 0 and 100. Received '{percent}'.");
@@ -1176,6 +1271,7 @@ sealed class TeslaFleetHomeAssistantCommandService(
             if (result.Succeeded)
             {
                 var snapshot = await dataClient.FetchSnapshotAsync(updated, cancellationToken);
+                snapshot = ApplyEnergyCommandPatch(snapshot, result.SiteId, result.StatePatch);
                 var publishResult = await mqttPublisher.PublishAsync(updated, snapshot, cancellationToken);
                 updated = updated with
                 {
@@ -1203,6 +1299,49 @@ sealed class TeslaFleetHomeAssistantCommandService(
         }
 
         await store.SaveAsync(updated, cancellationToken);
+    }
+
+    private static TeslaFleetSnapshot ApplyEnergyCommandPatch(
+        TeslaFleetSnapshot snapshot,
+        string siteId,
+        IReadOnlyDictionary<string, object?> patch)
+    {
+        if (string.IsNullOrWhiteSpace(siteId) || patch.Count == 0)
+        {
+            return snapshot;
+        }
+
+        var patched = false;
+        var energySites = snapshot.EnergySites
+            .Select(site =>
+            {
+                if (!site.SiteId.Equals(siteId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return site;
+                }
+
+                var values = new Dictionary<string, object?>(site.Values, StringComparer.OrdinalIgnoreCase);
+                foreach (var item in patch)
+                {
+                    values[item.Key] = item.Value;
+                }
+
+                patched = true;
+                return site with { Values = values };
+            })
+            .ToList();
+        if (!patched)
+        {
+            return snapshot;
+        }
+
+        var checks = snapshot.Checks.ToList();
+        checks.Add($"Applied optimistic retained MQTT state patch for Energy site {siteId} after a successful command.");
+        return snapshot with
+        {
+            EnergySites = energySites,
+            Checks = checks
+        };
     }
 
     private static (string SiteId, string Action)? TryParseEnergyCommandTopic(TeslaMqttSettings settings, string? topic)
@@ -1363,9 +1502,12 @@ sealed record TeslaHomeAssistantPublishResult(
 sealed record TeslaEnergyCommand(
     string DisplayName,
     string Path,
-    object Payload);
+    object Payload,
+    IReadOnlyDictionary<string, object?> StatePatch);
 
 sealed record TeslaEnergyCommandResult(
     bool Succeeded,
     string Summary,
-    List<string> Checks);
+    List<string> Checks,
+    string SiteId,
+    IReadOnlyDictionary<string, object?> StatePatch);

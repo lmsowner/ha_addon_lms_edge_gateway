@@ -35,35 +35,35 @@ sealed class TeslaFleetStateMapper
             vehicle.DisplayName,
             FirstNonEmpty(vehicle.State, "unknown"),
             new LmsTeslaChargeState(
-                ReadInt(values, "charge_state.battery_level"),
-                ReadInt(values, "charge_state.usable_battery_level"),
-                ReadString(values, "charge_state.charging_state"),
-                ReadInt(values, "charge_state.charge_limit_soc"),
-                ReadDouble(values, "charge_state.battery_range", "charge_state.est_battery_range", "charge_state.ideal_battery_range"),
-                ReadString(values, "charge_state.conn_charge_cable"),
-                ReadBool(values, "charge_state.fast_charger_present"),
-                ReadBool(values, "charge_state.charge_port_door_open")),
+                ReadInt(values, "charge_state.battery_level", "battery_level"),
+                ReadInt(values, "charge_state.usable_battery_level", "usable_battery_level"),
+                ReadString(values, "charge_state.charging_state", "charging_state"),
+                ReadInt(values, "charge_state.charge_limit_soc", "charge_limit_soc"),
+                ReadDouble(values, "charge_state.battery_range", "battery_range", "charge_state.est_battery_range", "est_battery_range", "charge_state.ideal_battery_range", "ideal_battery_range"),
+                ReadString(values, "charge_state.conn_charge_cable", "conn_charge_cable", "connected_charge_cable"),
+                ReadBool(values, "charge_state.fast_charger_present", "fast_charger_present"),
+                ReadBool(values, "charge_state.charge_port_door_open", "charge_port_door_open")),
             new LmsTeslaClimateState(
-                ReadDouble(values, "climate_state.inside_temp"),
-                ReadDouble(values, "climate_state.outside_temp"),
-                ReadBool(values, "climate_state.is_climate_on"),
-                ReadDouble(values, "climate_state.driver_temp_setting"),
-                ReadDouble(values, "climate_state.passenger_temp_setting")),
+                ReadDouble(values, "climate_state.inside_temp", "inside_temp"),
+                ReadDouble(values, "climate_state.outside_temp", "outside_temp"),
+                ReadBool(values, "climate_state.is_climate_on", "is_climate_on"),
+                ReadDouble(values, "climate_state.driver_temp_setting", "driver_temp_setting"),
+                ReadDouble(values, "climate_state.passenger_temp_setting", "passenger_temp_setting")),
             new LmsTeslaDriveState(
-                ReadDouble(values, "drive_state.latitude", "location_data.latitude"),
-                ReadDouble(values, "drive_state.longitude", "location_data.longitude"),
-                ReadInt(values, "drive_state.heading"),
-                ReadDouble(values, "drive_state.speed"),
-                ReadString(values, "drive_state.shift_state")),
+                ReadDouble(values, "drive_state.latitude", "latitude", "location_data.latitude"),
+                ReadDouble(values, "drive_state.longitude", "longitude", "location_data.longitude"),
+                ReadInt(values, "drive_state.heading", "heading"),
+                ReadDouble(values, "drive_state.speed", "speed"),
+                ReadString(values, "drive_state.shift_state", "shift_state")),
             new LmsTeslaVehicleMetaState(
-                ReadString(values, "vehicle_state.car_version", "fleet_status.firmware_version"),
-                ReadDouble(values, "vehicle_state.odometer"),
-                ReadBool(values, "vehicle_state.locked"),
-                ReadBool(values, "vehicle_state.sentry_mode")),
+                ReadString(values, "vehicle_state.car_version", "car_version", "fleet_status.firmware_version", "firmware_version"),
+                ReadDouble(values, "vehicle_state.odometer", "odometer"),
+                ReadBool(values, "vehicle_state.locked", "locked"),
+                ReadBool(values, "vehicle_state.sentry_mode", "sentry_mode")),
             new LmsTeslaFleetKeyState(
-                ReadBool(values, "fleet_status.vehicle_command_protocol_required"),
-                ReadInt(values, "fleet_status.total_number_of_keys"),
-                ReadBool(values, "fleet_status.key_paired", "fleet_status.virtual_key_paired"),
+                ReadBool(values, "fleet_status.vehicle_command_protocol_required", "vehicle_command_protocol_required", "command_protocol_required"),
+                ReadInt(values, "fleet_status.total_number_of_keys", "total_number_of_keys", "total_keys"),
+                ReadBool(values, "fleet_status.key_paired", "fleet_status.virtual_key_paired", "key_paired", "virtual_key_paired"),
                 ResolveFleetKeyStatus(values)),
             values);
     }
@@ -311,9 +311,30 @@ sealed class TeslaFleetStateMapper
                 return boolValue;
             }
 
+            if (value is int intValue)
+            {
+                return intValue != 0;
+            }
+
+            if (value is long longValue)
+            {
+                return longValue != 0;
+            }
+
             if (bool.TryParse(value.ToString(), out var parsed))
             {
                 return parsed;
+            }
+
+            var text = value.ToString()?.Trim();
+            if (text == "1")
+            {
+                return true;
+            }
+
+            if (text == "0")
+            {
+                return false;
             }
         }
 

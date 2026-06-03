@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.15
+
+- Clears retired MQTT discovery configs for the previous Energy control labels/components.
+- Accepts decimal number payloads from Home Assistant for Backup reserve writes.
+- Optimistically patches retained Energy state after successful commands so HA controls update immediately.
+- Fetches realtime vehicle data for online cars when MQTT publishing is enabled and adds top-level Tesla field fallbacks.
+
 ## 0.2.14
 
 - Renames writable Powerwall controls to match Tesla Custom Integration labels.
