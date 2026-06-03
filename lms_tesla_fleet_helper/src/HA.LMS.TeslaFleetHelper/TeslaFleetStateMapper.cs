@@ -71,19 +71,59 @@ sealed class TeslaFleetStateMapper
     private static LmsTeslaEnergySiteState MapEnergySite(TeslaEnergySiteSnapshot site)
     {
         var values = site.Values;
+        var batteryPercentageValue = ReadDouble(values, "percentage_charged", "battery_percentage");
+        var batteryPercentage = batteryPercentageValue.HasValue
+            ? (int?)Math.Round(batteryPercentageValue.Value)
+            : ReadInt(values, "percentage_charged", "battery_percentage");
+        var nameplateEnergyWh = ReadDouble(values, "site_info.nameplate_energy", "nameplate_energy");
         return new LmsTeslaEnergySiteState(
             site.SiteId,
             site.DisplayName,
             site.ResourceType,
+            new LmsTeslaEnergySiteCapabilities(
+                ReadBool(values, "site_info.components.solar", "components.solar"),
+                ReadBool(values, "site_info.components.battery", "components.battery"),
+                ReadBool(values, "site_info.components.grid", "components.grid"),
+                ReadBool(values, "site_info.components.backup", "components.backup"),
+                ReadBool(values, "site_info.components.load_meter", "components.load_meter"),
+                ReadString(values, "site_info.components.gateway", "components.gateway"),
+                ReadString(values, "site_info.components.battery_type", "components.battery_type"),
+                ReadInt(
+                    values,
+                    "site_info.battery_count",
+                    "battery_count",
+                    "site_info.powerwall_count",
+                    "powerwall_count",
+                    "site_info.powerwall_count_on_site",
+                    "powerwall_count_on_site"),
+                nameplateEnergyWh),
             new LmsTeslaEnergyLiveState(
                 ReadString(values, "grid_status"),
-                ReadInt(values, "percentage_charged", "battery_percentage"),
+                batteryPercentage,
                 ReadDouble(values, "solar_power"),
                 ReadDouble(values, "load_power"),
                 ReadDouble(values, "battery_power"),
                 ReadDouble(values, "grid_power"),
-                ReadInt(values, "backup_reserve_percent")),
+                ReadDouble(values, "generator_power"),
+                ReadInt(values, "backup_reserve_percent", "backup.backup_reserve_percent", "site_info.backup_reserve_percent", "site_info.backup.backup_reserve_percent"),
+                CalculateEnergyRemainingWh(
+                    nameplateEnergyWh,
+                    batteryPercentageValue ?? batteryPercentage,
+                    ReadDouble(values, "total_pack_energy")),
+                ReadString(values, "island_status"),
+                ReadBool(values, "grid_services_active"),
+                ReadBool(values, "storm_mode_active")),
             values);
+    }
+
+    private static double? CalculateEnergyRemainingWh(double? nameplateEnergyWh, double? batteryPercentage, double? totalPackEnergyWh)
+    {
+        if (nameplateEnergyWh.HasValue && batteryPercentage.HasValue)
+        {
+            return Math.Round(nameplateEnergyWh.Value * batteryPercentage.Value / 100.0);
+        }
+
+        return totalPackEnergyWh.HasValue ? Math.Round(totalPackEnergyWh.Value) : null;
     }
 
     private static IEnumerable<LmsTeslaApiProperty> BuildProperties(
@@ -192,6 +232,27 @@ sealed class TeslaFleetStateMapper
             if (value is long longValue && longValue is <= int.MaxValue and >= int.MinValue)
             {
                 return (int)longValue;
+            }
+
+            if (value is double doubleValue && doubleValue is <= int.MaxValue and >= int.MinValue)
+            {
+                return (int)Math.Round(doubleValue);
+            }
+
+            if (value is float floatValue && floatValue is <= int.MaxValue and >= int.MinValue)
+            {
+                return (int)Math.Round(floatValue);
+            }
+
+            if (value is decimal decimalValue && decimalValue is <= int.MaxValue and >= int.MinValue)
+            {
+                return (int)Math.Round(decimalValue);
+            }
+
+            if (double.TryParse(value.ToString(), out var doubleParsed) &&
+                doubleParsed is <= int.MaxValue and >= int.MinValue)
+            {
+                return (int)Math.Round(doubleParsed);
             }
 
             if (int.TryParse(value.ToString(), out var parsed))

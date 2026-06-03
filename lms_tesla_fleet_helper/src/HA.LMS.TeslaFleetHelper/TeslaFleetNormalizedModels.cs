@@ -61,8 +61,20 @@ sealed record LmsTeslaEnergySiteState(
     string SiteId,
     string DisplayName,
     string ResourceType,
+    LmsTeslaEnergySiteCapabilities Capabilities,
     LmsTeslaEnergyLiveState Live,
     IReadOnlyDictionary<string, object?> RawProperties);
+
+sealed record LmsTeslaEnergySiteCapabilities(
+    bool? HasSolar,
+    bool? HasBattery,
+    bool? HasGrid,
+    bool? HasBackup,
+    bool? HasLoadMeter,
+    string GatewayType,
+    string BatteryType,
+    int? PowerwallCount,
+    double? NameplateEnergyWh);
 
 sealed record LmsTeslaEnergyLiveState(
     string GridStatus,
@@ -71,7 +83,12 @@ sealed record LmsTeslaEnergyLiveState(
     double? LoadPowerWatts,
     double? BatteryPowerWatts,
     double? GridPowerWatts,
-    int? BackupReservePercent);
+    double? GeneratorPowerWatts,
+    int? BackupReservePercent,
+    double? EnergyRemainingWh,
+    string IslandStatus,
+    bool? GridServicesActive,
+    bool? StormModeActive);
 
 sealed record LmsTeslaApiProperty(
     string Scope,

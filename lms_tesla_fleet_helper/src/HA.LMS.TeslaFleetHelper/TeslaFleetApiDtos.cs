@@ -98,13 +98,18 @@ sealed record TeslaApiEnergyLiveStatusResponse(
 
 sealed record TeslaApiEnergyLiveStatusDto(
     [property: JsonPropertyName("grid_status")] string? GridStatus,
-    [property: JsonPropertyName("percentage_charged")] int? PercentageCharged,
-    [property: JsonPropertyName("battery_percentage")] int? BatteryPercentage,
+    [property: JsonPropertyName("percentage_charged")] double? PercentageCharged,
+    [property: JsonPropertyName("battery_percentage")] double? BatteryPercentage,
+    [property: JsonPropertyName("total_pack_energy")] double? TotalPackEnergyWh,
     [property: JsonPropertyName("solar_power")] double? SolarPowerWatts,
     [property: JsonPropertyName("load_power")] double? LoadPowerWatts,
     [property: JsonPropertyName("battery_power")] double? BatteryPowerWatts,
     [property: JsonPropertyName("grid_power")] double? GridPowerWatts,
+    [property: JsonPropertyName("generator_power")] double? GeneratorPowerWatts,
     [property: JsonPropertyName("backup_reserve_percent")] int? BackupReservePercent,
+    [property: JsonPropertyName("island_status")] string? IslandStatus,
+    [property: JsonPropertyName("grid_services_active")] bool? GridServicesActive,
+    [property: JsonPropertyName("storm_mode_active")] bool? StormModeActive,
     [property: JsonExtensionData] Dictionary<string, JsonElement>? ExtensionData = null);
 
 sealed record TeslaApiCommandRequest(

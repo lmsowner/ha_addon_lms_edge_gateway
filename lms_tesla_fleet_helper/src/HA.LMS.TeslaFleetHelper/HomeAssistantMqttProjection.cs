@@ -121,10 +121,10 @@ sealed class HomeAssistantMqttProjectionMapper
                     powerwallDeviceId,
                     $"Tesla Powerwall {index} - {site.DisplayName}",
                     "Tesla",
-                    "Tesla Powerwall",
+                    "Tesla Powerwall Inventory",
                     null,
                     deviceId));
-                entities.AddRange(BuildPowerwallUnitEntities(powerwallDeviceId, stateTopic, index));
+                entities.AddRange(BuildPowerwallUnitEntities(powerwallDeviceId, stateTopic, index, site));
             }
             states.Add(new HomeAssistantMqttStateProjection(stateTopic, BuildEnergyPayload(site)));
         }
@@ -179,25 +179,46 @@ sealed class HomeAssistantMqttProjectionMapper
         Sensor(deviceId, "display_name", "Display Name", stateTopic, "{{ value_json.display_name }}"),
         Sensor(deviceId, "site_id", "Site ID", stateTopic, "{{ value_json.site_id }}", enabledByDefault: false, entityCategory: "diagnostic"),
         Sensor(deviceId, "resource_type", "Resource Type", stateTopic, "{{ value_json.resource_type }}"),
+        Sensor(deviceId, "gateway_type", "Gateway Type", stateTopic, "{{ value_json.gateway_type }}", enabledByDefault: false, entityCategory: "diagnostic"),
+        Sensor(deviceId, "battery_type", "Battery Type", stateTopic, "{{ value_json.battery_type }}", enabledByDefault: false, entityCategory: "diagnostic"),
         Sensor(deviceId, "powerwall_count", "Powerwall Count", stateTopic, "{{ value_json.powerwall_count }}", stateClass: "measurement"),
+        BinarySensor(deviceId, "has_solar", "Has Solar", stateTopic, "{{ value_json.has_solar | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
+        BinarySensor(deviceId, "has_battery", "Has Battery", stateTopic, "{{ value_json.has_battery | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
+        BinarySensor(deviceId, "has_grid", "Has Grid", stateTopic, "{{ value_json.has_grid | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
+        BinarySensor(deviceId, "has_backup", "Has Backup", stateTopic, "{{ value_json.has_backup | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
+        BinarySensor(deviceId, "has_load_meter", "Has Load Meter", stateTopic, "{{ value_json.has_load_meter | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
         Sensor(deviceId, "grid_status", "Grid Status", stateTopic, "{{ value_json.grid_status }}"),
+        BinarySensor(deviceId, "grid_connected", "Grid Connected", stateTopic, "{{ (value_json.grid_status | lower == 'active') | lower }}", "power"),
+        Sensor(deviceId, "island_status", "Island Status", stateTopic, "{{ value_json.island_status }}", enabledByDefault: false, entityCategory: "diagnostic"),
         Sensor(deviceId, "battery_percentage", "Battery", stateTopic, "{{ value_json.battery_percentage }}", "battery", "%", stateClass: "measurement"),
+        Sensor(deviceId, "battery_remaining", "Battery Remaining", stateTopic, "{{ value_json.battery_remaining }}", "energy_storage", "Wh", stateClass: "measurement"),
         Sensor(deviceId, "solar_power", "Solar Power", stateTopic, "{{ value_json.solar_power }}", "power", "W", stateClass: "measurement"),
         Sensor(deviceId, "load_power", "Load Power", stateTopic, "{{ value_json.load_power }}", "power", "W", stateClass: "measurement"),
         Sensor(deviceId, "battery_power", "Battery Power", stateTopic, "{{ value_json.battery_power }}", "power", "W", stateClass: "measurement"),
+        BinarySensor(deviceId, "battery_charging", "Battery Charging", stateTopic, "{{ (value_json.battery_power | float(0) < -100) | lower }}", "battery_charging"),
         Sensor(deviceId, "grid_power", "Grid Power", stateTopic, "{{ value_json.grid_power }}", "power", "W", stateClass: "measurement"),
-        Sensor(deviceId, "backup_reserve", "Backup Reserve", stateTopic, "{{ value_json.backup_reserve }}", "battery", "%", stateClass: "measurement")
+        Sensor(deviceId, "generator_power", "Generator Power", stateTopic, "{{ value_json.generator_power }}", "power", "W", stateClass: "measurement", enabledByDefault: false),
+        Sensor(deviceId, "backup_reserve", "Backup Reserve", stateTopic, "{{ value_json.backup_reserve }}", "battery", "%", stateClass: "measurement"),
+        BinarySensor(deviceId, "grid_services_active", "Grid Services Active", stateTopic, "{{ value_json.grid_services_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
+        BinarySensor(deviceId, "storm_mode_active", "Storm Mode Active", stateTopic, "{{ value_json.storm_mode_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic")
     ];
 
     private static IEnumerable<HomeAssistantMqttEntityProjection> BuildPowerwallUnitEntities(
         string deviceId,
         string stateTopic,
-        int index) =>
-    [
-        Sensor(deviceId, "status", "Status", stateTopic, $"{{{{ value_json.powerwall_{index}_status }}}}"),
-        Sensor(deviceId, "gateway", "Gateway", stateTopic, "{{ value_json.display_name }}"),
-        Sensor(deviceId, "unit_index", "Unit Index", stateTopic, $"{{{{ value_json.powerwall_{index}_unit_index }}}}", stateClass: "measurement")
-    ];
+        int index,
+        LmsTeslaEnergySiteState site)
+    {
+        var entities = new List<HomeAssistantMqttEntityProjection>
+        {
+            Sensor(deviceId, "status", "Status", stateTopic, $"{{{{ value_json.powerwall_{index}_status }}}}"),
+            Sensor(deviceId, "gateway", "Gateway", stateTopic, "{{ value_json.display_name }}", enabledByDefault: false, entityCategory: "diagnostic"),
+            Sensor(deviceId, "unit_index", "Unit Index", stateTopic, $"{{{{ value_json.powerwall_{index}_unit_index }}}}", enabledByDefault: false, entityCategory: "diagnostic", stateClass: "measurement")
+        };
+
+        entities.AddRange(BuildPowerwallUnitRawEntities(deviceId, stateTopic, index, site.RawProperties));
+        return entities;
+    }
 
     private static IEnumerable<HomeAssistantMqttEntityProjection> BuildRawEntities(
         string deviceId,
@@ -273,13 +294,25 @@ sealed class HomeAssistantMqttProjectionMapper
             ["site_id"] = site.SiteId,
             ["display_name"] = site.DisplayName,
             ["resource_type"] = site.ResourceType,
+            ["gateway_type"] = site.Capabilities.GatewayType,
+            ["battery_type"] = site.Capabilities.BatteryType,
+            ["has_solar"] = site.Capabilities.HasSolar,
+            ["has_battery"] = site.Capabilities.HasBattery,
+            ["has_grid"] = site.Capabilities.HasGrid,
+            ["has_backup"] = site.Capabilities.HasBackup,
+            ["has_load_meter"] = site.Capabilities.HasLoadMeter,
             ["grid_status"] = site.Live.GridStatus,
+            ["island_status"] = site.Live.IslandStatus,
             ["battery_percentage"] = site.Live.BatteryPercentage,
+            ["battery_remaining"] = site.Live.EnergyRemainingWh,
             ["solar_power"] = site.Live.SolarPowerWatts,
             ["load_power"] = site.Live.LoadPowerWatts,
             ["battery_power"] = site.Live.BatteryPowerWatts,
             ["grid_power"] = site.Live.GridPowerWatts,
-            ["backup_reserve"] = site.Live.BackupReservePercent
+            ["generator_power"] = site.Live.GeneratorPowerWatts,
+            ["backup_reserve"] = site.Live.BackupReservePercent,
+            ["grid_services_active"] = site.Live.GridServicesActive,
+            ["storm_mode_active"] = site.Live.StormModeActive
         };
         var powerwallCount = ResolvePowerwallCount(site);
         payload["powerwall_count"] = powerwallCount;
@@ -397,6 +430,11 @@ sealed class HomeAssistantMqttProjectionMapper
 
     private static int ResolvePowerwallCount(LmsTeslaEnergySiteState site)
     {
+        if (site.Capabilities.PowerwallCount is > 0)
+        {
+            return Math.Clamp(site.Capabilities.PowerwallCount.Value, 1, 16);
+        }
+
         var explicitCounts = new[]
             {
                 "battery_count",
@@ -439,6 +477,16 @@ sealed class HomeAssistantMqttProjectionMapper
                key.Contains("battery_units", StringComparison.Ordinal) ||
                key.Contains("powerwalls", StringComparison.Ordinal) ||
                key.EndsWith("batteries", StringComparison.Ordinal);
+    }
+
+    private static bool IsPowerwallUnitPath(string path, int index)
+    {
+        var key = path.ToLowerInvariant();
+        var indexSegment = $".{index}.";
+        return key.Contains($"battery_blocks{indexSegment}", StringComparison.Ordinal) ||
+               key.Contains($"battery_units{indexSegment}", StringComparison.Ordinal) ||
+               key.Contains($"powerwalls{indexSegment}", StringComparison.Ordinal) ||
+               key.Contains($"batteries{indexSegment}", StringComparison.Ordinal);
     }
 
     private static int ReadPositiveInt(IReadOnlyDictionary<string, object?> values, string key)
@@ -514,6 +562,40 @@ sealed class HomeAssistantMqttProjectionMapper
             .Select(group => group.Last())
             .OrderBy(property => property.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private static IEnumerable<HomeAssistantMqttEntityProjection> BuildPowerwallUnitRawEntities(
+        string deviceId,
+        string stateTopic,
+        int index,
+        IReadOnlyDictionary<string, object?> rawProperties)
+    {
+        foreach (var raw in BuildRawPropertyProjections(rawProperties).Where(raw => IsPowerwallUnitPath(raw.Path, index)))
+        {
+            yield return raw.Component.Equals("binary_sensor", StringComparison.OrdinalIgnoreCase)
+                ? BinarySensor(
+                    deviceId,
+                    $"unit_{SafeId(raw.Path)}",
+                    HumanizePowerwallUnitPath(raw.Path, index),
+                    stateTopic,
+                    $"{{{{ value_json.{raw.PayloadKey} | lower }}}}",
+                    raw.DeviceClass,
+                    enabledByDefault: false,
+                    entityCategory: "diagnostic",
+                    icon: raw.Icon)
+                : Sensor(
+                    deviceId,
+                    $"unit_{SafeId(raw.Path)}",
+                    HumanizePowerwallUnitPath(raw.Path, index),
+                    stateTopic,
+                    $"{{{{ value_json.{raw.PayloadKey} }}}}",
+                    raw.DeviceClass,
+                    raw.UnitOfMeasurement,
+                    enabledByDefault: false,
+                    entityCategory: "diagnostic",
+                    stateClass: raw.StateClass,
+                    icon: raw.Icon);
+        }
+    }
 
     private static bool IsPublishableRawProperty(string path, object? value)
     {
@@ -655,6 +737,27 @@ sealed class HomeAssistantMqttProjectionMapper
             .Replace('_', ' ')
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(word => word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..]));
+
+    private static string HumanizePowerwallUnitPath(string path, int index)
+    {
+        var normalized = path.ToLowerInvariant();
+        foreach (var marker in new[]
+                 {
+                     $"battery_blocks.{index}.",
+                     $"battery_units.{index}.",
+                     $"powerwalls.{index}.",
+                     $"batteries.{index}."
+                 })
+        {
+            var markerIndex = normalized.IndexOf(marker, StringComparison.Ordinal);
+            if (markerIndex >= 0)
+            {
+                return HumanizePath(path[(markerIndex + marker.Length)..]);
+            }
+        }
+
+        return HumanizePath(path);
+    }
 
     private static string NormalizeTopic(string value)
     {

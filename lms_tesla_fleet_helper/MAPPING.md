@@ -93,8 +93,9 @@ Vehicle-scoped endpoints:
 Energy-scoped endpoints:
 
 - energy site discovery from products
+- site info/configuration
 - live status
-- later: site config/history where supported
+- later: energy history where supported
 
 Command endpoints:
 

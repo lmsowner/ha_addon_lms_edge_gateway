@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.11
+
+- Fixes Tesla energy battery percentage parsing when Fleet API returns decimal `percentage_charged` values.
+- Adds richer Gateway/Powerwall energy entities for battery remaining Wh, charging status, grid connection, generator power, storm mode, and capability diagnostics.
+- Flattens Tesla energy arrays into indexed raw fields so per-Powerwall inventory details can be projected when the API returns them.
+
 ## 0.2.10
 
 - Reworks the Helper page into Edge Gateway-style tabs for setup, diagnostics, and the entity/property harness.

@@ -421,6 +421,7 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
                     break;
                 case JsonValueKind.Array:
                     values[key] = property.Value.GetRawText();
+                    FlattenArrayInto(property.Value, key, values);
                     break;
                 case JsonValueKind.String:
                     values[key] = property.Value.GetString();
@@ -443,6 +444,43 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
             }
         }
     }
+
+    private static void FlattenArrayInto(JsonElement element, string prefix, Dictionary<string, object?> values)
+    {
+        var index = 1;
+        foreach (var item in element.EnumerateArray())
+        {
+            var indexedPrefix = $"{prefix}.{index}";
+            switch (item.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    FlattenInto(item, indexedPrefix, values);
+                    break;
+                case JsonValueKind.Array:
+                    values[indexedPrefix] = item.GetRawText();
+                    FlattenArrayInto(item, indexedPrefix, values);
+                    break;
+                default:
+                    values[indexedPrefix] = ReadScalar(item);
+                    break;
+            }
+
+            index++;
+        }
+    }
+
+    private static object? ReadScalar(JsonElement element) =>
+        element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longValue)
+                ? longValue
+                : element.TryGetDouble(out var doubleValue) ? doubleValue : element.GetRawText(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            _ => element.GetRawText()
+        };
 
     private static string? ReadString(JsonElement element, params string[] propertyNames)
     {
