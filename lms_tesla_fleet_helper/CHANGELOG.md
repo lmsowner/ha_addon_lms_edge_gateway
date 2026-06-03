@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.10
+
+- Reworks the Helper page into Edge Gateway-style tabs for setup, diagnostics, and the entity/property harness.
+- Keeps tab selection locally persisted while navigating helper actions.
+- Makes settings saves tolerate partial forms without losing existing Tesla or MQTT settings.
+
 ## 0.2.9
 
 - Fetches Tesla energy `site_info` alongside live status so Gateway/Powerwall asset details can be projected into Home Assistant.

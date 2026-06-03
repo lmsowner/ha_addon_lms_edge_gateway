@@ -78,32 +78,61 @@ app.MapPost("/actions/save-settings", async (
     var state = await store.LoadAsync();
     try
     {
+        var hasOriginDomain = form.ContainsKey("origin_domain");
+        var hasTeslaClientId = form.ContainsKey("tesla_client_id");
+        var hasTeslaClientSecret = form.ContainsKey("tesla_client_secret");
+        var hasFleetApiAudience = form.ContainsKey("fleet_api_audience");
+        var hasTeslaScopes = form.ContainsKey("tesla_scopes");
+        var hasHomeAssistantMqttEnabled = form.ContainsKey("ha_mqtt_enabled_present") || form.ContainsKey("ha_mqtt_enabled");
+        var hasFetchRealtimeVehicleData = form.ContainsKey("fetch_realtime_vehicle_data_present") || form.ContainsKey("fetch_realtime_vehicle_data");
+        var hasMqttHost = form.ContainsKey("mqtt_host");
+        var hasMqttPort = form.ContainsKey("mqtt_port");
+        var hasMqttUsername = form.ContainsKey("mqtt_username");
+        var hasMqttPassword = form.ContainsKey("mqtt_password");
+        var hasMqttDiscoveryPrefix = form.ContainsKey("mqtt_discovery_prefix");
+        var hasMqttBaseTopic = form.ContainsKey("mqtt_base_topic");
+        var hasHomeAssistantRefreshInterval = form.ContainsKey("ha_refresh_interval_minutes");
+
         state = state with
         {
             EdgeGatewayUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl,
-            OriginDomain = NormalizeDomain(form["origin_domain"].ToString(), required: false),
+            OriginDomain = hasOriginDomain
+                ? NormalizeDomain(form["origin_domain"].ToString(), required: false)
+                : state.OriginDomain,
             PublicUpstreamUrl = TeslaFleetDefaults.LocalHelperUpstreamUrl,
-            TeslaClientId = form["tesla_client_id"].ToString().Trim(),
-            TeslaClientSecret = string.IsNullOrWhiteSpace(form["tesla_client_secret"].ToString())
+            TeslaClientId = hasTeslaClientId ? form["tesla_client_id"].ToString().Trim() : state.TeslaClientId,
+            TeslaClientSecret = !hasTeslaClientSecret || string.IsNullOrWhiteSpace(form["tesla_client_secret"].ToString())
                 ? state.TeslaClientSecret
                 : form["tesla_client_secret"].ToString().Trim(),
-            FleetApiAudience = NormalizeHttpUrl(form["fleet_api_audience"].ToString(), DefaultFleetApiAudience),
-            TeslaScopes = NormalizeScopes(form["tesla_scopes"].ToString()),
-            HomeAssistantMqttEnabled = IsChecked(form["ha_mqtt_enabled"].ToString()),
-            FetchRealtimeVehicleData = IsChecked(form["fetch_realtime_vehicle_data"].ToString()),
-            MqttHost = NormalizeHost(form["mqtt_host"].ToString(), "core-mosquitto"),
-            MqttPort = NormalizePort(form["mqtt_port"].ToString(), 1883),
-            MqttUsername = form["mqtt_username"].ToString().Trim(),
-            MqttPassword = string.IsNullOrWhiteSpace(form["mqtt_password"].ToString())
+            FleetApiAudience = hasFleetApiAudience
+                ? NormalizeHttpUrl(form["fleet_api_audience"].ToString(), DefaultFleetApiAudience)
+                : state.FleetApiAudience,
+            TeslaScopes = hasTeslaScopes ? NormalizeScopes(form["tesla_scopes"].ToString()) : state.TeslaScopes,
+            HomeAssistantMqttEnabled = hasHomeAssistantMqttEnabled
+                ? IsChecked(form["ha_mqtt_enabled"].ToString())
+                : state.HomeAssistantMqttEnabled,
+            FetchRealtimeVehicleData = hasFetchRealtimeVehicleData
+                ? IsChecked(form["fetch_realtime_vehicle_data"].ToString())
+                : state.FetchRealtimeVehicleData,
+            MqttHost = hasMqttHost ? NormalizeHost(form["mqtt_host"].ToString(), "core-mosquitto") : state.MqttHost,
+            MqttPort = hasMqttPort ? NormalizePort(form["mqtt_port"].ToString(), 1883) : state.MqttPort,
+            MqttUsername = hasMqttUsername ? form["mqtt_username"].ToString().Trim() : state.MqttUsername,
+            MqttPassword = !hasMqttPassword || string.IsNullOrWhiteSpace(form["mqtt_password"].ToString())
                 ? state.MqttPassword
                 : form["mqtt_password"].ToString(),
-            MqttDiscoveryPrefix = NormalizeTopicRoot(form["mqtt_discovery_prefix"].ToString(), "homeassistant"),
-            MqttBaseTopic = NormalizeTopicRoot(form["mqtt_base_topic"].ToString(), "lms/tesla-fleet"),
-            HomeAssistantRefreshIntervalMinutes = NormalizeInt(
-                form["ha_refresh_interval_minutes"].ToString(),
-                defaultValue: 15,
-                min: 5,
-                max: 240),
+            MqttDiscoveryPrefix = hasMqttDiscoveryPrefix
+                ? NormalizeTopicRoot(form["mqtt_discovery_prefix"].ToString(), "homeassistant")
+                : state.MqttDiscoveryPrefix,
+            MqttBaseTopic = hasMqttBaseTopic
+                ? NormalizeTopicRoot(form["mqtt_base_topic"].ToString(), "lms/tesla-fleet")
+                : state.MqttBaseTopic,
+            HomeAssistantRefreshIntervalMinutes = hasHomeAssistantRefreshInterval
+                ? NormalizeInt(
+                    form["ha_refresh_interval_minutes"].ToString(),
+                    defaultValue: 15,
+                    min: 5,
+                    max: 240)
+                : state.HomeAssistantRefreshIntervalMinutes,
             LastStatus = "Settings saved",
             LastMessage = "Tesla Fleet Helper settings were saved.",
             LastChecks = []
@@ -1252,6 +1281,89 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     .meta { color: var(--muted); line-height: 1.5; max-width: 820px; }
     .grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; align-items: start; }
     .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+    .tab-control {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+      min-width: 0;
+      margin-top: 16px;
+    }
+    .tab-control-bar {
+      align-items: end;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      min-height: 36px;
+    }
+    .tab-list {
+      align-items: flex-end;
+      display: flex;
+      flex: 1 1 auto;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: -1px;
+      min-width: 0;
+      padding: 0;
+    }
+    .tab-trigger {
+      align-items: center;
+      background: #111925;
+      border: 1px solid var(--border);
+      border-bottom-color: rgba(79, 209, 197, .08);
+      border-radius: 10px 10px 0 0;
+      color: var(--muted);
+      cursor: pointer;
+      display: inline-flex;
+      flex: 0 0 auto;
+      gap: 8px;
+      justify-content: center;
+      min-height: 34px;
+      min-width: 0;
+      padding: 7px 13px 6px;
+      position: relative;
+      text-align: left;
+    }
+    .tab-trigger:hover { border-color: #526174; color: var(--text); }
+    .tab-trigger.active {
+      background: var(--surface);
+      border-color: rgba(79, 209, 197, .42);
+      border-bottom-color: transparent;
+      color: var(--text);
+      margin-bottom: -1px;
+      z-index: 1;
+    }
+    .tab-trigger.active::after {
+      background: var(--surface);
+      bottom: -1px;
+      content: "";
+      height: 1px;
+      left: -1px;
+      position: absolute;
+      right: -1px;
+    }
+    .tab-trigger-title {
+      display: block;
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.2;
+    }
+    .tab-trigger.active .tab-trigger-title { font-weight: 850; }
+    .page-tab-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0 10px 10px 10px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, .2);
+      margin-top: -1px;
+      min-height: 0;
+      min-width: 0;
+      overflow: auto;
+      padding: 16px;
+      position: relative;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active.grid { display: grid; }
+    .tab-panel.active.card { display: block; }
+    .tab-panel + .tab-panel { margin-top: 0; }
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1420,7 +1532,16 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       <div class="card"><h3>OAuth</h3><span class="status {{(hasOAuthToken ? "ready" : "warn")}}">{{H(tokenStatus)}}</span></div>
     </section>
 
-    <section class="grid">
+    <section class="tab-control helper-tabs" data-helper-tabs>
+      <div class="tab-control-bar">
+        <div class="tab-list" role="tablist" aria-label="Tesla Fleet Helper sections">
+          <button class="tab-trigger active" type="button" role="tab" aria-selected="true" data-helper-tab="setup"><span class="tab-trigger-title">Setup & Publish</span></button>
+          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="diagnostics"><span class="tab-trigger-title">Diagnostics</span></button>
+          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="harness"><span class="tab-trigger-title">Entity Harness</span></button>
+        </div>
+      </div>
+      <div class="page-tab-panel">
+    <section class="grid tab-panel active" data-helper-tab-panel="setup">
       <div class="card">
         <h2>Setup</h2>
         <form method="post" action="actions/save-settings">
@@ -1454,10 +1575,12 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
             <p style="margin:8px 0 0">Publishes Tesla vehicles and energy sites as MQTT-discovered Home Assistant devices. Realtime vehicle data is optional and only fetched for online vehicles.</p>
           </div>
           <label class="check-row">
+            <input type="hidden" name="ha_mqtt_enabled_present" value="true" />
             <input type="checkbox" name="ha_mqtt_enabled" {{(state.HomeAssistantMqttEnabled ? "checked" : "")}} />
             Enable Home Assistant MQTT publishing
           </label>
           <label class="check-row">
+            <input type="hidden" name="fetch_realtime_vehicle_data_present" value="true" />
             <input type="checkbox" name="fetch_realtime_vehicle_data" {{(state.FetchRealtimeVehicleData ? "checked" : "")}} />
             Fetch realtime vehicle data for online vehicles
           </label>
@@ -1527,7 +1650,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       </div>
     </section>
 
-    <section class="grid" style="margin-top:16px">
+    <section class="grid tab-panel" data-helper-tab-panel="diagnostics">
       <div class="card">
         <h2>Diagnostics</h2>
         <div class="callout">
@@ -1563,7 +1686,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       </div>
     </section>
 
-    <section class="card" style="margin-top:16px">
+    <section class="card tab-panel" data-helper-tab-panel="harness">
       <h2>Tesla API Property Harness</h2>
       <p class="meta">Discover the fields Tesla returns before mapping them into Home Assistant. Values are sanitized, VINs are masked, and token-like fields are redacted.</p>
       <div class="fact-grid" style="margin:12px 0">
@@ -1635,7 +1758,41 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         </table>
       </div>
     </section>
+      </div>
+    </section>
   </main>
+  <script>
+    (() => {
+      const root = document.querySelector("[data-helper-tabs]");
+      if (!root) return;
+      const triggers = Array.from(root.querySelectorAll("[data-helper-tab]"));
+      const panels = Array.from(root.querySelectorAll("[data-helper-tab-panel]"));
+      const activate = tab => {
+        for (const trigger of triggers) {
+          const active = trigger.dataset.helperTab === tab;
+          trigger.classList.toggle("active", active);
+          trigger.setAttribute("aria-selected", active ? "true" : "false");
+        }
+        for (const panel of panels) {
+          panel.classList.toggle("active", panel.dataset.helperTabPanel === tab);
+        }
+        try {
+          window.localStorage.setItem("lms-tesla-helper-tab", tab);
+        } catch {
+        }
+      };
+      for (const trigger of triggers) {
+        trigger.addEventListener("click", () => activate(trigger.dataset.helperTab));
+      }
+      try {
+        const saved = window.localStorage.getItem("lms-tesla-helper-tab");
+        if (saved && triggers.some(trigger => trigger.dataset.helperTab === saved)) {
+          activate(saved);
+        }
+      } catch {
+      }
+    })();
+  </script>
 </body>
 </html>
 """;
