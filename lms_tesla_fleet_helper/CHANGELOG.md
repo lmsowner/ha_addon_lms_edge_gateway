@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7
+
+- Expands Home Assistant MQTT Discovery for Tesla vehicles with richer battery, charging, climate, drive, security, firmware, location, and Fleet key entities.
+- Expands Tesla energy MQTT Discovery with resource, grid, battery, solar, load, and backup reserve entities.
+- Publishes sanitized raw Tesla vehicle and energy scalar properties as disabled-by-default diagnostic entities so advanced fields are available without cluttering the default device view.
+
 ## 0.2.6
 
 - Publishes an LMS Tesla Fleet Helper diagnostic MQTT device so Home Assistant discovery can be verified even when no Tesla resources are returned.

@@ -594,9 +594,28 @@ sealed class TeslaFleetMqttPublisher(
         {
             payload["unit_of_measurement"] = entity.UnitOfMeasurement;
         }
+        if (!string.IsNullOrWhiteSpace(entity.StateClass))
+        {
+            payload["state_class"] = entity.StateClass;
+        }
+        if (!string.IsNullOrWhiteSpace(entity.EntityCategory))
+        {
+            payload["entity_category"] = entity.EntityCategory;
+        }
+        if (!string.IsNullOrWhiteSpace(entity.Icon))
+        {
+            payload["icon"] = entity.Icon;
+        }
         if (!entity.EnabledByDefault)
         {
             payload["enabled_by_default"] = false;
+        }
+        if (entity.ExtraConfig is not null)
+        {
+            foreach (var item in entity.ExtraConfig)
+            {
+                payload[item.Key] = item.Value;
+            }
         }
 
         await PublishJsonAsync(client, BuildDiscoveryTopic(settings, entity), payload, retain: true, cancellationToken);
