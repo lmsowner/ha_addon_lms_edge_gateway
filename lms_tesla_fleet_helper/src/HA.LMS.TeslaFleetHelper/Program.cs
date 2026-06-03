@@ -120,7 +120,7 @@ app.MapPost("/actions/save-settings", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/check-companion-link", async (
@@ -156,7 +156,7 @@ app.MapPost("/actions/check-companion-link", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/generate-key", async (
@@ -179,7 +179,7 @@ app.MapPost("/actions/generate-key", async (
         await store.SaveAsync(state, context.RequestAborted);
     }
 
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/publish", async (
@@ -251,7 +251,7 @@ app.MapPost("/actions/publish", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/verify", async (
@@ -284,7 +284,7 @@ app.MapPost("/actions/verify", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/register-partner", async (
@@ -321,7 +321,7 @@ app.MapPost("/actions/register-partner", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/test-public-key", async (
@@ -361,7 +361,7 @@ app.MapPost("/actions/test-public-key", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/test-tesla-public-key", async (
@@ -411,7 +411,7 @@ app.MapPost("/actions/test-tesla-public-key", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/refresh-token", async (
@@ -441,7 +441,7 @@ app.MapPost("/actions/refresh-token", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/list-vehicles", async (
@@ -479,7 +479,7 @@ app.MapPost("/actions/list-vehicles", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/publish-ha", async (
@@ -521,7 +521,7 @@ app.MapPost("/actions/publish-ha", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/discover-properties", async (
@@ -546,7 +546,7 @@ app.MapPost("/actions/discover-properties", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/clear-properties", async (
@@ -564,7 +564,7 @@ app.MapPost("/actions/clear-properties", async (
         LastChecks = []
     };
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapPost("/actions/preview-ha-projection", async (
@@ -598,7 +598,7 @@ app.MapPost("/actions/preview-ha-projection", async (
     }
 
     await store.SaveAsync(state, context.RequestAborted);
-    return Results.Redirect("/");
+    return RedirectToAppRoot();
 });
 
 app.MapGet("/api/test-harness/status", async (
@@ -1506,7 +1506,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
           <form method="post" action="actions/publish"><button class="primary" type="submit">{{H(publishActionLabel)}}</button></form>
           <form method="post" action="actions/verify"><button type="submit">Verify public URL</button></form>
           {{manualRegisterButton}}
-          <a class="button" href="{{H(oauthStartUrl)}}">Start Tesla OAuth</a>
+          <a class="button" href="{{H(oauthStartUrl)}}" target="_blank" rel="noopener noreferrer">Start Tesla OAuth</a>
           <a class="button {{(hasKey ? "" : "disabled")}}" href="tesla_fleet.key">Export tesla_fleet.key</a>
         </div>
       </div>
@@ -1649,6 +1649,9 @@ static TeslaFleetState ApplyCompanionDefaults(TeslaFleetState state) =>
         EdgeGatewayUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl,
         PublicUpstreamUrl = TeslaFleetDefaults.LocalHelperUpstreamUrl
     };
+
+static IResult RedirectToAppRoot() =>
+    Results.Redirect("../");
 
 static string RenderCompanionChecks(EdgeGatewayCompanionStatus companion)
 {
@@ -1864,9 +1867,9 @@ static string RenderOAuthCompletePage(TeslaFleetState state)
       <span>Virtual key install URL</span>
       <code>{{H(virtualKeyUrl)}}</code>
     </div>
+    <p>Return to the Tesla Fleet Helper tab in Home Assistant after installing the virtual key.</p>
     <div class="actions">
-      <a href="/">Back to Tesla Fleet Helper</a>
-      <a href="{{H(virtualKeyUrl)}}">Install virtual key</a>
+      <a href="{{H(virtualKeyUrl)}}" target="_blank" rel="noopener noreferrer">Install virtual key</a>
     </div>
   </main>
 </body>
@@ -1888,7 +1891,7 @@ static string RenderSimplePage(string title, string message) =>
   <main>
     <h1>{{H(title)}}</h1>
     <p>{{H(message)}}</p>
-    <div class="actions"><a href="/">Back to Tesla Fleet Helper</a></div>
+    <p>Return to the Tesla Fleet Helper tab in Home Assistant to continue.</p>
   </main>
 </body>
 </html>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+- Fixes Home Assistant ingress navigation by using relative redirects after helper actions.
+- Opens Tesla OAuth in a new browser tab so Tesla auth is not framed inside Home Assistant ingress.
+- Removes absolute back links from OAuth and error pages that could navigate to the wrong root.
+
 ## 0.2.4
 
 - Makes LMS Edge Gateway a same-host companion add-on that is auto-detected through the Home Assistant Supervisor API and local health checks.
