@@ -244,13 +244,13 @@ sealed class TeslaFleetStateMapper
     }
 
     private static string ReadString(IReadOnlyDictionary<string, object?> values, params string[] keys) =>
-        FirstNonEmpty(keys.Select(key => values.TryGetValue(key, out var value) ? value?.ToString() : null).ToArray());
+        FirstNonEmpty(keys.Select(key => TryGetRawValue(values, key, out var value) ? value?.ToString() : null).ToArray());
 
     private static int? ReadInt(IReadOnlyDictionary<string, object?> values, params string[] keys)
     {
         foreach (var key in keys)
         {
-            if (!values.TryGetValue(key, out var value) || value is null)
+            if (!TryGetRawValue(values, key, out var value) || value is null)
             {
                 continue;
             }
@@ -299,7 +299,7 @@ sealed class TeslaFleetStateMapper
     {
         foreach (var key in keys)
         {
-            if (!values.TryGetValue(key, out var value) || value is null)
+            if (!TryGetRawValue(values, key, out var value) || value is null)
             {
                 continue;
             }
@@ -332,7 +332,7 @@ sealed class TeslaFleetStateMapper
     {
         foreach (var key in keys)
         {
-            if (!values.TryGetValue(key, out var value) || value is null)
+            if (!TryGetRawValue(values, key, out var value) || value is null)
             {
                 continue;
             }
@@ -370,6 +370,52 @@ sealed class TeslaFleetStateMapper
         }
 
         return null;
+    }
+
+    private static bool TryGetRawValue(
+        IReadOnlyDictionary<string, object?> values,
+        string requestedKey,
+        out object? value)
+    {
+        if (values.TryGetValue(requestedKey, out value))
+        {
+            return true;
+        }
+
+        var normalizedRequestedKey = NormalizeLookupKey(requestedKey);
+        if (normalizedRequestedKey.Length < 3)
+        {
+            value = null;
+            return false;
+        }
+
+        foreach (var item in values)
+        {
+            var normalizedActualKey = NormalizeLookupKey(item.Key);
+            if (normalizedActualKey.Equals(normalizedRequestedKey, StringComparison.OrdinalIgnoreCase) ||
+                normalizedActualKey.EndsWith(normalizedRequestedKey, StringComparison.OrdinalIgnoreCase))
+            {
+                value = item.Value;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static string NormalizeLookupKey(string value)
+    {
+        var builder = new System.Text.StringBuilder(value.Length);
+        foreach (var character in value)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(char.ToLowerInvariant(character));
+            }
+        }
+
+        return builder.ToString();
     }
 
     private static string FirstNonEmpty(params string?[] values) =>

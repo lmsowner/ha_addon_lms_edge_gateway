@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.21
+
+- Resolves vehicle state fields by normalized raw Tesla API path so diagnostics values flow into the typed Home Assistant MQTT payload even when Tesla changes casing or nesting.
+- Adds publish diagnostics showing the exact vehicle `battery_level`, `charging_state`, `charge_limit`, and `charging_amps` values sent to Home Assistant MQTT.
+
 ## 0.2.20
 
 - Maps vehicle charge limit and charging amps from both snake_case vehicle data and CamelCase Fleet/telemetry field names.

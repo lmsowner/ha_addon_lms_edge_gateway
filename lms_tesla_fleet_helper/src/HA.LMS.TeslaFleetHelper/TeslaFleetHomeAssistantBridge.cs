@@ -650,6 +650,7 @@ sealed class TeslaFleetMqttPublisher(
         {
             checks.Add($"State topics: {string.Join(", ", projection.States.Select(topic => topic.Topic).Take(6))}.");
         }
+        checks.AddRange(BuildVehicleStatePayloadChecks(projection));
         checks.Add($"Snapshot source contained {snapshot.Vehicles.Count} vehicle(s) and {snapshot.EnergySites.Count} energy site(s).");
         checks.AddRange(snapshot.Checks);
         return new TeslaHomeAssistantPublishResult(
@@ -738,6 +739,28 @@ sealed class TeslaFleetMqttPublisher(
 
         await PublishJsonAsync(client, BuildDiscoveryTopic(settings, entity), payload, retain: true, cancellationToken);
     }
+
+    private static IEnumerable<string> BuildVehicleStatePayloadChecks(HomeAssistantMqttProjection projection)
+    {
+        foreach (var state in projection.States.Where(state => state.Topic.Contains("/vehicles/", StringComparison.OrdinalIgnoreCase)).Take(6))
+        {
+            state.Payload.TryGetValue("display_name", out var displayName);
+            state.Payload.TryGetValue("charge_limit", out var chargeLimit);
+            state.Payload.TryGetValue("charging_amps", out var chargingAmps);
+            state.Payload.TryGetValue("battery_level", out var batteryLevel);
+            state.Payload.TryGetValue("charging_state", out var chargingState);
+            yield return
+                $"Vehicle HA state payload {displayName ?? state.Topic}: battery_level={FormatCheckValue(batteryLevel)}, charging_state={FormatCheckValue(chargingState)}, charge_limit={FormatCheckValue(chargeLimit)}, charging_amps={FormatCheckValue(chargingAmps)}.";
+        }
+    }
+
+    private static string FormatCheckValue(object? value) =>
+        value switch
+        {
+            null => "null",
+            string text when string.IsNullOrWhiteSpace(text) => "blank",
+            _ => value.ToString() ?? "null"
+        };
 
     private static async Task<int> PublishRetiredDiscoveryAsync(
         IMqttClient client,
