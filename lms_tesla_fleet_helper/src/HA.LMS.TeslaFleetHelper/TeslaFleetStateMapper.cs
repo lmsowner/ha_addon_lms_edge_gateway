@@ -109,7 +109,7 @@ sealed class TeslaFleetStateMapper
                 CalculateEnergyRemainingWh(
                     nameplateEnergyWh,
                     batteryPercentageValue ?? batteryPercentage,
-                    ReadDouble(values, "total_pack_energy")),
+                    ReadDouble(values, "energy_left", "total_pack_energy")),
                 ReadString(values, "island_status"),
                 ReadBool(values, "grid_services_active"),
                 ReadBool(values, "storm_mode_active")),

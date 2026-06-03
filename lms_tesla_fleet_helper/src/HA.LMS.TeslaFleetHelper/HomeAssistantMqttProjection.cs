@@ -178,6 +178,7 @@ sealed class HomeAssistantMqttProjectionMapper
     [
         Sensor(deviceId, "display_name", "Display Name", stateTopic, "{{ value_json.display_name }}"),
         Sensor(deviceId, "site_id", "Site ID", stateTopic, "{{ value_json.site_id }}", enabledByDefault: false, entityCategory: "diagnostic"),
+        Sensor(deviceId, "energy_data_status", "Energy Data Status", stateTopic, "{{ value_json.energy_data_status }}"),
         Sensor(deviceId, "resource_type", "Resource Type", stateTopic, "{{ value_json.resource_type }}"),
         Sensor(deviceId, "gateway_type", "Gateway Type", stateTopic, "{{ value_json.gateway_type }}", enabledByDefault: false, entityCategory: "diagnostic"),
         Sensor(deviceId, "battery_type", "Battery Type", stateTopic, "{{ value_json.battery_type }}", enabledByDefault: false, entityCategory: "diagnostic"),
@@ -293,6 +294,7 @@ sealed class HomeAssistantMqttProjectionMapper
         {
             ["site_id"] = site.SiteId,
             ["display_name"] = site.DisplayName,
+            ["energy_data_status"] = ResolveEnergyDataStatus(site),
             ["resource_type"] = site.ResourceType,
             ["gateway_type"] = site.Capabilities.GatewayType,
             ["battery_type"] = site.Capabilities.BatteryType,
@@ -428,6 +430,23 @@ sealed class HomeAssistantMqttProjectionMapper
         return $"Tesla Gateway - {displayName}";
     }
 
+    private static string ResolveEnergyDataStatus(LmsTeslaEnergySiteState site)
+    {
+        var hasSiteInfo = site.RawProperties.Keys.Any(key => key.StartsWith("site_info.", StringComparison.OrdinalIgnoreCase));
+        var hasLiveStatus =
+            site.RawProperties.ContainsKey("energy_left") ||
+            site.RawProperties.ContainsKey("percentage_charged") ||
+            site.RawProperties.ContainsKey("battery_power") ||
+            site.RawProperties.ContainsKey("grid_status");
+        return (hasSiteInfo, hasLiveStatus) switch
+        {
+            (true, true) => "full",
+            (true, false) => "site_info_only",
+            (false, true) => "live_status_only",
+            _ => "products_only"
+        };
+    }
+
     private static int ResolvePowerwallCount(LmsTeslaEnergySiteState site)
     {
         if (site.Capabilities.PowerwallCount is > 0)
@@ -458,17 +477,8 @@ sealed class HomeAssistantMqttProjectionMapper
             return Math.Clamp(count, 1, 16);
         }
 
-        return LooksBatteryBacked(site) ? 1 : 0;
+        return 0;
     }
-
-    private static bool LooksBatteryBacked(LmsTeslaEnergySiteState site) =>
-        site.ResourceType.Contains("battery", StringComparison.OrdinalIgnoreCase) ||
-        site.Live.BatteryPercentage.HasValue ||
-        site.Live.BackupReservePercent.HasValue ||
-        site.RawProperties.Keys.Any(key =>
-            key.Contains("battery", StringComparison.OrdinalIgnoreCase) ||
-            key.Contains("backup_reserve", StringComparison.OrdinalIgnoreCase) ||
-            key.Contains("percentage_charged", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsPowerwallArrayPath(string path)
     {

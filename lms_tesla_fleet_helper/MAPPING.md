@@ -97,6 +97,10 @@ Energy-scoped endpoints:
 - live status
 - later: energy history where supported
 
+Energy endpoints require Tesla's `energy_device_data` OAuth scope. Without it, `/products`
+can still return a limited energy-site shell, but `site_info` and `live_status` will not
+provide the Gateway/Powerwall data used by Home Assistant MQTT projection.
+
 Command endpoints:
 
 - initially disabled in HA

@@ -100,6 +100,7 @@ sealed record TeslaApiEnergyLiveStatusDto(
     [property: JsonPropertyName("grid_status")] string? GridStatus,
     [property: JsonPropertyName("percentage_charged")] double? PercentageCharged,
     [property: JsonPropertyName("battery_percentage")] double? BatteryPercentage,
+    [property: JsonPropertyName("energy_left")] double? EnergyLeftWh,
     [property: JsonPropertyName("total_pack_energy")] double? TotalPackEnergyWh,
     [property: JsonPropertyName("solar_power")] double? SolarPowerWatts,
     [property: JsonPropertyName("load_power")] double? LoadPowerWatts,

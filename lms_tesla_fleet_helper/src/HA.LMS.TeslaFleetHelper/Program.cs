@@ -11,7 +11,8 @@ const string TeslaPublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-
 const string TeslaPublicKeyContentType = "application/x-pem-file";
 const string TeslaAuthorizeEndpoint = "https://auth.tesla.com/oauth2/v3/authorize";
 const string DefaultFleetApiAudience = "https://fleet-api.prd.na.vn.cloud.tesla.com";
-const string DefaultTeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds";
+const string DefaultTeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data";
+const string EnergyDeviceDataScope = "energy_device_data";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -788,9 +789,11 @@ app.MapGet(TeslaFleetDefaults.OAuthStartPath, async (
 
         var oauthState = CreateUrlSafeToken();
         var nonce = CreateUrlSafeToken();
+        var scopes = NormalizeScopes(state.TeslaScopes);
         var updated = state with
         {
             OriginDomain = originDomain,
+            TeslaScopes = scopes,
             OAuthState = oauthState,
             OAuthNonce = nonce,
             OAuthStartedUtc = DateTimeOffset.UtcNow,
@@ -798,7 +801,11 @@ app.MapGet(TeslaFleetDefaults.OAuthStartPath, async (
             OAuthStartUrl = BuildOAuthStartUrl(originDomain),
             LastStatus = "OAuth started",
             LastMessage = "Redirecting to Tesla authorization.",
-            LastChecks = []
+            LastChecks =
+            [
+                $"Requesting Tesla OAuth scopes: {scopes}.",
+                "Energy data requires the energy_device_data scope."
+            ]
         };
         await store.SaveAsync(updated, cancellationToken);
         return Results.Redirect(BuildTeslaAuthorizeUrl(updated, oauthState, nonce));
@@ -871,7 +878,7 @@ static async Task<IResult> HandleOAuthCallbackAsync(
             code,
             BuildOAuthRedirectUri(originDomain),
             state.FleetApiAudience,
-            state.TeslaScopes,
+            NormalizeScopes(state.TeslaScopes),
             context.RequestAborted);
         var expiresUtc = token.ExpiresIn > 0
             ? DateTimeOffset.UtcNow.AddSeconds(token.ExpiresIn)
@@ -1241,6 +1248,14 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     var projectionPreviewSummary = string.IsNullOrWhiteSpace(state.LastHomeAssistantProjectionPreviewSummary)
         ? "No Home Assistant projection preview has been run yet."
         : state.LastHomeAssistantProjectionPreviewSummary;
+    var energyScopeWarning = HasScope(state.TeslaScopes, EnergyDeviceDataScope)
+        ? string.Empty
+        : """
+          <div class="callout" style="margin:10px 0 0">
+            <strong>Reconnect Tesla OAuth for energy data</strong>
+            <p style="margin:8px 0 0">This setup was authorized before the Energy Product Information scope was added. Start Tesla OAuth again so live Powerwall and Gateway data can be read.</p>
+          </div>
+        """;
 
     return $$"""
 <!doctype html>
@@ -1570,6 +1585,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
             Tesla OAuth scopes
             <input name="tesla_scopes" value="{{H(state.TeslaScopes)}}" autocomplete="off" />
           </label>
+          {{energyScopeWarning}}
           <div class="callout" style="margin:14px 0">
             <strong>Home Assistant MQTT Discovery</strong>
             <p style="margin:8px 0 0">Publishes Tesla vehicles and energy sites as MQTT-discovered Home Assistant devices. Realtime vehicle data is optional and only fetched for online vehicles.</p>
@@ -1983,8 +1999,18 @@ static string NormalizeScopes(string value)
         scopes = [.. scopes, "offline_access"];
     }
 
+    if (!scopes.Contains(EnergyDeviceDataScope, StringComparer.Ordinal))
+    {
+        scopes = [.. scopes, EnergyDeviceDataScope];
+    }
+
     return string.Join(' ', scopes);
 }
+
+static bool HasScope(string value, string scope) =>
+    (value ?? string.Empty)
+        .Split([' ', ',', ';', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Contains(scope, StringComparer.Ordinal);
 
 static string CreateUrlSafeToken()
 {
@@ -2238,7 +2264,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
                 ? TeslaFleetDefaults.DefaultFleetApiAudience
                 : TeslaFleetDefaults.ResolveFleetApiAudience(state.FleetApiAudience, state.AccessToken),
             TeslaScopes = string.IsNullOrWhiteSpace(state.TeslaScopes)
-                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds"
+                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data"
                 : state.TeslaScopes,
             PublicKeyUrl = string.IsNullOrWhiteSpace(state.PublicKeyUrl) && !string.IsNullOrWhiteSpace(state.OriginDomain)
                 ? TeslaFleetDefaults.BuildPublicKeyUrl(state.OriginDomain)
@@ -2878,7 +2904,7 @@ sealed class TeslaFleetOAuthClient(HttpClient httpClient)
             ["audience"] = string.IsNullOrWhiteSpace(audience) ? TeslaFleetDefaults.DefaultFleetApiAudience : audience.Trim(),
             ["redirect_uri"] = redirectUri.Trim(),
             ["scope"] = string.IsNullOrWhiteSpace(scopes)
-                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds"
+                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data"
                 : scopes.Trim()
         });
         using var response = await httpClient.PostAsync("https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token", content, cancellationToken);
@@ -2915,10 +2941,7 @@ sealed class TeslaFleetOAuthClient(HttpClient httpClient)
             ["client_id"] = clientId.Trim(),
             ["client_secret"] = clientSecret.Trim(),
             ["refresh_token"] = refreshToken.Trim(),
-            ["audience"] = string.IsNullOrWhiteSpace(audience) ? TeslaFleetDefaults.DefaultFleetApiAudience : audience.Trim(),
-            ["scope"] = string.IsNullOrWhiteSpace(scopes)
-                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds"
-                : scopes.Trim()
+            ["audience"] = string.IsNullOrWhiteSpace(audience) ? TeslaFleetDefaults.DefaultFleetApiAudience : audience.Trim()
         });
         using var response = await httpClient.PostAsync("https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token", content, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -3110,7 +3133,7 @@ sealed class TeslaFleetPartnerClient(HttpClient httpClient)
             ["client_id"] = clientId.Trim(),
             ["client_secret"] = clientSecret.Trim(),
             ["audience"] = audience.Trim(),
-            ["scope"] = "openid vehicle_device_data vehicle_cmds vehicle_charging_cmds"
+            ["scope"] = "openid vehicle_device_data vehicle_cmds vehicle_charging_cmds energy_device_data"
         });
         using var response = await httpClient.PostAsync("https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token", content, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -3301,7 +3324,7 @@ sealed record TeslaFleetState(
     string TeslaClientId = "",
     string TeslaClientSecret = "",
     string FleetApiAudience = "https://fleet-api.prd.na.vn.cloud.tesla.com",
-    string TeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds",
+    string TeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data",
     string PublicKeyPem = "",
     string PrivateKeyPath = "",
     DateTimeOffset? KeyGeneratedUtc = null,

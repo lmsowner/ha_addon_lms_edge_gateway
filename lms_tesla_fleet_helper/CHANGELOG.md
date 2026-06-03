@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.12
+
+- Adds the required Tesla `energy_device_data` OAuth scope for Energy Product Information.
+- Stops inventing a single Powerwall when `site_info` is unavailable; Powerwall count now comes from real Tesla site info or returned arrays.
+- Reads `energy_left` from live status and exposes an Energy Data Status entity so missing energy authorization is visible in Home Assistant.
+
 ## 0.2.11
 
 - Fixes Tesla energy battery percentage parsing when Fleet API returns decimal `percentage_charged` values.

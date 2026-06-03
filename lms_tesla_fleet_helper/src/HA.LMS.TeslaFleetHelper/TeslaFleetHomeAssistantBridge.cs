@@ -224,6 +224,12 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
         if (!response.IsSuccessStatusCode)
         {
             checks.Add($"GET {path} response: {TruncateForDiagnostics(body)}");
+            if (path.StartsWith("/api/1/energy_sites/", StringComparison.OrdinalIgnoreCase) &&
+                body.Contains("missing scopes", StringComparison.OrdinalIgnoreCase))
+            {
+                checks.Add("Tesla energy endpoints require the energy_device_data OAuth scope. Start Tesla OAuth again from the Helper setup page to grant Energy Product Information access.");
+            }
+
             return null;
         }
 
