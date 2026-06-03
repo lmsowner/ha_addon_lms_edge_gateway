@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -24,6 +25,11 @@ builder.Services.AddSingleton<TeslaFleetPropertyHarness>();
 builder.Services.AddSingleton<TeslaFleetStateMapper>();
 builder.Services.AddSingleton<HomeAssistantMqttProjectionMapper>();
 builder.Services.AddHostedService<TeslaFleetHomeAssistantPublisherService>();
+builder.Services.AddHttpClient<EdgeGatewayCompanionResolver>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(8);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
+});
 builder.Services.AddHttpClient<EdgeGatewayPublicAssetClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(45);
@@ -54,10 +60,14 @@ var app = builder.Build();
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = ProductName }));
 
-app.MapGet("/", async (TeslaFleetStore store) =>
+app.MapGet("/", async (
+    TeslaFleetStore store,
+    EdgeGatewayCompanionResolver companionResolver,
+    CancellationToken cancellationToken) =>
 {
-    var state = await store.LoadAsync();
-    return Results.Content(RenderPage(state), "text/html; charset=utf-8");
+    var state = ApplyCompanionDefaults(await store.LoadAsync(cancellationToken));
+    var companion = await companionResolver.ResolveAsync(cancellationToken);
+    return Results.Content(RenderPage(state, companion), "text/html; charset=utf-8");
 });
 
 app.MapPost("/actions/save-settings", async (
@@ -70,9 +80,9 @@ app.MapPost("/actions/save-settings", async (
     {
         state = state with
         {
-            EdgeGatewayUrl = NormalizeHttpUrl(form["edge_gateway_url"].ToString()),
+            EdgeGatewayUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl,
             OriginDomain = NormalizeDomain(form["origin_domain"].ToString(), required: false),
-            PublicUpstreamUrl = NormalizeHttpUrl(form["public_upstream_url"].ToString(), state.PublicUpstreamUrl),
+            PublicUpstreamUrl = TeslaFleetDefaults.LocalHelperUpstreamUrl,
             TeslaClientId = form["tesla_client_id"].ToString().Trim(),
             TeslaClientSecret = string.IsNullOrWhiteSpace(form["tesla_client_secret"].ToString())
                 ? state.TeslaClientSecret
@@ -116,11 +126,14 @@ app.MapPost("/actions/save-settings", async (
 app.MapPost("/actions/check-companion-link", async (
     HttpContext context,
     TeslaFleetStore store,
+    EdgeGatewayCompanionResolver companionResolver,
     EdgeGatewayPublicAssetClient edgeGatewayClient) =>
 {
-    var state = await store.LoadAsync();
+    var state = ApplyCompanionDefaults(await store.LoadAsync(context.RequestAborted));
+    EdgeGatewayCompanionStatus? companion = null;
     try
     {
+        companion = await companionResolver.ResolveAsync(context.RequestAborted);
         var result = await edgeGatewayClient.CheckCompanionLinkAsync(
             state.EdgeGatewayUrl,
             state.PublicUpstreamUrl,
@@ -129,7 +142,7 @@ app.MapPost("/actions/check-companion-link", async (
         {
             LastStatus = result.Succeeded ? "Companion link healthy" : "Companion link failed",
             LastMessage = result.Summary,
-            LastChecks = result.Checks
+            LastChecks = companion.Checks.Concat(result.Checks).ToList()
         };
     }
     catch (Exception exception)
@@ -138,7 +151,7 @@ app.MapPost("/actions/check-companion-link", async (
         {
             LastStatus = "Companion link failed",
             LastMessage = exception.Message,
-            LastChecks = []
+            LastChecks = companion?.Checks ?? []
         };
     }
 
@@ -1128,8 +1141,9 @@ static void TrySetOwnerOnly(string path)
     }
 }
 
-static string RenderPage(TeslaFleetState state)
+static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? companion = null)
 {
+    companion ??= EdgeGatewayCompanionStatus.Unknown();
     var hasKey = !string.IsNullOrWhiteSpace(state.PublicKeyPem) &&
                  !string.IsNullOrWhiteSpace(state.PrivateKeyPath) &&
                  File.Exists(state.PrivateKeyPath);
@@ -1150,6 +1164,11 @@ static string RenderPage(TeslaFleetState state)
     var isPartnerRegistered = state.PartnerRegistrationStatus.Equals("Registered", StringComparison.OrdinalIgnoreCase);
     var keyActionLabel = hasKey ? "Rotate key" : "Generate key";
     var publishActionLabel = isPartnerRegistered ? "Republish Edge Gateway assets" : "Publish + register";
+    var companionStatusClass = companion.EdgeGatewayHealthy ? "ready" : companion.EdgeGatewayInstalled ? "warn" : "fail";
+    var companionLabel = companion.EdgeGatewayHealthy
+        ? "Auto-detected"
+        : companion.EdgeGatewayInstalled ? "Installed, not reachable" : "Install Edge Gateway";
+    var companionChecks = RenderCompanionChecks(companion);
     var keyRotationCallout = hasKey
         ? """
         <div class="callout warn" style="margin:12px 0">
@@ -1232,7 +1251,7 @@ static string RenderPage(TeslaFleetState state)
     h3 { font-size: 15px; margin-bottom: 8px; }
     .meta { color: var(--muted); line-height: 1.5; max-width: 820px; }
     .grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; align-items: start; }
-    .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+    .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1394,6 +1413,7 @@ static string RenderPage(TeslaFleetState state)
     </header>
 
     <section class="cards">
+      <div class="card"><h3>Edge Gateway</h3><span class="status {{companionStatusClass}}">{{H(companionLabel)}}</span></div>
       <div class="card"><h3>Key</h3><span class="status {{(hasKey ? "ready" : "warn")}}">{{(hasKey ? "EC P-256 ready" : "Generate required")}}</span></div>
       <div class="card"><h3>Publish</h3><span class="status {{(!string.IsNullOrWhiteSpace(state.PublicAssetId?.ToString()) ? "ready" : "warn")}}">{{(!string.IsNullOrWhiteSpace(state.PublicAssetId?.ToString()) ? "Edge Gateway asset linked" : "Not published")}}</span></div>
       <div class="card"><h3>Tesla</h3><span class="status {{(isPartnerRegistered ? "ready" : "warn")}}">{{H(partnerStatus)}}</span></div>
@@ -1404,14 +1424,11 @@ static string RenderPage(TeslaFleetState state)
       <div class="card">
         <h2>Setup</h2>
         <form method="post" action="actions/save-settings">
-          <label>
-            Edge Gateway API URL
-            <input name="edge_gateway_url" value="{{H(state.EdgeGatewayUrl)}}" autocomplete="off" />
-          </label>
-          <label>
-            Helper upstream URL for Edge Gateway
-            <input name="public_upstream_url" value="{{H(state.PublicUpstreamUrl)}}" autocomplete="off" />
-          </label>
+          <div class="callout" style="margin:0 0 14px">
+            <strong>LMS Edge Gateway companion</strong>
+            <p style="margin:8px 0 0">{{H(companion.Summary)}}</p>
+            <ul>{{companionChecks}}</ul>
+          </div>
           <label>
             Tesla origin domain
             <input name="origin_domain" value="{{H(state.OriginDomain)}}" placeholder="tesla.example.com" autocomplete="off" />
@@ -1625,6 +1642,23 @@ static string RenderPage(TeslaFleetState state)
 }
 
 static string H(string? value) => HtmlEncoder.Default.Encode(value ?? string.Empty);
+
+static TeslaFleetState ApplyCompanionDefaults(TeslaFleetState state) =>
+    state with
+    {
+        EdgeGatewayUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl,
+        PublicUpstreamUrl = TeslaFleetDefaults.LocalHelperUpstreamUrl
+    };
+
+static string RenderCompanionChecks(EdgeGatewayCompanionStatus companion)
+{
+    if (companion.Checks.Count == 0)
+    {
+        return "<li>No companion checks have run yet.</li>";
+    }
+
+    return string.Concat(companion.Checks.Select(check => $"<li>{H(check)}</li>"));
+}
 
 static string BuildStatusClass(string? status)
 {
@@ -1876,7 +1910,7 @@ static string SimplePageCss() =>
     a:last-child { background:var(--accent); border-color:var(--accent); color:#061316; }
     """;
 
-static string NormalizeHttpUrl(string value, string defaultUrl = "http://127.0.0.1:5000")
+static string NormalizeHttpUrl(string value, string defaultUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl)
 {
     var trimmed = (value ?? string.Empty).Trim().TrimEnd('/');
     if (string.IsNullOrWhiteSpace(trimmed))
@@ -2020,10 +2054,6 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
     private readonly string optionsJsonPath = ResolvePath(
         configuration["TeslaFleetHelper:OptionsJsonPath"] ?? DefaultOptionsJsonPath(environment),
         environment);
-    private readonly string configuredEdgeGatewayUrl = TeslaFleetDefaults.NormalizeHttpUrl(
-        configuration["TeslaFleetHelper:EdgeGatewayUrl"] ?? "http://127.0.0.1:5000");
-    private readonly string configuredPublicUpstreamUrl = TeslaFleetDefaults.NormalizeHttpUrl(
-        configuration["TeslaFleetHelper:PublicUpstreamUrl"] ?? "http://127.0.0.1:5055");
 
     public string PrivateKeyPath => Path.Combine(dataRoot, "secrets", "tesla_fleet.key");
 
@@ -2042,12 +2072,8 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
                     new TeslaFleetState();
         return state with
         {
-            EdgeGatewayUrl = string.IsNullOrWhiteSpace(state.EdgeGatewayUrl)
-                ? ReadDefaultEdgeGatewayUrl()
-                : state.EdgeGatewayUrl,
-            PublicUpstreamUrl = string.IsNullOrWhiteSpace(state.PublicUpstreamUrl)
-                ? ReadDefaultPublicUpstreamUrl()
-                : state.PublicUpstreamUrl,
+            EdgeGatewayUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl,
+            PublicUpstreamUrl = TeslaFleetDefaults.LocalHelperUpstreamUrl,
             FleetApiAudience = string.IsNullOrWhiteSpace(state.FleetApiAudience)
                 ? TeslaFleetDefaults.DefaultFleetApiAudience
                 : TeslaFleetDefaults.ResolveFleetApiAudience(state.FleetApiAudience, state.AccessToken),
@@ -2088,37 +2114,10 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
         File.Move(temporaryPath, StatePath, overwrite: true);
     }
 
-    private string ReadDefaultEdgeGatewayUrl()
-    {
-        try
-        {
-            if (File.Exists(optionsJsonPath))
-            {
-                using var document = JsonDocument.Parse(File.ReadAllText(optionsJsonPath));
-                if (document.RootElement.TryGetProperty("edge_gateway_url", out var url) &&
-                    !string.IsNullOrWhiteSpace(url.GetString()))
-                {
-                    return TeslaFleetDefaults.NormalizeHttpUrl(url.GetString()!);
-                }
-            }
-        }
-        catch
-        {
-            // Fall back to the standard host-network Edge Gateway control-plane URL.
-        }
-
-        return configuredEdgeGatewayUrl;
-    }
-
-    private string ReadDefaultPublicUpstreamUrl() =>
-        TeslaFleetDefaults.NormalizeHttpUrl(
-            ReadOptionString("public_upstream_url", configuredPublicUpstreamUrl),
-            configuredPublicUpstreamUrl);
-
     private TeslaFleetState ReadDefaultState() =>
         new(
-            EdgeGatewayUrl: ReadDefaultEdgeGatewayUrl(),
-            PublicUpstreamUrl: ReadDefaultPublicUpstreamUrl(),
+            EdgeGatewayUrl: TeslaFleetDefaults.LocalEdgeGatewayUrl,
+            PublicUpstreamUrl: TeslaFleetDefaults.LocalHelperUpstreamUrl,
             HomeAssistantMqttEnabled: ReadOptionBool("homeassistant_mqtt_enabled", false),
             FetchRealtimeVehicleData: ReadOptionBool("fetch_realtime_vehicle_data", false),
             MqttHost: ReadOptionString("mqtt_host", "core-mosquitto"),
@@ -2254,6 +2253,208 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
     }
 }
 
+sealed class EdgeGatewayCompanionResolver(HttpClient httpClient)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    public async Task<EdgeGatewayCompanionStatus> ResolveAsync(CancellationToken cancellationToken)
+    {
+        var checks = new List<string>();
+        var supervisorAvailable = false;
+        var installed = false;
+        var started = false;
+        var slug = string.Empty;
+        var version = string.Empty;
+
+        var supervisorToken = Environment.GetEnvironmentVariable("SUPERVISOR_TOKEN");
+        if (string.IsNullOrWhiteSpace(supervisorToken))
+        {
+            checks.Add("Home Assistant Supervisor token is not available in this runtime; using local Edge Gateway health detection.");
+        }
+        else
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, "http://supervisor/addons");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", supervisorToken);
+                using var response = await httpClient.SendAsync(request, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                supervisorAvailable = response.IsSuccessStatusCode;
+                checks.Add($"Supervisor add-on lookup returned HTTP {(int)response.StatusCode}.");
+                if (response.IsSuccessStatusCode)
+                {
+                    (installed, started, slug, version) = ReadEdgeGatewayAddon(body);
+                    if (installed)
+                    {
+                        checks.Add(string.IsNullOrWhiteSpace(version)
+                            ? $"Detected LMS Edge Gateway add-on {slug}."
+                            : $"Detected LMS Edge Gateway add-on {slug} version {version}.");
+                        checks.Add(started
+                            ? "LMS Edge Gateway add-on is started."
+                            : "LMS Edge Gateway add-on is installed but not started.");
+                    }
+                    else
+                    {
+                        checks.Add("LMS Edge Gateway add-on is not installed in this Supervisor instance.");
+                    }
+                }
+                else
+                {
+                    checks.Add($"Supervisor response: {TruncateForDiagnostics(body)}");
+                }
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                checks.Add($"Supervisor add-on lookup failed: {exception.Message}");
+            }
+        }
+
+        var edgeGatewayHealthy = await CheckEdgeGatewayHealthAsync(checks, cancellationToken);
+        if (edgeGatewayHealthy && !installed && !supervisorAvailable)
+        {
+            installed = true;
+            started = true;
+            slug = "lms_edge_gateway";
+        }
+
+        var summary = edgeGatewayHealthy
+            ? "LMS Edge Gateway was auto-detected on this Home Assistant host."
+            : installed
+                ? "LMS Edge Gateway is installed, but the helper cannot reach it yet. Start or update the Edge Gateway add-on."
+                : "Install and start LMS Edge Gateway on this Home Assistant host before publishing Tesla Fleet routes.";
+
+        return new EdgeGatewayCompanionStatus(
+            supervisorAvailable,
+            installed,
+            started,
+            edgeGatewayHealthy,
+            slug,
+            version,
+            summary,
+            checks);
+    }
+
+    private async Task<bool> CheckEdgeGatewayHealthAsync(List<string> checks, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await httpClient.GetAsync(
+                $"{TeslaFleetDefaults.LocalEdgeGatewayUrl}/healthz",
+                cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            checks.Add($"Local Edge Gateway health returned HTTP {(int)response.StatusCode}.");
+            if (!response.IsSuccessStatusCode)
+            {
+                checks.Add($"Edge Gateway health response: {TruncateForDiagnostics(body)}");
+                return false;
+            }
+
+            return body.Contains("Edge Gateway", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            checks.Add($"Local Edge Gateway health check failed: {exception.Message}");
+            return false;
+        }
+    }
+
+    private static (bool Installed, bool Started, string Slug, string Version) ReadEdgeGatewayAddon(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        foreach (var addon in EnumerateAddons(document.RootElement))
+        {
+            var slug = ReadString(addon, "slug");
+            var name = ReadString(addon, "name");
+            if (!IsEdgeGatewayAddon(slug, name))
+            {
+                continue;
+            }
+
+            return (
+                ReadBool(addon, "installed", defaultValue: true),
+                ReadString(addon, "state").Equals("started", StringComparison.OrdinalIgnoreCase),
+                slug,
+                ReadString(addon, "version"));
+        }
+
+        return (false, false, string.Empty, string.Empty);
+    }
+
+    private static IEnumerable<JsonElement> EnumerateAddons(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("data", out var data))
+        {
+            if (data.ValueKind == JsonValueKind.Object &&
+                data.TryGetProperty("addons", out var dataAddons) &&
+                dataAddons.ValueKind == JsonValueKind.Array)
+            {
+                return dataAddons.EnumerateArray();
+            }
+
+            if (data.ValueKind == JsonValueKind.Array)
+            {
+                return data.EnumerateArray();
+            }
+        }
+
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("addons", out var addons) &&
+            addons.ValueKind == JsonValueKind.Array)
+        {
+            return addons.EnumerateArray();
+        }
+
+        return [];
+    }
+
+    private static bool IsEdgeGatewayAddon(string slug, string name) =>
+        slug.Equals("lms_edge_gateway", StringComparison.OrdinalIgnoreCase) ||
+        slug.EndsWith("_lms_edge_gateway", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("LMS Edge Gateway for Home Assistant", StringComparison.OrdinalIgnoreCase);
+
+    private static string ReadString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return string.Empty;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString() ?? string.Empty,
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Number => property.GetRawText(),
+            _ => string.Empty
+        };
+    }
+
+    private static bool ReadBool(JsonElement element, string propertyName, bool defaultValue)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return defaultValue;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String => bool.TryParse(property.GetString(), out var parsed) ? parsed : defaultValue,
+            _ => defaultValue
+        };
+    }
+
+    private static string TruncateForDiagnostics(string value) =>
+        string.IsNullOrWhiteSpace(value) || value.Length <= 600
+            ? value
+            : $"{value[..600]}...";
+}
+
 sealed class EdgeGatewayPublicAssetClient(HttpClient httpClient)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -2268,7 +2469,7 @@ sealed class EdgeGatewayPublicAssetClient(HttpClient httpClient)
     {
         var checks = new List<string>();
         var normalizedEdgeGatewayUrl = TeslaFleetDefaults.NormalizeHttpUrl(edgeGatewayUrl);
-        var normalizedUpstreamUrl = TeslaFleetDefaults.NormalizeHttpUrl(upstreamUrl, "http://127.0.0.1:5055");
+        var normalizedUpstreamUrl = TeslaFleetDefaults.NormalizeHttpUrl(upstreamUrl, TeslaFleetDefaults.LocalHelperUpstreamUrl);
 
         using var edgeHealth = await httpClient.GetAsync(
             $"{normalizedEdgeGatewayUrl}/healthz",
@@ -2911,9 +3112,31 @@ sealed record TeslaCompanionLinkResult(
     string Summary,
     List<string> Checks);
 
+sealed record EdgeGatewayCompanionStatus(
+    bool SupervisorAvailable,
+    bool EdgeGatewayInstalled,
+    bool EdgeGatewayStarted,
+    bool EdgeGatewayHealthy,
+    string Slug,
+    string Version,
+    string Summary,
+    List<string> Checks)
+{
+    public static EdgeGatewayCompanionStatus Unknown() =>
+        new(
+            false,
+            false,
+            false,
+            false,
+            string.Empty,
+            string.Empty,
+            "LMS Edge Gateway companion status has not been checked yet.",
+            []);
+}
+
 sealed record TeslaFleetState(
-    string EdgeGatewayUrl = "http://127.0.0.1:5000",
-    string PublicUpstreamUrl = "http://127.0.0.1:5055",
+    string EdgeGatewayUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl,
+    string PublicUpstreamUrl = TeslaFleetDefaults.LocalHelperUpstreamUrl,
     string OriginDomain = "",
     string TeslaClientId = "",
     string TeslaClientSecret = "",
@@ -3061,6 +3284,8 @@ sealed record TeslaTokenResponse(
 
 static class TeslaFleetDefaults
 {
+    public const string LocalEdgeGatewayUrl = "http://127.0.0.1:5000";
+    public const string LocalHelperUpstreamUrl = "http://127.0.0.1:5055";
     public const string DefaultFleetApiAudience = "https://fleet-api.prd.na.vn.cloud.tesla.com";
     public const string EuFleetApiAudience = "https://fleet-api.prd.eu.vn.cloud.tesla.com";
     public const string PublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-key.pem";
@@ -3085,7 +3310,7 @@ static class TeslaFleetDefaults
             ? string.Empty
             : $"https://{domain.Trim().TrimEnd('.')}{OAuthCallbackPath}";
 
-    public static string NormalizeHttpUrl(string value, string defaultUrl = "http://127.0.0.1:5000")
+    public static string NormalizeHttpUrl(string value, string defaultUrl = LocalEdgeGatewayUrl)
     {
         var trimmed = (value ?? string.Empty).Trim().TrimEnd('/');
         if (string.IsNullOrWhiteSpace(trimmed))

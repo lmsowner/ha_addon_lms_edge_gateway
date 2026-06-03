@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4
+
+- Makes LMS Edge Gateway a same-host companion add-on that is auto-detected through the Home Assistant Supervisor API and local health checks.
+- Removes normal setup/options fields for Edge Gateway URL and Helper upstream URL.
+- Forces the internal same-host add-on bridge so Tesla setup does not require users to enter IP addresses or ports.
+
 ## 0.2.3
 
 - Fixes Home Assistant Supervisor source builds by using the proper `build_from` architecture map instead of passing a literal `{arch}` Docker build argument.

@@ -16,13 +16,8 @@ LMS Edge Gateway remains the public HTTPS, Cloudflare, Caddy, and `.well-known` 
 
 ## Companion add-on setup
 
-The recommended setup is both add-ons on the same Home Assistant Supervisor host. Both add-ons use host networking, so the default URLs are intentionally loopback URLs:
+Both add-ons should run on the same Home Assistant Supervisor host. The helper auto-detects the LMS Edge Gateway add-on through the Supervisor API and uses the local add-on bridge internally.
 
-- `edge_gateway_url`: `http://127.0.0.1:5000`
-- `public_upstream_url`: `http://127.0.0.1:5055`
-
-The Tesla origin domain still points at Edge Gateway publicly. Edge Gateway then forwards `/oauth/start`, `/redirect`, and `/oauth/callback` to `public_upstream_url`.
+The Tesla origin domain still points at Edge Gateway publicly. Edge Gateway then forwards `/oauth/start`, `/redirect`, and `/oauth/callback` to the helper over the internal same-host add-on bridge.
 
 Use the **Check Edge Gateway link** diagnostics action to confirm both directions are healthy before publishing Tesla routes.
-
-Cross-host installs are possible, but they should use stable LAN hostnames or static DHCP addresses instead of `127.0.0.1`.
