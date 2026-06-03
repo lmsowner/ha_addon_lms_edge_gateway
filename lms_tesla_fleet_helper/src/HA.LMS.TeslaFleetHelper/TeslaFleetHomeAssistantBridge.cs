@@ -618,7 +618,8 @@ sealed class TeslaFleetMqttPublisher(
             publishedByDevice[device.Name] = publishedByDevice.GetValueOrDefault(device.Name) + 1;
             discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
         }
-        var retiredDiscoveryCount = await PublishRetiredEnergyDiscoveryAsync(client, settings, projection, cancellationToken);
+        var retiredEnergyDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredEnergyDiscoveryTopics(settings, projection), cancellationToken);
+        var retiredVehicleDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredVehicleDiscoveryTopics(settings, projection), cancellationToken);
 
         foreach (var stateProjection in projection.States)
         {
@@ -632,9 +633,13 @@ sealed class TeslaFleetMqttPublisher(
         {
             checks.Add($"Discovery configs by device: {string.Join(", ", publishedByDevice.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase).Select(item => $"{item.Key}={item.Value}"))}.");
         }
-        if (retiredDiscoveryCount > 0)
+        if (retiredEnergyDiscoveryCount > 0)
         {
-            checks.Add($"Cleared {retiredDiscoveryCount} retired Energy MQTT discovery config(s).");
+            checks.Add($"Cleared {retiredEnergyDiscoveryCount} retired Energy MQTT discovery config(s).");
+        }
+        if (retiredVehicleDiscoveryCount > 0)
+        {
+            checks.Add($"Cleared {retiredVehicleDiscoveryCount} retired vehicle MQTT discovery config(s).");
         }
         checks.Add($"Published {projection.States.Count} retained state topic(s).");
         if (discoveryTopics.Count > 0)
@@ -734,15 +739,13 @@ sealed class TeslaFleetMqttPublisher(
         await PublishJsonAsync(client, BuildDiscoveryTopic(settings, entity), payload, retain: true, cancellationToken);
     }
 
-    private static async Task<int> PublishRetiredEnergyDiscoveryAsync(
+    private static async Task<int> PublishRetiredDiscoveryAsync(
         IMqttClient client,
-        TeslaMqttSettings settings,
-        HomeAssistantMqttProjection projection,
+        IEnumerable<string> topics,
         CancellationToken cancellationToken)
     {
-        var topics = BuildRetiredEnergyDiscoveryTopics(settings, projection);
         var count = 0;
-        foreach (var topic in topics)
+        foreach (var topic in topics.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             await PublishStringAsync(client, topic, string.Empty, retain: true, cancellationToken);
             count++;
@@ -786,6 +789,10 @@ sealed class TeslaFleetMqttPublisher(
         {
             discoveryTopics.Add(topic);
         }
+        foreach (var topic in BuildRetiredVehicleDiscoveryTopics(settings, projection))
+        {
+            discoveryTopics.Add(topic);
+        }
 
         foreach (var topic in discoveryTopics.Order(StringComparer.OrdinalIgnoreCase))
         {
@@ -824,6 +831,30 @@ sealed class TeslaFleetMqttPublisher(
             ("select", "energy_export_rule")
         };
         return energyDeviceIds
+            .SelectMany(deviceId => retired.Select(item => BuildDiscoveryTopic(settings, item.Component, $"{deviceId}_{item.IdSuffix}")))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static List<string> BuildRetiredVehicleDiscoveryTopics(
+        TeslaMqttSettings settings,
+        HomeAssistantMqttProjection projection)
+    {
+        var vehicleDeviceIds = projection.Devices
+            .Select(device => device.Id)
+            .Where(id => id.StartsWith("lms_tesla_", StringComparison.OrdinalIgnoreCase) &&
+                         !id.StartsWith("lms_tesla_energy_", StringComparison.OrdinalIgnoreCase) &&
+                         !id.Equals("lms_tesla_fleet_helper", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var retired = new (string Component, string IdSuffix)[]
+        {
+            ("sensor", "charge_limit"),
+            ("sensor", "charging_amps"),
+            ("number", "charge_limit_number"),
+            ("number", "charging_amps_number")
+        };
+        return vehicleDeviceIds
             .SelectMany(deviceId => retired.Select(item => BuildDiscoveryTopic(settings, item.Component, $"{deviceId}_{item.IdSuffix}")))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -1531,7 +1562,9 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
             new Dictionary<string, object?>
             {
                 ["charge_state.charge_limit_soc"] = percent,
-                ["charge_limit_soc"] = percent
+                ["charge_state.ChargeLimitSoc"] = percent,
+                ["charge_limit_soc"] = percent,
+                ["ChargeLimitSoc"] = percent
             },
             UsesProxy: true);
     }
@@ -1546,7 +1579,15 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
             new Dictionary<string, object?>
             {
                 ["charge_state.charge_current_request"] = amps,
-                ["charge_current_request"] = amps
+                ["charge_state.ChargeCurrentRequest"] = amps,
+                ["charge_state.charge_amps"] = amps,
+                ["charge_state.ChargeAmps"] = amps,
+                ["charge_state.charging_amps"] = amps,
+                ["charge_current_request"] = amps,
+                ["ChargeCurrentRequest"] = amps,
+                ["charge_amps"] = amps,
+                ["ChargeAmps"] = amps,
+                ["charging_amps"] = amps
             },
             UsesProxy: true);
     }

@@ -150,7 +150,7 @@ sealed class HomeAssistantMqttProjectionMapper
         LmsTeslaVehicleState vehicle)
     {
         var maxChargingAmps = vehicle.Charge.MaxChargingAmps is > 0
-            ? Math.Clamp(vehicle.Charge.MaxChargingAmps.Value, 5, 80)
+            ? Math.Clamp(vehicle.Charge.MaxChargingAmps.Value, 1, 80)
             : 80;
 
         return
@@ -160,10 +160,8 @@ sealed class HomeAssistantMqttProjectionMapper
             Sensor(deviceId, "battery_level", "Battery", stateTopic, "{{ value_json.battery_level }}", "battery", "%", stateClass: "measurement"),
             Sensor(deviceId, "usable_battery_level", "Usable Battery", stateTopic, "{{ value_json.usable_battery_level }}", "battery", "%", stateClass: "measurement"),
             Sensor(deviceId, "charging_state", "Charging State", stateTopic, "{{ value_json.charging_state }}"),
-            Sensor(deviceId, "charge_limit", "Charge Limit", stateTopic, "{{ value_json.charge_limit }}", "battery", "%", stateClass: "measurement"),
-            Number(deviceId, "charge_limit_number", "Charge limit", stateTopic, "{{ value_json.charge_limit }}", BuildCommandTopic(stateTopic, "charge_limit"), "battery", "%", 50, 100, 1, "auto", icon: "mdi:battery-charging-80"),
-            Sensor(deviceId, "charging_amps", "Charging Amps", stateTopic, "{{ value_json.charging_amps }}", "current", "A", stateClass: "measurement"),
-            Number(deviceId, "charging_amps_number", "Charging amps", stateTopic, "{{ value_json.charging_amps }}", BuildCommandTopic(stateTopic, "charging_amps"), "current", "A", 5, maxChargingAmps, 1, "auto", icon: "mdi:current-ac"),
+            Number(deviceId, "charge_limit", "Charge limit", stateTopic, "{{ value_json.charge_limit }}", BuildCommandTopic(stateTopic, "charge_limit"), "battery", "%", 50, 100, 1, "slider", icon: "mdi:battery-charging-80"),
+            Number(deviceId, "charging_amps", "Charging amps", stateTopic, "{{ value_json.charging_amps }}", BuildCommandTopic(stateTopic, "charging_amps"), "current", "A", 1, maxChargingAmps, 1, "slider", icon: "mdi:current-ac"),
             Switch(deviceId, "charger", "Charger", stateTopic, "{{ 'ON' if value_json.charging_state == 'Charging' else 'OFF' }}", BuildCommandTopic(stateTopic, "charger"), icon: "mdi:ev-station"),
             Sensor(deviceId, "battery_range", "Battery Range", stateTopic, "{{ value_json.battery_range }}", "distance", "mi", stateClass: "measurement"),
             Sensor(deviceId, "connected_charge_cable", "Connected Charge Cable", stateTopic, "{{ value_json.connected_charge_cable }}"),

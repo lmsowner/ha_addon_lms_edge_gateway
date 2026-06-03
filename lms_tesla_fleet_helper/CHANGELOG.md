@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.20
+
+- Maps vehicle charge limit and charging amps from both snake_case vehicle data and CamelCase Fleet/telemetry field names.
+- Publishes charge limit and charging amps as primary writable Home Assistant MQTT number entities.
+- Retires the previous read-only vehicle charge sensors and old `_number` discovery topics during publish.
+
 ## 0.2.19
 
 - Adds a Home Assistant MQTT Discovery reset and republish action for stale or renamed entities after helper updates.
