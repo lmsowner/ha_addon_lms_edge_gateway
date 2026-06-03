@@ -519,6 +519,7 @@ sealed class TeslaFleetMqttPublisher(
         var normalized = stateMapper.Map(snapshot, state.FleetApiAudience);
         var projection = projectionMapper.Map(normalized, settings.BaseTopic);
         var devices = projection.Devices.ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
+        var discoveryTopics = new List<string>();
         foreach (var entity in projection.Entities)
         {
             if (!devices.TryGetValue(entity.DeviceId, out var device))
@@ -527,6 +528,10 @@ sealed class TeslaFleetMqttPublisher(
             }
 
             await PublishEntityDiscoveryAsync(client, settings, entity, device, cancellationToken);
+            if (discoveryTopics.Count < 6)
+            {
+                discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
+            }
         }
 
         foreach (var stateProjection in projection.States)
@@ -535,12 +540,22 @@ sealed class TeslaFleetMqttPublisher(
         }
 
         await client.DisconnectAsync(cancellationToken: cancellationToken);
-        checks.Add($"Published {projection.Entities.Count} MQTT entit{(projection.Entities.Count == 1 ? "y" : "ies")} for {projection.Devices.Count} device(s).");
+        checks.Add($"Discovery prefix: {settings.DiscoveryPrefix}; base topic: {settings.BaseTopic}.");
+        checks.Add($"Published {projection.Entities.Count} MQTT discovery config(s) for {projection.Devices.Count} device(s).");
+        checks.Add($"Published {projection.States.Count} retained state topic(s).");
+        if (discoveryTopics.Count > 0)
+        {
+            checks.Add($"Sample discovery topics: {string.Join(", ", discoveryTopics)}.");
+        }
+        if (projection.States.Count > 0)
+        {
+            checks.Add($"State topics: {string.Join(", ", projection.States.Select(topic => topic.Topic).Take(6))}.");
+        }
         checks.Add($"Snapshot source contained {snapshot.Vehicles.Count} vehicle(s) and {snapshot.EnergySites.Count} energy site(s).");
         checks.AddRange(snapshot.Checks);
         return new TeslaHomeAssistantPublishResult(
             true,
-            $"Published {projection.Entities.Count} Home Assistant MQTT Discovery entit{(projection.Entities.Count == 1 ? "y" : "ies")} from typed LMS Tesla projection.",
+            $"Published {projection.Entities.Count} Home Assistant MQTT Discovery config(s) from typed LMS Tesla projection.",
             checks);
     }
 
@@ -584,13 +599,11 @@ sealed class TeslaFleetMqttPublisher(
             payload["enabled_by_default"] = false;
         }
 
-        await PublishJsonAsync(
-            client,
-            $"{settings.DiscoveryPrefix}/{entity.Component}/lms_tesla_fleet/{entity.Id}/config",
-            payload,
-            retain: true,
-            cancellationToken);
+        await PublishJsonAsync(client, BuildDiscoveryTopic(settings, entity), payload, retain: true, cancellationToken);
     }
+
+    private static string BuildDiscoveryTopic(TeslaMqttSettings settings, HomeAssistantMqttEntityProjection entity) =>
+        $"{settings.DiscoveryPrefix}/{entity.Component}/lms_tesla_fleet/{entity.Id}/config";
 
     private static async Task PublishJsonAsync(
         IMqttClient client,

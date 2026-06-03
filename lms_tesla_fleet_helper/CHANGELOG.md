@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.6
+
+- Publishes an LMS Tesla Fleet Helper diagnostic MQTT device so Home Assistant discovery can be verified even when no Tesla resources are returned.
+- Adds MQTT publish diagnostics showing discovery prefix, base topic, sample discovery topics, and retained state topics.
+
 ## 0.2.5
 
 - Fixes Home Assistant ingress navigation by using relative redirects after helper actions.

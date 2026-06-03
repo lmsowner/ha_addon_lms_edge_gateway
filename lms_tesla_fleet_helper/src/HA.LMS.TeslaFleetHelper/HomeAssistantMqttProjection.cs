@@ -49,11 +49,23 @@ sealed class HomeAssistantMqttProjectionMapper
         var devices = new List<HomeAssistantMqttDeviceProjection>();
         var entities = new List<HomeAssistantMqttEntityProjection>();
         var states = new List<HomeAssistantMqttStateProjection>();
+        var normalizedBaseTopic = NormalizeTopic(baseTopic);
+        const string helperDeviceId = "lms_tesla_fleet_helper";
+        var helperStateTopic = $"{normalizedBaseTopic}/helper/state";
+
+        devices.Add(new HomeAssistantMqttDeviceProjection(
+            helperDeviceId,
+            "LMS Tesla Fleet Helper",
+            "Linux Made Sane",
+            "Tesla Fleet Helper",
+            null));
+        entities.AddRange(BuildHelperEntities(helperDeviceId, helperStateTopic));
+        states.Add(new HomeAssistantMqttStateProjection(helperStateTopic, BuildHelperPayload(state)));
 
         foreach (var vehicle in state.Vehicles)
         {
             var deviceId = $"lms_tesla_{SafeId(vehicle.Vin)}";
-            var stateTopic = $"{NormalizeTopic(baseTopic)}/vehicles/{SafeTopic(vehicle.Vin)}/state";
+            var stateTopic = $"{normalizedBaseTopic}/vehicles/{SafeTopic(vehicle.Vin)}/state";
             devices.Add(new HomeAssistantMqttDeviceProjection(
                 deviceId,
                 vehicle.DisplayName,
@@ -67,7 +79,7 @@ sealed class HomeAssistantMqttProjectionMapper
         foreach (var site in state.EnergySites)
         {
             var deviceId = $"lms_tesla_energy_{SafeId(site.SiteId)}";
-            var stateTopic = $"{NormalizeTopic(baseTopic)}/energy/{SafeTopic(site.SiteId)}/state";
+            var stateTopic = $"{normalizedBaseTopic}/energy/{SafeTopic(site.SiteId)}/state";
             devices.Add(new HomeAssistantMqttDeviceProjection(
                 deviceId,
                 site.DisplayName,
@@ -80,6 +92,15 @@ sealed class HomeAssistantMqttProjectionMapper
 
         return new HomeAssistantMqttProjection(devices, entities, states);
     }
+
+    private static IEnumerable<HomeAssistantMqttEntityProjection> BuildHelperEntities(string deviceId, string stateTopic) =>
+    [
+        Sensor(deviceId, "status", "Status", stateTopic, "{{ value_json.status }}"),
+        Sensor(deviceId, "vehicle_count", "Vehicle Count", stateTopic, "{{ value_json.vehicle_count }}"),
+        Sensor(deviceId, "energy_site_count", "Energy Site Count", stateTopic, "{{ value_json.energy_site_count }}"),
+        Sensor(deviceId, "region", "Region", stateTopic, "{{ value_json.region }}"),
+        Sensor(deviceId, "last_snapshot", "Last Snapshot", stateTopic, "{{ value_json.last_snapshot }}", "timestamp")
+    ];
 
     private static IEnumerable<HomeAssistantMqttEntityProjection> BuildVehicleEntities(string deviceId, string stateTopic) =>
     [
@@ -138,6 +159,17 @@ sealed class HomeAssistantMqttProjectionMapper
             ["battery_power"] = site.Live.BatteryPowerWatts,
             ["grid_power"] = site.Live.GridPowerWatts,
             ["backup_reserve"] = site.Live.BackupReservePercent
+        };
+
+    private static IReadOnlyDictionary<string, object?> BuildHelperPayload(LmsTeslaFleetState state) =>
+        new Dictionary<string, object?>
+        {
+            ["status"] = "online",
+            ["vehicle_count"] = state.Vehicles.Count,
+            ["energy_site_count"] = state.EnergySites.Count,
+            ["region"] = state.User.Region,
+            ["fleet_api_audience"] = state.User.FleetApiAudience,
+            ["last_snapshot"] = state.CapturedUtc
         };
 
     private static HomeAssistantMqttEntityProjection Sensor(
