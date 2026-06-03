@@ -1,7 +1,7 @@
 configuration:
   edge_gateway_url:
     name: Edge Gateway API URL
-    description: LMS Edge Gateway control-plane URL used by this helper to publish the Tesla public key and OAuth route. Use the Edge Gateway host LAN address when it runs on another box.
+    description: LMS Edge Gateway control-plane URL used by this helper to publish the Tesla public key and OAuth route. Keep the default when both add-ons run on the same Home Assistant host.
   public_upstream_url:
     name: Helper upstream URL
-    description: URL that LMS Edge Gateway can use to reach this helper for Tesla OAuth start and callback forwarding. Use this Home Assistant host LAN address when Edge Gateway runs on another box.
+    description: URL that LMS Edge Gateway uses to reach this helper for Tesla OAuth start and callback forwarding. Keep the default when both add-ons run on the same Home Assistant host.

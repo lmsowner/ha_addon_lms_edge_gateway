@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- Adds a companion-link diagnostics action for same-host LMS Edge Gateway add-on installs.
+- Verifies both Helper-to-Edge Gateway and Edge Gateway-to-Helper health before publishing Tesla routes.
+
 ## 0.2.1
 
 - Adds a Home Assistant add-on option for the Helper upstream URL used by Edge Gateway OAuth forwarding.

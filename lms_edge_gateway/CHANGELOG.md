@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.43
+
+- Adds a trusted local public route upstream health-test API for companion add-ons.
+- Lets LMS Tesla Fleet Helper verify that Edge Gateway can reach the helper before publishing Tesla OAuth proxy routes.
+
 ## 0.1.42
 
 - Adds a local-only generic public asset API for trusted companion add-ons to publish, list, delete, and verify public `/.well-known/` assets through the existing Edge Gateway routing foundation.

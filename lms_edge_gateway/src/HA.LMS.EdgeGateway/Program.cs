@@ -25,6 +25,7 @@ builder.Services.AddDataProtection()
     .SetApplicationName("HA.LMS.EdgeGateway")
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(ResolvePath(edgeGatewayOptions.DataRoot), "data-protection")));
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient();
 builder.Services.AddEdgeGatewayCore();
 builder.Services.AddHostedService<EdgeGatewayCaddyStartupService>();
 builder.Services.AddMemoryCache();
@@ -269,6 +270,54 @@ app.MapPost("/api/public-routes/publish", async Task<IResult> (
     catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
     {
         return Results.BadRequest(new { succeeded = false, summary = exception.Message });
+    }
+}).AllowAnonymous().DisableAntiforgery();
+
+app.MapPost("/api/public-routes/test-upstream", async Task<IResult> (
+    HttpContext context,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken cancellationToken) =>
+{
+    if (!IsTrustedLocalPublicAssetRequest(context))
+    {
+        return Results.NotFound();
+    }
+
+    var request = await context.Request.ReadFromJsonAsync<PublicProxyUpstreamTestRequest>(
+        cancellationToken: cancellationToken);
+    if (request is null)
+    {
+        return Results.BadRequest(new { succeeded = false, summary = "Enter an upstream URL to test." });
+    }
+
+    try
+    {
+        var upstreamUrl = NormalizePublicProxyUpstreamUrl(request.UpstreamUrl);
+        var healthUrl = $"{upstreamUrl}/healthz";
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+
+        var client = httpClientFactory.CreateClient();
+        using var response = await client.GetAsync(healthUrl, timeout.Token);
+        var body = await response.Content.ReadAsStringAsync(timeout.Token);
+        var succeeded = response.IsSuccessStatusCode;
+        return Results.Json(
+            new
+            {
+                succeeded,
+                summary = succeeded
+                    ? $"Edge Gateway reached upstream health endpoint {healthUrl}."
+                    : $"Edge Gateway reached {healthUrl}, but received HTTP {(int)response.StatusCode}.",
+                upstreamUrl,
+                healthUrl,
+                statusCode = (int)response.StatusCode,
+                responsePreview = TruncateForDiagnostics(body, 600)
+            },
+            statusCode: succeeded ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+    }
+    catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or HttpRequestException or TaskCanceledException)
+    {
+        return Results.BadRequest(new { succeeded = false, summary = $"Edge Gateway could not reach upstream: {exception.Message}" });
     }
 }).AllowAnonymous().DisableAntiforgery();
 
@@ -857,6 +906,11 @@ static string NormalizePublicProxyUpstreamUrl(string value)
     return normalized;
 }
 
+static string TruncateForDiagnostics(string value, int maxLength) =>
+    string.IsNullOrWhiteSpace(value) || value.Length <= maxLength
+        ? value
+        : $"{value[..maxLength]}...";
+
 static bool HasProvisionedRelayForHostname(EdgeGatewayConfiguration configuration, string hostname) =>
     configuration.RelayZones.Any(relay =>
         !string.IsNullOrWhiteSpace(relay.TunnelId) &&
@@ -1018,6 +1072,9 @@ sealed record PublicProxyRoutePublishRequest(
     bool? PreserveHostHeader = true,
     bool? StripForwardedFor = true,
     bool? MatchSubpaths = true);
+
+sealed record PublicProxyUpstreamTestRequest(
+    string UpstreamUrl);
 
 sealed record PublicProxyRouteResponse(
     Guid Id,

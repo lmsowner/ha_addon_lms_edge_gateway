@@ -113,6 +113,39 @@ app.MapPost("/actions/save-settings", async (
     return Results.Redirect("/");
 });
 
+app.MapPost("/actions/check-companion-link", async (
+    HttpContext context,
+    TeslaFleetStore store,
+    EdgeGatewayPublicAssetClient edgeGatewayClient) =>
+{
+    var state = await store.LoadAsync();
+    try
+    {
+        var result = await edgeGatewayClient.CheckCompanionLinkAsync(
+            state.EdgeGatewayUrl,
+            state.PublicUpstreamUrl,
+            context.RequestAborted);
+        state = state with
+        {
+            LastStatus = result.Succeeded ? "Companion link healthy" : "Companion link failed",
+            LastMessage = result.Summary,
+            LastChecks = result.Checks
+        };
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Companion link failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+    }
+
+    await store.SaveAsync(state, context.RequestAborted);
+    return Results.Redirect("/");
+});
+
 app.MapPost("/actions/generate-key", async (
     HttpContext context,
     TeslaFleetStore store) =>
@@ -1131,6 +1164,7 @@ static string RenderPage(TeslaFleetState state)
           <form method="post" action="actions/register-partner"><button type="submit">Register domain with Tesla</button></form>
         """;
     var diagnosticActions = """
+          <form method="post" action="actions/check-companion-link"><button type="submit">Check Edge Gateway link</button></form>
           <form method="post" action="actions/test-public-key"><button type="submit">Check public key URL</button></form>
           <form method="post" action="actions/test-tesla-public-key"><button type="submit">Check Tesla public key</button></form>
           <form method="post" action="actions/refresh-token"><button type="submit">Refresh Tesla token</button></form>
@@ -1599,7 +1633,8 @@ static string BuildStatusClass(string? status)
         value.Contains("published", StringComparison.Ordinal) ||
         value.Contains("ready", StringComparison.Ordinal) ||
         value.Contains("saved", StringComparison.Ordinal) ||
-        value.Contains("connected", StringComparison.Ordinal))
+        value.Contains("connected", StringComparison.Ordinal) ||
+        value.Contains("healthy", StringComparison.Ordinal))
     {
         return "ready";
     }
@@ -2226,6 +2261,60 @@ sealed class EdgeGatewayPublicAssetClient(HttpClient httpClient)
         PropertyNameCaseInsensitive = true
     };
 
+    public async Task<TeslaCompanionLinkResult> CheckCompanionLinkAsync(
+        string edgeGatewayUrl,
+        string upstreamUrl,
+        CancellationToken cancellationToken)
+    {
+        var checks = new List<string>();
+        var normalizedEdgeGatewayUrl = TeslaFleetDefaults.NormalizeHttpUrl(edgeGatewayUrl);
+        var normalizedUpstreamUrl = TeslaFleetDefaults.NormalizeHttpUrl(upstreamUrl, "http://127.0.0.1:5055");
+
+        using var edgeHealth = await httpClient.GetAsync(
+            $"{normalizedEdgeGatewayUrl}/healthz",
+            cancellationToken);
+        var edgeHealthBody = await edgeHealth.Content.ReadAsStringAsync(cancellationToken);
+        checks.Add($"Helper -> Edge Gateway health returned HTTP {(int)edgeHealth.StatusCode}.");
+        if (!edgeHealth.IsSuccessStatusCode)
+        {
+            checks.Add($"Edge Gateway health response: {TruncateForDiagnostics(edgeHealthBody)}");
+            return new TeslaCompanionLinkResult(
+                false,
+                $"Helper could not reach LMS Edge Gateway at {normalizedEdgeGatewayUrl}.",
+                checks);
+        }
+
+        var payload = new PublicProxyUpstreamTestRequest(normalizedUpstreamUrl);
+        using var upstreamResponse = await httpClient.PostAsJsonAsync(
+            $"{normalizedEdgeGatewayUrl}/api/public-routes/test-upstream",
+            payload,
+            JsonOptions,
+            cancellationToken);
+        var upstreamBody = await upstreamResponse.Content.ReadAsStringAsync(cancellationToken);
+        var upstreamResult = Deserialize<PublicProxyUpstreamTestResponse>(upstreamBody);
+        if (upstreamResult is not null)
+        {
+            checks.Add(upstreamResult.Summary);
+            if (!string.IsNullOrWhiteSpace(upstreamResult.ResponsePreview))
+            {
+                checks.Add($"Helper health response: {TruncateForDiagnostics(upstreamResult.ResponsePreview)}");
+            }
+
+            return new TeslaCompanionLinkResult(
+                upstreamResult.Succeeded,
+                upstreamResult.Succeeded
+                    ? "LMS Tesla Fleet Helper and LMS Edge Gateway can reach each other on this Home Assistant host."
+                    : upstreamResult.Summary,
+                checks);
+        }
+
+        checks.Add($"Edge Gateway upstream test returned HTTP {(int)upstreamResponse.StatusCode}: {TruncateForDiagnostics(upstreamBody)}");
+        return new TeslaCompanionLinkResult(
+            false,
+            "Edge Gateway upstream health test failed.",
+            checks);
+    }
+
     public async Task<PublicAssetPublishResponse> PublishAsync(
         string edgeGatewayUrl,
         string originDomain,
@@ -2396,6 +2485,11 @@ sealed class EdgeGatewayPublicAssetClient(HttpClient httpClient)
             return default;
         }
     }
+
+    private static string TruncateForDiagnostics(string value) =>
+        string.IsNullOrWhiteSpace(value) || value.Length <= 600
+            ? value
+            : $"{value[..600]}...";
 }
 
 sealed class TeslaFleetOAuthClient(HttpClient httpClient)
@@ -2812,6 +2906,11 @@ sealed record TeslaVehicleDiagnosticsResult(
     List<string> Checks,
     int VehicleCount);
 
+sealed record TeslaCompanionLinkResult(
+    bool Succeeded,
+    string Summary,
+    List<string> Checks);
+
 sealed record TeslaFleetState(
     string EdgeGatewayUrl = "http://127.0.0.1:5000",
     string PublicUpstreamUrl = "http://127.0.0.1:5055",
@@ -2896,6 +2995,17 @@ sealed record PublicProxyRoutePublishRequest(
     bool PreserveHostHeader,
     bool StripForwardedFor,
     bool MatchSubpaths);
+
+sealed record PublicProxyUpstreamTestRequest(
+    string UpstreamUrl);
+
+sealed record PublicProxyUpstreamTestResponse(
+    bool Succeeded,
+    string Summary,
+    string UpstreamUrl,
+    string HealthUrl,
+    int? StatusCode,
+    string ResponsePreview);
 
 sealed record PublicProxyRoutePublishResponse(
     bool Succeeded,
