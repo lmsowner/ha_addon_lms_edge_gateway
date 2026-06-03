@@ -197,7 +197,7 @@ sealed class TeslaFleetPropertyHarness(
             return MaskVin(text);
         }
 
-        return text.Length <= 180 ? value : $"{text[..180]}...";
+        return value;
     }
 
     private static TeslaEntitySuggestion SuggestEntity(string path, string valueType)

@@ -1260,11 +1260,14 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         : string.Concat(lastChecks.Select(check => $"<li>{H(check)}</li>"));
     var discoveredProperties = state.DiscoveredProperties ?? [];
     var propertyRows = RenderPropertyRows(discoveredProperties);
+    var propertyScopeOptions = RenderPropertyScopeOptions(discoveredProperties);
+    var propertyResourceOptions = RenderPropertyResourceOptions(discoveredProperties);
     var propertySummary = string.IsNullOrWhiteSpace(state.LastPropertyDiscoverySummary)
         ? "No discovery run yet."
         : state.LastPropertyDiscoverySummary;
     var projectionPreviewEntities = state.HomeAssistantProjectionPreviewEntities ?? [];
     var projectionPreviewRows = RenderProjectionPreviewRows(projectionPreviewEntities);
+    var projectionComponentOptions = RenderProjectionComponentOptions(projectionPreviewEntities);
     var projectionPreviewSummary = string.IsNullOrWhiteSpace(state.LastHomeAssistantProjectionPreviewSummary)
         ? "No Home Assistant projection preview has been run yet."
         : state.LastHomeAssistantProjectionPreviewSummary;
@@ -1486,6 +1489,36 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     .callout.warn { border-color: rgba(255, 211, 125, .45); }
     ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); line-height: 1.55; }
     .split-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .diagnostic-filter-bar {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: 10px;
+      align-items: end;
+      margin: 12px 0;
+    }
+    .diagnostic-filter-bar label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .diagnostic-filter-bar select,
+    .diagnostic-filter-bar input {
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface-2);
+      color: var(--text);
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+    }
+    .diagnostic-count {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 0 10px;
+    }
     .table-wrap {
       overflow: auto;
       max-height: 640px;
@@ -1526,6 +1559,31 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     .resource-main { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
     .resource-id { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; margin-top: 3px; }
     .value-cell { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .property-table td.value-cell {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      line-height: 1.4;
+    }
+    .value-cell details { max-width: 100%; }
+    .value-cell summary {
+      cursor: pointer;
+      color: var(--accent-2);
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .value-cell pre {
+      margin: 8px 0 0;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      max-height: 360px;
+      overflow: auto;
+      background: #05070a;
+      color: var(--text);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .property-table .scope-col { width: 104px; }
     .property-table .resource-col { width: 250px; }
     .property-table .path-col { width: 380px; }
@@ -1546,6 +1604,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     @media (max-width: 900px) {
       main { width: min(100vw - 20px, 760px); padding-top: 18px; }
       header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
+      .diagnostic-filter-bar { grid-template-columns: 1fr; }
       header { gap: 10px; }
     }
   </style>
@@ -1741,6 +1800,25 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         <form method="post" action="actions/clear-properties"><button type="submit">Clear cached properties</button></form>
       </div>
       <h3>Home Assistant Entity Projection</h3>
+      <div class="diagnostic-filter-bar" data-projection-filters>
+        <label>Component
+          <select data-projection-component-filter>
+            <option value="">All components</option>
+            {{projectionComponentOptions}}
+          </select>
+        </label>
+        <label>Command
+          <select data-projection-command-filter>
+            <option value="">All entities</option>
+            <option value="writable">Writable only</option>
+            <option value="readonly">Read-only only</option>
+          </select>
+        </label>
+        <label>Search
+          <input type="search" placeholder="Device, entity, topic..." data-projection-search />
+        </label>
+      </div>
+      <p class="diagnostic-count" data-projection-count>Total projected entities: {{projectionPreviewEntities.Count}}</p>
       <div class="table-wrap" style="margin-bottom:12px">
         <table class="property-table">
           <colgroup>
@@ -1771,6 +1849,31 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         </table>
       </div>
       <h3>Discovered Tesla Properties</h3>
+      <div class="diagnostic-filter-bar" data-property-filters>
+        <label>Scope
+          <select data-property-scope-filter>
+            <option value="">All scopes</option>
+            {{propertyScopeOptions}}
+          </select>
+        </label>
+        <label>Resource
+          <select data-property-resource-filter>
+            <option value="">All resources</option>
+            {{propertyResourceOptions}}
+          </select>
+        </label>
+        <label>Value
+          <select data-property-value-filter>
+            <option value="">Any value state</option>
+            <option value="valued">Has value</option>
+            <option value="empty">Empty/null</option>
+          </select>
+        </label>
+        <label>Search
+          <input type="search" placeholder="Path, display, value..." data-property-search />
+        </label>
+      </div>
+      <p class="diagnostic-count" data-property-count>Total discovered properties: {{discoveredProperties.Count}}</p>
       <div class="table-wrap">
         <table class="property-table">
           <colgroup>
@@ -1833,6 +1936,59 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       } catch {
       }
     })();
+    (() => {
+      const wireFilters = config => {
+        const rows = Array.from(document.querySelectorAll(config.rowSelector));
+        if (rows.length === 0) return;
+        const controls = config.controls.map(selector => document.querySelector(selector));
+        const count = document.querySelector(config.countSelector);
+        const normalize = value => (value || "").trim().toLowerCase();
+        const apply = () => {
+          let visible = 0;
+          const values = controls.map(control => normalize(control?.value));
+          for (const row of rows) {
+            const show = config.match(row, values, normalize);
+            row.style.display = show ? "" : "none";
+            if (show) visible += 1;
+          }
+          if (count) count.textContent = `Showing ${visible} of ${rows.length} ${config.label}.`;
+        };
+        for (const control of controls) {
+          if (!control) continue;
+          control.addEventListener("change", apply);
+          control.addEventListener("input", apply);
+        }
+        apply();
+      };
+
+      wireFilters({
+        rowSelector: "[data-projection-row]",
+        countSelector: "[data-projection-count]",
+        label: "projected entities",
+        controls: ["[data-projection-component-filter]", "[data-projection-command-filter]", "[data-projection-search]"],
+        match: (row, values, normalize) => {
+          const [component, commandState, search] = values;
+          return (!component || normalize(row.dataset.component) === component) &&
+                 (!commandState || normalize(row.dataset.commandState) === commandState) &&
+                 (!search || normalize(row.dataset.search).includes(search));
+        }
+      });
+
+      wireFilters({
+        rowSelector: "[data-property-row]",
+        countSelector: "[data-property-count]",
+        label: "discovered properties",
+        controls: ["[data-property-scope-filter]", "[data-property-resource-filter]", "[data-property-value-filter]", "[data-property-search]"],
+        match: (row, values, normalize) => {
+          const [scope, resource, valueState, search] = values;
+          const hasValue = row.dataset.hasValue === "true";
+          return (!scope || normalize(row.dataset.scope) === scope) &&
+                 (!resource || normalize(row.dataset.resource) === resource) &&
+                 (!valueState || (valueState === "valued" ? hasValue : !hasValue)) &&
+                 (!search || normalize(row.dataset.search).includes(search));
+        }
+      });
+    })();
   </script>
 </body>
 </html>
@@ -1883,6 +2039,34 @@ static string BuildStatusClass(string? status)
 static string FormatDate(DateTimeOffset? value) =>
     value.HasValue ? H(value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")) : "Never";
 
+static string RenderPropertyScopeOptions(IReadOnlyList<TeslaDiscoveredProperty> properties) =>
+    string.Concat(properties
+        .Select(property => property.Scope)
+        .Where(scope => !string.IsNullOrWhiteSpace(scope))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(scope => scope, StringComparer.OrdinalIgnoreCase)
+        .Select(scope => $"""<option value="{H(scope)}">{H(scope)}</option>"""));
+
+static string RenderPropertyResourceOptions(IReadOnlyList<TeslaDiscoveredProperty> properties) =>
+    string.Concat(properties
+        .Select(property => new
+        {
+            Key = $"{property.Scope}|{property.ResourceName}|{property.ResourceId}",
+            Label = $"{property.Scope}: {property.ResourceName} {property.ResourceId}".Trim()
+        })
+        .Where(resource => !string.IsNullOrWhiteSpace(resource.Label))
+        .DistinctBy(resource => resource.Key, StringComparer.OrdinalIgnoreCase)
+        .OrderBy(resource => resource.Label, StringComparer.OrdinalIgnoreCase)
+        .Select(resource => $"""<option value="{H(resource.Key)}">{H(resource.Label)}</option>"""));
+
+static string RenderProjectionComponentOptions(IReadOnlyList<HomeAssistantProjectionPreviewEntity> entities) =>
+    string.Concat(entities
+        .Select(entity => entity.Component)
+        .Where(component => !string.IsNullOrWhiteSpace(component))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(component => component, StringComparer.OrdinalIgnoreCase)
+        .Select(component => $"""<option value="{H(component)}">{H(component)}</option>"""));
+
 static string RenderPropertyRows(IReadOnlyList<TeslaDiscoveredProperty> properties)
 {
     if (properties.Count == 0)
@@ -1893,7 +2077,6 @@ static string RenderPropertyRows(IReadOnlyList<TeslaDiscoveredProperty> properti
     }
 
     return string.Concat(properties
-        .Take(160)
         .Select(property =>
         {
             var suggestion = string.Join(" / ", new[]
@@ -1904,23 +2087,21 @@ static string RenderPropertyRows(IReadOnlyList<TeslaDiscoveredProperty> properti
                 }
                 .Where(value => !string.IsNullOrWhiteSpace(value)));
             var resourceTitle = $"{property.ResourceName} {property.ResourceId}".Trim();
+            var resourceKey = $"{property.Scope}|{property.ResourceName}|{property.ResourceId}";
+            var hasValue = HasPropertyValue(property.Value);
+            var searchText = string.Join(' ', property.Scope, property.ResourceName, property.ResourceId, property.Path, property.DisplayName, property.ValueType, suggestion, property.Value);
             return $"""
-            <tr>
+            <tr data-property-row data-scope="{H(property.Scope)}" data-resource="{H(resourceKey)}" data-has-value="{(hasValue ? "true" : "false")}" data-search="{H(searchText.ToLowerInvariant())}">
               <td title="{H(property.Scope)}"><span class="pill">{H(property.Scope)}</span></td>
               <td title="{H(resourceTitle)}"><span class="resource-main">{H(property.ResourceName)}</span><span class="resource-id">{H(property.ResourceId)}</span></td>
               <td title="{H(property.Path)}"><code>{H(property.Path)}</code></td>
               <td title="{H(property.DisplayName)}">{H(property.DisplayName)}</td>
               <td title="{H(property.ValueType)}">{H(property.ValueType)}</td>
               <td title="{H(suggestion)}">{H(suggestion)}</td>
-              <td class="value-cell" title="{H(property.Value)}">{H(TruncateForUi(property.Value, 260))}</td>
+              <td class="value-cell">{RenderValueCell(property.Value)}</td>
             </tr>
 """;
-        })) +
-        (properties.Count > 160
-            ? $"""
-            <tr><td colspan="7">Showing first 160 of {properties.Count} discovered properties.</td></tr>
-"""
-            : string.Empty);
+        }));
 }
 
 static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionPreviewEntity> entities)
@@ -1933,7 +2114,6 @@ static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionP
     }
 
     return string.Concat(entities
-        .Take(200)
         .Select(entity =>
         {
             var hint = string.Join(" / ", new[]
@@ -1943,8 +2123,10 @@ static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionP
                 }
                 .Where(value => !string.IsNullOrWhiteSpace(value)));
             var enabled = entity.EnabledByDefault ? "Yes" : "No";
+            var commandState = string.IsNullOrWhiteSpace(entity.CommandTopic) ? "readonly" : "writable";
+            var searchText = string.Join(' ', entity.DeviceName, entity.Id, entity.Name, entity.Component, entity.StateTopic, entity.CommandTopic, entity.ValueTemplate, hint, enabled);
             return $"""
-            <tr>
+            <tr data-projection-row data-component="{H(entity.Component)}" data-command-state="{commandState}" data-search="{H(searchText.ToLowerInvariant())}">
               <td title="{H(entity.DeviceName)}"><span class="resource-main">{H(entity.DeviceName)}</span><span class="resource-id">{H(entity.Id)}</span></td>
               <td title="{H(entity.Name)}">{H(entity.Name)}</td>
               <td title="{H(entity.Component)}">{H(entity.Component)}</td>
@@ -1955,12 +2137,27 @@ static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionP
               <td title="{H(enabled)}"><span class="pill">{H(enabled)}</span></td>
             </tr>
 """;
-        })) +
-        (entities.Count > 200
-            ? $"""
-	            <tr><td colspan="8">Showing first 200 of {entities.Count} projected entities.</td></tr>
-"""
-            : string.Empty);
+        }));
+}
+
+static bool HasPropertyValue(string value) =>
+    !string.IsNullOrWhiteSpace(value) &&
+    !value.Equals("null", StringComparison.OrdinalIgnoreCase);
+
+static string RenderValueCell(string value)
+{
+    if (!HasPropertyValue(value))
+    {
+        return """<span class="pill">empty</span>""";
+    }
+
+    var preview = TruncateForUi(value.ReplaceLineEndings(" "), 220);
+    return $"""
+<details>
+  <summary>{H(preview)}</summary>
+  <pre>{H(value)}</pre>
+</details>
+""";
 }
 
 static string TruncateForUi(string value, int maxLength)
@@ -3247,11 +3444,7 @@ sealed class TeslaFleetApiClient(HttpClient httpClient)
 
         var vehicles = ReadVehicleSummaries(body);
         checks.Add($"Vehicle count: {vehicles.Count}.");
-        checks.AddRange(vehicles.Take(8));
-        if (vehicles.Count > 8)
-        {
-            checks.Add($"Showing first 8 of {vehicles.Count} vehicles.");
-        }
+        checks.AddRange(vehicles);
 
         return new TeslaVehicleDiagnosticsResult(
             true,

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.18
+
+- Removes row caps from the Tesla API property harness and Home Assistant projection preview.
+- Adds scope/resource/value/search filters for discovered Tesla API properties so vehicle fields can be debugged without hidden rows.
+- Adds component/command/search filters for MQTT projection diagnostics.
+- Shows sanitized property values in expandable rows instead of dropping long values from the diagnostics view.
+- Shows every vehicle returned by the Tesla vehicles diagnostics call instead of truncating after eight entries.
+
 ## 0.2.17
 
 - Separates Tesla OAuth reconnect from virtual-key installation.
