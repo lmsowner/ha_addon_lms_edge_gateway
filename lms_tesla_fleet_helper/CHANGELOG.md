@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.13
+
+- Adds writable Home Assistant MQTT controls for Tesla Energy backup reserve, operation mode, grid charging, and export rule.
+- Adds a persistent MQTT command listener that receives Home Assistant writes, validates payloads, sends Tesla Energy commands, and republishes state.
+- Adds the required Tesla `energy_cmds` OAuth scope and warns when OAuth needs reconnecting for writable Energy controls.
+
 ## 0.2.12
 
 - Adds the required Tesla `energy_device_data` OAuth scope for Energy Product Information.

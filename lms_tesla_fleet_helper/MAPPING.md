@@ -18,10 +18,10 @@ Commands use a separate path:
 Home Assistant command topic
   -> LMS command request
   -> safety policy
-  -> Tesla vehicle-command proxy request
+  -> Tesla Fleet API command request
   -> Tesla command response
   -> LMS command result state
-  -> MQTT command status topic
+  -> retained MQTT state refresh
 ```
 
 ## Layers
@@ -97,9 +97,12 @@ Energy-scoped endpoints:
 - live status
 - later: energy history where supported
 
-Energy endpoints require Tesla's `energy_device_data` OAuth scope. Without it, `/products`
+Energy read endpoints require Tesla's `energy_device_data` OAuth scope. Without it, `/products`
 can still return a limited energy-site shell, but `site_info` and `live_status` will not
 provide the Gateway/Powerwall data used by Home Assistant MQTT projection.
+
+Writable Energy controls require Tesla's `energy_cmds` OAuth scope. Current writable MQTT
+entities are backup reserve, operation mode, grid charging, and energy export rule.
 
 Command endpoints:
 

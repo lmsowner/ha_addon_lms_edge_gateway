@@ -15,6 +15,7 @@ sealed record HomeAssistantProjectionPreviewEntity(
     string Component,
     string Name,
     string StateTopic,
+    string? CommandTopic,
     string ValueTemplate,
     string? DeviceClass,
     string? UnitOfMeasurement,
@@ -41,7 +42,9 @@ sealed record HomeAssistantMqttEntityProjection(
     string? EntityCategory = null,
     string? StateClass = null,
     string? Icon = null,
-    IReadOnlyDictionary<string, object?>? ExtraConfig = null);
+    IReadOnlyDictionary<string, object?>? ExtraConfig = null,
+    string? CommandTopic = null,
+    string? CommandTemplate = null);
 
 sealed record HomeAssistantMqttStateProjection(
     string Topic,
@@ -200,6 +203,10 @@ sealed class HomeAssistantMqttProjectionMapper
         Sensor(deviceId, "grid_power", "Grid Power", stateTopic, "{{ value_json.grid_power }}", "power", "W", stateClass: "measurement"),
         Sensor(deviceId, "generator_power", "Generator Power", stateTopic, "{{ value_json.generator_power }}", "power", "W", stateClass: "measurement", enabledByDefault: false),
         Sensor(deviceId, "backup_reserve", "Backup Reserve", stateTopic, "{{ value_json.backup_reserve }}", "battery", "%", stateClass: "measurement"),
+        Number(deviceId, "backup_reserve_target", "Backup Reserve Target", stateTopic, "{{ value_json.backup_reserve }}", BuildCommandTopic(stateTopic, "backup_reserve"), "battery", "%", 0, 100, 1, "slider", icon: "mdi:battery-sync"),
+        Select(deviceId, "operation_mode", "Operation Mode", stateTopic, "{{ value_json.operation_mode }}", BuildCommandTopic(stateTopic, "operation_mode"), ["self_consumption", "backup", "autonomous"], icon: "mdi:home-battery"),
+        Switch(deviceId, "grid_charging", "Grid Charging", stateTopic, "{{ value_json.grid_charging | lower }}", BuildCommandTopic(stateTopic, "grid_charging"), icon: "mdi:transmission-tower-import"),
+        Select(deviceId, "energy_export_rule", "Energy Export Rule", stateTopic, "{{ value_json.energy_export_rule }}", BuildCommandTopic(stateTopic, "energy_export_rule"), ["pv_only", "battery_ok"], icon: "mdi:transmission-tower-export"),
         BinarySensor(deviceId, "grid_services_active", "Grid Services Active", stateTopic, "{{ value_json.grid_services_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
         BinarySensor(deviceId, "storm_mode_active", "Storm Mode Active", stateTopic, "{{ value_json.storm_mode_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic")
     ];
@@ -313,6 +320,9 @@ sealed class HomeAssistantMqttProjectionMapper
             ["grid_power"] = site.Live.GridPowerWatts,
             ["generator_power"] = site.Live.GeneratorPowerWatts,
             ["backup_reserve"] = site.Live.BackupReservePercent,
+            ["operation_mode"] = ResolveOperationMode(site),
+            ["grid_charging"] = ResolveGridCharging(site),
+            ["energy_export_rule"] = ResolveEnergyExportRule(site),
             ["grid_services_active"] = site.Live.GridServicesActive,
             ["storm_mode_active"] = site.Live.StormModeActive
         };
@@ -363,6 +373,106 @@ sealed class HomeAssistantMqttProjectionMapper
             entityCategory,
             stateClass,
             icon);
+
+    private static HomeAssistantMqttEntityProjection Number(
+        string deviceId,
+        string id,
+        string name,
+        string stateTopic,
+        string valueTemplate,
+        string commandTopic,
+        string? deviceClass,
+        string? unitOfMeasurement,
+        double min,
+        double max,
+        double step,
+        string mode,
+        bool enabledByDefault = true,
+        string? entityCategory = null,
+        string? icon = null) =>
+        new(
+            $"{deviceId}_{id}",
+            deviceId,
+            "number",
+            name,
+            stateTopic,
+            valueTemplate,
+            deviceClass,
+            unitOfMeasurement,
+            enabledByDefault,
+            entityCategory,
+            null,
+            icon,
+            new Dictionary<string, object?>
+            {
+                ["min"] = min,
+                ["max"] = max,
+                ["step"] = step,
+                ["mode"] = mode
+            },
+            commandTopic);
+
+    private static HomeAssistantMqttEntityProjection Select(
+        string deviceId,
+        string id,
+        string name,
+        string stateTopic,
+        string valueTemplate,
+        string commandTopic,
+        string[] options,
+        bool enabledByDefault = true,
+        string? entityCategory = null,
+        string? icon = null) =>
+        new(
+            $"{deviceId}_{id}",
+            deviceId,
+            "select",
+            name,
+            stateTopic,
+            valueTemplate,
+            null,
+            null,
+            enabledByDefault,
+            entityCategory,
+            null,
+            icon,
+            new Dictionary<string, object?>
+            {
+                ["options"] = options
+            },
+            commandTopic);
+
+    private static HomeAssistantMqttEntityProjection Switch(
+        string deviceId,
+        string id,
+        string name,
+        string stateTopic,
+        string valueTemplate,
+        string commandTopic,
+        bool enabledByDefault = true,
+        string? entityCategory = null,
+        string? icon = null) =>
+        new(
+            $"{deviceId}_{id}",
+            deviceId,
+            "switch",
+            name,
+            stateTopic,
+            valueTemplate,
+            null,
+            null,
+            enabledByDefault,
+            entityCategory,
+            null,
+            icon,
+            new Dictionary<string, object?>
+            {
+                ["payload_on"] = "true",
+                ["payload_off"] = "false",
+                ["state_on"] = "true",
+                ["state_off"] = "false"
+            },
+            commandTopic);
 
     private static HomeAssistantMqttEntityProjection BinarySensor(
         string deviceId,
@@ -447,6 +557,42 @@ sealed class HomeAssistantMqttProjectionMapper
         };
     }
 
+    private static string? ResolveOperationMode(LmsTeslaEnergySiteState site) =>
+        ReadString(
+            site.RawProperties,
+            "site_info.default_real_mode",
+            "site_info.operation",
+            "default_real_mode",
+            "operation");
+
+    private static bool? ResolveGridCharging(LmsTeslaEnergySiteState site)
+    {
+        var disallowChargeFromGrid = ReadBool(
+            site.RawProperties,
+            "site_info.components.disallow_charge_from_grid_with_solar_installed",
+            "components.disallow_charge_from_grid_with_solar_installed",
+            "disallow_charge_from_grid_with_solar_installed");
+        if (disallowChargeFromGrid.HasValue)
+        {
+            return !disallowChargeFromGrid.Value;
+        }
+
+        return ReadString(
+            site.RawProperties,
+            "site_info.components.customer_preferred_export_rule",
+            "components.customer_preferred_export_rule",
+            "customer_preferred_export_rule") is not null
+            ? true
+            : null;
+    }
+
+    private static string? ResolveEnergyExportRule(LmsTeslaEnergySiteState site) =>
+        ReadString(
+            site.RawProperties,
+            "site_info.components.customer_preferred_export_rule",
+            "components.customer_preferred_export_rule",
+            "customer_preferred_export_rule");
+
     private static int ResolvePowerwallCount(LmsTeslaEnergySiteState site)
     {
         if (site.Capabilities.PowerwallCount is > 0)
@@ -515,6 +661,80 @@ sealed class HomeAssistantMqttProjectionMapper
             _ => int.TryParse(value.ToString(), out var parsed) && parsed > 0 ? parsed : 0
         };
     }
+
+    private static string? ReadString(IReadOnlyDictionary<string, object?> values, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!values.TryGetValue(key, out var value) || value is null)
+            {
+                continue;
+            }
+
+            var text = value.ToString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool? ReadBool(IReadOnlyDictionary<string, object?> values, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!values.TryGetValue(key, out var value) || value is null)
+            {
+                continue;
+            }
+
+            switch (value)
+            {
+                case bool boolValue:
+                    return boolValue;
+                case int intValue:
+                    return intValue != 0;
+                case long longValue:
+                    return longValue != 0;
+                case double doubleValue:
+                    return Math.Abs(doubleValue) > double.Epsilon;
+            }
+
+            var text = value.ToString()?.Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            if (bool.TryParse(text, out var parsed))
+            {
+                return parsed;
+            }
+
+            if (text.Equals("on", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals("1", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (text.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals("0", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildCommandTopic(string stateTopic, string action) =>
+        stateTopic.EndsWith("/state", StringComparison.Ordinal)
+            ? $"{stateTopic[..^"/state".Length]}/command/{action}"
+            : $"{stateTopic.TrimEnd('/')}/command/{action}";
 
     private static int ReadJsonArrayCount(object? value)
     {

@@ -11,8 +11,9 @@ const string TeslaPublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-
 const string TeslaPublicKeyContentType = "application/x-pem-file";
 const string TeslaAuthorizeEndpoint = "https://auth.tesla.com/oauth2/v3/authorize";
 const string DefaultFleetApiAudience = "https://fleet-api.prd.na.vn.cloud.tesla.com";
-const string DefaultTeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data";
+const string DefaultTeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds";
 const string EnergyDeviceDataScope = "energy_device_data";
+const string EnergyCommandsScope = "energy_cmds";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +27,7 @@ builder.Services.AddSingleton<TeslaFleetPropertyHarness>();
 builder.Services.AddSingleton<TeslaFleetStateMapper>();
 builder.Services.AddSingleton<HomeAssistantMqttProjectionMapper>();
 builder.Services.AddHostedService<TeslaFleetHomeAssistantPublisherService>();
+builder.Services.AddHostedService<TeslaFleetHomeAssistantCommandService>();
 builder.Services.AddHttpClient<EdgeGatewayCompanionResolver>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(8);
@@ -52,6 +54,11 @@ builder.Services.AddHttpClient<TeslaFleetApiClient>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
 });
 builder.Services.AddHttpClient<TeslaFleetDataClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
+});
+builder.Services.AddHttpClient<TeslaFleetEnergyCommandClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(45);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
@@ -804,7 +811,7 @@ app.MapGet(TeslaFleetDefaults.OAuthStartPath, async (
             LastChecks =
             [
                 $"Requesting Tesla OAuth scopes: {scopes}.",
-                "Energy data requires the energy_device_data scope."
+                "Energy data reads require energy_device_data; Home Assistant write controls require energy_cmds."
             ]
         };
         await store.SaveAsync(updated, cancellationToken);
@@ -984,6 +991,7 @@ static async Task<HomeAssistantProjectionPreviewRun> BuildHomeAssistantProjectio
                 entity.Component,
                 entity.Name,
                 entity.StateTopic,
+                entity.CommandTopic,
                 entity.ValueTemplate,
                 entity.DeviceClass,
                 entity.UnitOfMeasurement,
@@ -1248,12 +1256,13 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     var projectionPreviewSummary = string.IsNullOrWhiteSpace(state.LastHomeAssistantProjectionPreviewSummary)
         ? "No Home Assistant projection preview has been run yet."
         : state.LastHomeAssistantProjectionPreviewSummary;
-    var energyScopeWarning = HasScope(state.TeslaScopes, EnergyDeviceDataScope)
+    var energyScopeWarning = HasScope(state.TeslaScopes, EnergyDeviceDataScope) &&
+                             HasScope(state.TeslaScopes, EnergyCommandsScope)
         ? string.Empty
         : """
-          <div class="callout" style="margin:10px 0 0">
-            <strong>Reconnect Tesla OAuth for energy data</strong>
-            <p style="margin:8px 0 0">This setup was authorized before the Energy Product Information scope was added. Start Tesla OAuth again so live Powerwall and Gateway data can be read.</p>
+          <div class="callout warn" style="margin:10px 0 0">
+            <strong>Reconnect Tesla OAuth for energy controls</strong>
+            <p style="margin:8px 0 0">This setup needs Tesla Energy read and command scopes. Start Tesla OAuth again so live Powerwall/Gateway data can be read and writable Home Assistant controls can send commands.</p>
           </div>
         """;
 
@@ -1472,7 +1481,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       border-radius: 8px;
       background: #0c1118;
     }
-    .property-table { width: 100%; min-width: 1480px; border-collapse: collapse; table-layout: fixed; }
+    .property-table { width: 100%; min-width: 1660px; border-collapse: collapse; table-layout: fixed; }
     .property-table th,
     .property-table td {
       padding: 10px 12px;
@@ -1723,18 +1732,20 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
           <colgroup>
             <col class="resource-col" />
             <col class="display-col" />
-            <col class="type-col" />
-            <col class="path-col" />
-            <col class="value-col" />
-            <col class="hint-col" />
-            <col class="scope-col" />
+              <col class="type-col" />
+              <col class="path-col" />
+              <col class="path-col" />
+              <col class="value-col" />
+              <col class="hint-col" />
+              <col class="scope-col" />
           </colgroup>
           <thead>
             <tr>
               <th>Device</th>
               <th>Entity</th>
               <th>Type</th>
-              <th>Topic</th>
+              <th>State Topic</th>
+              <th>Command Topic</th>
               <th>Template</th>
               <th>Class / Unit</th>
               <th>Enabled</th>
@@ -1903,7 +1914,7 @@ static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionP
     if (entities.Count == 0)
     {
         return """
-            <tr><td colspan="7">No Home Assistant MQTT projection preview has been run yet.</td></tr>
+            <tr><td colspan="8">No Home Assistant MQTT projection preview has been run yet.</td></tr>
         """;
     }
 
@@ -1924,6 +1935,7 @@ static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionP
               <td title="{H(entity.Name)}">{H(entity.Name)}</td>
               <td title="{H(entity.Component)}">{H(entity.Component)}</td>
               <td title="{H(entity.StateTopic)}"><code>{H(entity.StateTopic)}</code></td>
+              <td title="{H(entity.CommandTopic ?? "Read only")}"><code>{H(string.IsNullOrWhiteSpace(entity.CommandTopic) ? "Read only" : entity.CommandTopic)}</code></td>
               <td class="value-cell" title="{H(entity.ValueTemplate)}">{H(TruncateForUi(entity.ValueTemplate, 260))}</td>
               <td title="{H(hint)}">{H(hint)}</td>
               <td title="{H(enabled)}"><span class="pill">{H(enabled)}</span></td>
@@ -1932,7 +1944,7 @@ static string RenderProjectionPreviewRows(IReadOnlyList<HomeAssistantProjectionP
         })) +
         (entities.Count > 200
             ? $"""
-            <tr><td colspan="7">Showing first 200 of {entities.Count} projected entities.</td></tr>
+	            <tr><td colspan="8">Showing first 200 of {entities.Count} projected entities.</td></tr>
 """
             : string.Empty);
 }
@@ -2002,6 +2014,11 @@ static string NormalizeScopes(string value)
     if (!scopes.Contains(EnergyDeviceDataScope, StringComparer.Ordinal))
     {
         scopes = [.. scopes, EnergyDeviceDataScope];
+    }
+
+    if (!scopes.Contains(EnergyCommandsScope, StringComparer.Ordinal))
+    {
+        scopes = [.. scopes, EnergyCommandsScope];
     }
 
     return string.Join(' ', scopes);
@@ -2264,8 +2281,8 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
                 ? TeslaFleetDefaults.DefaultFleetApiAudience
                 : TeslaFleetDefaults.ResolveFleetApiAudience(state.FleetApiAudience, state.AccessToken),
             TeslaScopes = string.IsNullOrWhiteSpace(state.TeslaScopes)
-                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data"
-                : state.TeslaScopes,
+                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds"
+                : NormalizeStoredScopes(state.TeslaScopes),
             PublicKeyUrl = string.IsNullOrWhiteSpace(state.PublicKeyUrl) && !string.IsNullOrWhiteSpace(state.OriginDomain)
                 ? TeslaFleetDefaults.BuildPublicKeyUrl(state.OriginDomain)
                 : state.PublicKeyUrl,
@@ -2313,6 +2330,40 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             MqttDiscoveryPrefix: ReadOptionString("mqtt_discovery_prefix", "homeassistant"),
             MqttBaseTopic: ReadOptionString("mqtt_base_topic", "lms/tesla-fleet"),
             HomeAssistantRefreshIntervalMinutes: Math.Clamp(ReadOptionInt("homeassistant_refresh_interval_minutes", 15), 5, 240));
+
+    private static string NormalizeStoredScopes(string value)
+    {
+        var scopes = (value ?? string.Empty)
+            .Split([' ', ',', ';', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (scopes.Length == 0)
+        {
+            return "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds";
+        }
+
+        if (!scopes.Contains("openid", StringComparer.Ordinal))
+        {
+            scopes = ["openid", .. scopes];
+        }
+
+        if (!scopes.Contains("offline_access", StringComparer.Ordinal))
+        {
+            scopes = [.. scopes, "offline_access"];
+        }
+
+        if (!scopes.Contains("energy_device_data", StringComparer.Ordinal))
+        {
+            scopes = [.. scopes, "energy_device_data"];
+        }
+
+        if (!scopes.Contains("energy_cmds", StringComparer.Ordinal))
+        {
+            scopes = [.. scopes, "energy_cmds"];
+        }
+
+        return string.Join(' ', scopes);
+    }
 
     private string ReadOptionString(string name, string fallback)
     {
@@ -2904,7 +2955,7 @@ sealed class TeslaFleetOAuthClient(HttpClient httpClient)
             ["audience"] = string.IsNullOrWhiteSpace(audience) ? TeslaFleetDefaults.DefaultFleetApiAudience : audience.Trim(),
             ["redirect_uri"] = redirectUri.Trim(),
             ["scope"] = string.IsNullOrWhiteSpace(scopes)
-                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data"
+                ? "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds"
                 : scopes.Trim()
         });
         using var response = await httpClient.PostAsync("https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token", content, cancellationToken);
@@ -3133,7 +3184,7 @@ sealed class TeslaFleetPartnerClient(HttpClient httpClient)
             ["client_id"] = clientId.Trim(),
             ["client_secret"] = clientSecret.Trim(),
             ["audience"] = audience.Trim(),
-            ["scope"] = "openid vehicle_device_data vehicle_cmds vehicle_charging_cmds energy_device_data"
+            ["scope"] = "openid vehicle_device_data vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds"
         });
         using var response = await httpClient.PostAsync("https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token", content, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -3324,7 +3375,7 @@ sealed record TeslaFleetState(
     string TeslaClientId = "",
     string TeslaClientSecret = "",
     string FleetApiAudience = "https://fleet-api.prd.na.vn.cloud.tesla.com",
-    string TeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data",
+    string TeslaScopes = "openid offline_access user_data vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds energy_device_data energy_cmds",
     string PublicKeyPem = "",
     string PrivateKeyPath = "",
     DateTimeOffset? KeyGeneratedUtc = null,

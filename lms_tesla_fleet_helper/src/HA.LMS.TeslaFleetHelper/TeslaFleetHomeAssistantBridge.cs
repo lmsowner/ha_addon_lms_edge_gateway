@@ -1,7 +1,10 @@
+using System.Buffers;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using MQTTnet;
+using MQTTnet.Packets;
 using MQTTnet.Protocol;
 
 sealed class TeslaFleetTokenCoordinator(TeslaFleetOAuthClient oauthClient)
@@ -675,6 +678,14 @@ sealed class TeslaFleetMqttPublisher(
         {
             payload["icon"] = entity.Icon;
         }
+        if (!string.IsNullOrWhiteSpace(entity.CommandTopic))
+        {
+            payload["command_topic"] = entity.CommandTopic;
+        }
+        if (!string.IsNullOrWhiteSpace(entity.CommandTemplate))
+        {
+            payload["command_template"] = entity.CommandTemplate;
+        }
         if (!entity.EnabledByDefault)
         {
             payload["enabled_by_default"] = false;
@@ -728,6 +739,476 @@ sealed class TeslaFleetMqttPublisher(
             .Select(character => char.IsLetterOrDigit(character) ? character : '_')
             .ToArray();
         return new string(chars).Trim('_');
+    }
+}
+
+sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private static readonly string[] OperationModes =
+    [
+        "self_consumption",
+        "backup",
+        "autonomous"
+    ];
+
+    private static readonly string[] ExportRules =
+    [
+        "pv_only",
+        "battery_ok"
+    ];
+
+    public async Task<TeslaEnergyCommandResult> ExecuteAsync(
+        TeslaFleetState state,
+        string siteId,
+        string action,
+        string payload,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(state.AccessToken))
+        {
+            throw new InvalidOperationException("Complete Tesla OAuth before sending Energy commands.");
+        }
+
+        if (string.IsNullOrWhiteSpace(siteId))
+        {
+            throw new InvalidOperationException("Energy command topic did not contain a site ID.");
+        }
+
+        var normalizedAction = action.Trim().ToLowerInvariant();
+        var value = NormalizePayload(payload);
+        var checks = new List<string>
+        {
+            $"Received Energy command '{normalizedAction}' for site {siteId} with payload '{value}'."
+        };
+
+        var command = BuildCommand(siteId, normalizedAction, value);
+        var result = await PostCommandAsync(
+            TeslaFleetDefaults.NormalizeHttpUrl(state.FleetApiAudience, TeslaFleetDefaults.DefaultFleetApiAudience),
+            command.Path,
+            state.AccessToken,
+            command.Payload,
+            checks,
+            cancellationToken);
+
+        return result with
+        {
+            Summary = result.Succeeded
+                ? $"{command.DisplayName} command accepted for Energy site {siteId}."
+                : $"{command.DisplayName} command failed for Energy site {siteId}."
+        };
+    }
+
+    private static TeslaEnergyCommand BuildCommand(string siteId, string action, string value)
+    {
+        var escapedSiteId = Uri.EscapeDataString(siteId);
+        return action switch
+        {
+            "backup_reserve" => new TeslaEnergyCommand(
+                "Backup reserve",
+                $"/api/1/energy_sites/{escapedSiteId}/backup",
+                new { backup_reserve_percent = ParsePercent(value) }),
+            "operation_mode" => new TeslaEnergyCommand(
+                "Operation mode",
+                $"/api/1/energy_sites/{escapedSiteId}/operation",
+                new { default_real_mode = RequireAllowed(value, OperationModes, "operation mode") }),
+            "grid_charging" => new TeslaEnergyCommand(
+                "Grid charging",
+                $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
+                new { disallow_charge_from_grid_with_solar_installed = !ParseBoolean(value) }),
+            "energy_export_rule" => new TeslaEnergyCommand(
+                "Energy export rule",
+                $"/api/1/energy_sites/{escapedSiteId}/grid_import_export",
+                new { customer_preferred_export_rule = RequireAllowed(value, ExportRules, "energy export rule") }),
+            _ => throw new InvalidOperationException($"Unsupported Energy command action '{action}'.")
+        };
+    }
+
+    private async Task<TeslaEnergyCommandResult> PostCommandAsync(
+        string audience,
+        string path,
+        string accessToken,
+        object payload,
+        List<string> checks,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{audience.TrimEnd('/')}{path}")
+        {
+            Content = JsonContent.Create(payload, options: JsonOptions)
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        checks.Add($"POST {path} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}.");
+        if (!response.IsSuccessStatusCode)
+        {
+            checks.Add($"POST {path} response: {TruncateForDiagnostics(body)}");
+            if (body.Contains("missing scopes", StringComparison.OrdinalIgnoreCase))
+            {
+                checks.Add("Tesla Energy writes require the energy_cmds OAuth scope. Start Tesla OAuth again from the Helper setup page so writable Energy controls can be authorized.");
+            }
+
+            return new TeslaEnergyCommandResult(false, "Tesla Energy command failed.", checks);
+        }
+
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            checks.Add($"POST {path} response: {TruncateForDiagnostics(body)}");
+            if (!IsAcceptedCommandResponse(body, checks))
+            {
+                return new TeslaEnergyCommandResult(false, "Tesla Energy command was not accepted by the Fleet API response body.", checks);
+            }
+        }
+
+        return new TeslaEnergyCommandResult(true, "Tesla Energy command accepted.", checks);
+    }
+
+    private static string NormalizePayload(string payload)
+    {
+        var value = (payload ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.String => document.RootElement.GetString()?.Trim() ?? string.Empty,
+                JsonValueKind.Number => document.RootElement.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => value.Trim('"')
+            };
+        }
+        catch (JsonException)
+        {
+            return value.Trim('"');
+        }
+    }
+
+    private static int ParsePercent(string value)
+    {
+        if (!int.TryParse(value, out var percent))
+        {
+            throw new InvalidOperationException($"Backup reserve must be a whole percentage from 0 to 100. Received '{value}'.");
+        }
+
+        if (percent is < 0 or > 100)
+        {
+            throw new InvalidOperationException($"Backup reserve must be between 0 and 100. Received '{percent}'.");
+        }
+
+        return percent;
+    }
+
+    private static bool ParseBoolean(string value)
+    {
+        if (bool.TryParse(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        if (value.Equals("on", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (value.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        throw new InvalidOperationException($"Expected true/false payload. Received '{value}'.");
+    }
+
+    private static string RequireAllowed(string value, IReadOnlyList<string> allowed, string label)
+    {
+        var normalized = value.Trim();
+        if (allowed.Any(item => item.Equals(normalized, StringComparison.OrdinalIgnoreCase)))
+        {
+            return allowed.First(item => item.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        }
+
+        throw new InvalidOperationException($"Unsupported {label} '{value}'. Allowed values: {string.Join(", ", allowed)}.");
+    }
+
+    private static bool IsAcceptedCommandResponse(string body, List<string> checks)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            var response = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("response", out var responseElement)
+                ? responseElement
+                : root;
+            if (response.ValueKind != JsonValueKind.Object)
+            {
+                return true;
+            }
+
+            if (TryReadInt(response, "code", out var code))
+            {
+                checks.Add($"Tesla command response code: {code}.");
+                return code is >= 200 and < 300;
+            }
+
+            if (TryReadBool(response, "result", out var result))
+            {
+                checks.Add($"Tesla command response result: {result}.");
+                return result;
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return true;
+        }
+    }
+
+    private static bool TryReadInt(JsonElement element, string propertyName, out int value)
+    {
+        value = 0;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out value))
+        {
+            return true;
+        }
+
+        return property.ValueKind == JsonValueKind.String &&
+               int.TryParse(property.GetString(), out value);
+    }
+
+    private static bool TryReadBool(JsonElement element, string propertyName, out bool value)
+    {
+        value = false;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            value = property.GetBoolean();
+            return true;
+        }
+
+        return property.ValueKind == JsonValueKind.String &&
+               bool.TryParse(property.GetString(), out value);
+    }
+
+    private static string TruncateForDiagnostics(string value) =>
+        string.IsNullOrWhiteSpace(value) || value.Length <= 600
+            ? value
+            : $"{value[..600]}...";
+}
+
+sealed class TeslaFleetHomeAssistantCommandService(
+    TeslaFleetStore store,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetEnergyCommandClient commandClient,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetMqttPublisher mqttPublisher,
+    ILogger<TeslaFleetHomeAssistantCommandService> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await ListenAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Home Assistant MQTT command listener failed.");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task ListenAsync(CancellationToken cancellationToken)
+    {
+        var state = await store.LoadAsync(cancellationToken);
+        if (!state.HomeAssistantMqttEnabled ||
+            string.IsNullOrWhiteSpace(state.RefreshToken))
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
+            return;
+        }
+
+        var settings = TeslaMqttSettings.FromState(state);
+        var factory = new MqttClientFactory();
+        using var client = factory.CreateMqttClient();
+        var clientId = BuildClientId();
+        var optionsBuilder = new MqttClientOptionsBuilder()
+            .WithClientId(clientId)
+            .WithTcpServer(settings.Host, settings.Port)
+            .WithCleanSession();
+        if (!string.IsNullOrWhiteSpace(settings.Username))
+        {
+            optionsBuilder = optionsBuilder.WithCredentials(settings.Username, settings.Password);
+        }
+
+        client.ApplicationMessageReceivedAsync += args => HandleCommandMessageAsync(settings, args, cancellationToken);
+
+        await client.ConnectAsync(optionsBuilder.Build(), cancellationToken);
+        var commandFilter = $"{settings.BaseTopic}/energy/+/command/+";
+        await client.SubscribeAsync(
+            new MqttClientSubscribeOptions
+            {
+                TopicFilters =
+                [
+                    new MqttTopicFilter
+                    {
+                        Topic = commandFilter,
+                        QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce
+                    }
+                ]
+            },
+            cancellationToken);
+        logger.LogInformation("Listening for Home Assistant MQTT Energy commands on {CommandFilter}.", commandFilter);
+
+        var reconnectAfter = DateTimeOffset.UtcNow.AddMinutes(10);
+        while (client.IsConnected &&
+               DateTimeOffset.UtcNow < reconnectAfter &&
+               !cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
+        }
+
+        if (client.IsConnected)
+        {
+            await client.DisconnectAsync(cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task HandleCommandMessageAsync(
+        TeslaMqttSettings settings,
+        MqttApplicationMessageReceivedEventArgs args,
+        CancellationToken cancellationToken)
+    {
+        var parsed = TryParseEnergyCommandTopic(settings, args.ApplicationMessage.Topic);
+        if (parsed is null)
+        {
+            return;
+        }
+
+        args.IsHandled = true;
+        var payload = ReadPayload(args.ApplicationMessage);
+        var state = await store.LoadAsync(cancellationToken);
+        TeslaFleetState updated;
+        try
+        {
+            var token = await tokenCoordinator.EnsureUsableAsync(state, cancellationToken);
+            var result = await commandClient.ExecuteAsync(
+                token.State,
+                parsed.Value.SiteId,
+                parsed.Value.Action,
+                payload,
+                cancellationToken);
+            var checks = token.Checks.Concat(result.Checks).ToList();
+            updated = token.State with
+            {
+                LastStatus = result.Succeeded ? "Home Assistant command accepted" : "Home Assistant command failed",
+                LastMessage = result.Summary,
+                LastChecks = checks
+            };
+
+            if (result.Succeeded)
+            {
+                var snapshot = await dataClient.FetchSnapshotAsync(updated, cancellationToken);
+                var publishResult = await mqttPublisher.PublishAsync(updated, snapshot, cancellationToken);
+                updated = updated with
+                {
+                    LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
+                    LastHomeAssistantPublishSummary = publishResult.Summary,
+                    LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
+                    LastMessage = publishResult.Summary,
+                    LastChecks = checks.Concat(publishResult.Checks).ToList()
+                };
+            }
+        }
+        catch (Exception exception)
+        {
+            updated = state with
+            {
+                LastStatus = "Home Assistant command failed",
+                LastMessage = exception.Message,
+                LastChecks =
+                [
+                    $"Command topic: {args.ApplicationMessage.Topic}.",
+                    $"Command payload: {payload}."
+                ]
+            };
+            logger.LogWarning(exception, "Failed to process Home Assistant MQTT command {Topic}.", args.ApplicationMessage.Topic);
+        }
+
+        await store.SaveAsync(updated, cancellationToken);
+    }
+
+    private static (string SiteId, string Action)? TryParseEnergyCommandTopic(TeslaMqttSettings settings, string? topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return null;
+        }
+
+        var prefix = $"{settings.BaseTopic.TrimEnd('/')}/energy/";
+        if (!topic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var parts = topic[prefix.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 3 ||
+            !parts[1].Equals("command", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return (parts[0], parts[2]);
+    }
+
+    private static string ReadPayload(MqttApplicationMessage message)
+    {
+        var payload = message.Payload.ToArray();
+        return payload.Length == 0
+            ? string.Empty
+            : Encoding.UTF8.GetString(payload);
+    }
+
+    private static string BuildClientId()
+    {
+        var clientId = $"lms-tesla-fleet-command-{Environment.MachineName}-{Guid.NewGuid():N}";
+        return clientId.Length <= 54 ? clientId : clientId[..54];
     }
 }
 
@@ -844,6 +1325,16 @@ sealed record TeslaMqttSettings(
 }
 
 sealed record TeslaHomeAssistantPublishResult(
+    bool Succeeded,
+    string Summary,
+    List<string> Checks);
+
+sealed record TeslaEnergyCommand(
+    string DisplayName,
+    string Path,
+    object Payload);
+
+sealed record TeslaEnergyCommandResult(
     bool Succeeded,
     string Summary,
     List<string> Checks);
