@@ -39,6 +39,8 @@ sealed class TeslaFleetStateMapper
                 ReadInt(values, "charge_state.usable_battery_level", "usable_battery_level"),
                 ReadString(values, "charge_state.charging_state", "charging_state"),
                 ReadInt(values, "charge_state.charge_limit_soc", "charge_limit_soc"),
+                ReadInt(values, "charge_state.charge_current_request", "charge_current_request"),
+                ReadInt(values, "charge_state.charge_current_request_max", "charge_current_request_max"),
                 ReadDouble(values, "charge_state.battery_range", "battery_range", "charge_state.est_battery_range", "est_battery_range", "charge_state.ideal_battery_range", "ideal_battery_range"),
                 ReadString(values, "charge_state.conn_charge_cable", "conn_charge_cable", "connected_charge_cable"),
                 ReadBool(values, "charge_state.fast_charger_present", "fast_charger_present"),

@@ -99,7 +99,7 @@ sealed class HomeAssistantMqttProjectionMapper
                 "Tesla",
                 "Tesla Vehicle",
                 vehicle.Meta.FirmwareVersion));
-            entities.AddRange(BuildVehicleEntities(deviceId, stateTopic));
+            entities.AddRange(BuildVehicleEntities(deviceId, stateTopic, vehicle));
             entities.AddRange(BuildRawEntities(deviceId, stateTopic, vehicle.RawProperties));
             states.Add(new HomeAssistantMqttStateProjection(stateTopic, BuildVehiclePayload(vehicle)));
         }
@@ -144,38 +144,62 @@ sealed class HomeAssistantMqttProjectionMapper
         Sensor(deviceId, "last_snapshot", "Last Snapshot", stateTopic, "{{ value_json.last_snapshot }}", "timestamp")
     ];
 
-    private static IEnumerable<HomeAssistantMqttEntityProjection> BuildVehicleEntities(string deviceId, string stateTopic) =>
-    [
-        Sensor(deviceId, "state", "State", stateTopic, "{{ value_json.state }}"),
-        BinarySensor(deviceId, "online", "Online", stateTopic, "{{ (value_json.state == 'online') | lower }}", "connectivity"),
-        Sensor(deviceId, "battery_level", "Battery", stateTopic, "{{ value_json.battery_level }}", "battery", "%", stateClass: "measurement"),
-        Sensor(deviceId, "usable_battery_level", "Usable Battery", stateTopic, "{{ value_json.usable_battery_level }}", "battery", "%", stateClass: "measurement"),
-        Sensor(deviceId, "charging_state", "Charging State", stateTopic, "{{ value_json.charging_state }}"),
-        Sensor(deviceId, "charge_limit", "Charge Limit", stateTopic, "{{ value_json.charge_limit }}", "battery", "%", stateClass: "measurement"),
-        Sensor(deviceId, "battery_range", "Battery Range", stateTopic, "{{ value_json.battery_range }}", "distance", "mi", stateClass: "measurement"),
-        Sensor(deviceId, "connected_charge_cable", "Connected Charge Cable", stateTopic, "{{ value_json.connected_charge_cable }}"),
-        BinarySensor(deviceId, "fast_charger_present", "Fast Charger Present", stateTopic, "{{ value_json.fast_charger_present | lower }}"),
-        BinarySensor(deviceId, "charge_port_door_open", "Charge Port Door Open", stateTopic, "{{ value_json.charge_port_door_open | lower }}", "opening"),
-        Sensor(deviceId, "inside_temp", "Inside Temperature", stateTopic, "{{ value_json.inside_temp }}", "temperature", "\u00b0C", stateClass: "measurement"),
-        Sensor(deviceId, "outside_temp", "Outside Temperature", stateTopic, "{{ value_json.outside_temp }}", "temperature", "\u00b0C", stateClass: "measurement"),
-        BinarySensor(deviceId, "climate_on", "Climate On", stateTopic, "{{ value_json.climate_on | lower }}"),
-        Sensor(deviceId, "driver_temp_setting", "Driver Temperature Setting", stateTopic, "{{ value_json.driver_temp_setting }}", "temperature", "\u00b0C", stateClass: "measurement"),
-        Sensor(deviceId, "passenger_temp_setting", "Passenger Temperature Setting", stateTopic, "{{ value_json.passenger_temp_setting }}", "temperature", "\u00b0C", stateClass: "measurement"),
-        DeviceTracker(deviceId, "location", "Location", stateTopic),
-        Sensor(deviceId, "latitude", "Latitude", stateTopic, "{{ value_json.latitude }}", enabledByDefault: false),
-        Sensor(deviceId, "longitude", "Longitude", stateTopic, "{{ value_json.longitude }}", enabledByDefault: false),
-        Sensor(deviceId, "heading", "Heading", stateTopic, "{{ value_json.heading }}", unitOfMeasurement: "\u00b0", stateClass: "measurement"),
-        Sensor(deviceId, "speed", "Speed", stateTopic, "{{ value_json.speed }}", "speed", "mph", stateClass: "measurement"),
-        Sensor(deviceId, "shift_state", "Shift State", stateTopic, "{{ value_json.shift_state }}"),
-        Sensor(deviceId, "firmware", "Firmware", stateTopic, "{{ value_json.firmware }}"),
-        Sensor(deviceId, "odometer", "Odometer", stateTopic, "{{ value_json.odometer }}", "distance", "mi", stateClass: "total_increasing"),
-        BinarySensor(deviceId, "locked", "Locked", stateTopic, "{{ value_json.locked | lower }}"),
-        BinarySensor(deviceId, "sentry_mode", "Sentry Mode", stateTopic, "{{ value_json.sentry_mode | lower }}"),
-        Sensor(deviceId, "fleet_key_status", "Fleet Key Status", stateTopic, "{{ value_json.fleet_key_status }}"),
-        BinarySensor(deviceId, "fleet_key_paired", "Fleet Key Paired", stateTopic, "{{ value_json.fleet_key_paired | lower }}", "connectivity"),
-        BinarySensor(deviceId, "vehicle_command_protocol_required", "Signed Commands Required", stateTopic, "{{ value_json.vehicle_command_protocol_required | lower }}"),
-        Sensor(deviceId, "total_keys", "Total Keys", stateTopic, "{{ value_json.total_keys }}", stateClass: "measurement")
-    ];
+    private static IEnumerable<HomeAssistantMqttEntityProjection> BuildVehicleEntities(
+        string deviceId,
+        string stateTopic,
+        LmsTeslaVehicleState vehicle)
+    {
+        var maxChargingAmps = vehicle.Charge.MaxChargingAmps is > 0
+            ? Math.Clamp(vehicle.Charge.MaxChargingAmps.Value, 5, 80)
+            : 80;
+
+        return
+        [
+            Sensor(deviceId, "state", "State", stateTopic, "{{ value_json.state }}"),
+            BinarySensor(deviceId, "online", "Online", stateTopic, "{{ (value_json.state == 'online') | lower }}", "connectivity"),
+            Sensor(deviceId, "battery_level", "Battery", stateTopic, "{{ value_json.battery_level }}", "battery", "%", stateClass: "measurement"),
+            Sensor(deviceId, "usable_battery_level", "Usable Battery", stateTopic, "{{ value_json.usable_battery_level }}", "battery", "%", stateClass: "measurement"),
+            Sensor(deviceId, "charging_state", "Charging State", stateTopic, "{{ value_json.charging_state }}"),
+            Sensor(deviceId, "charge_limit", "Charge Limit", stateTopic, "{{ value_json.charge_limit }}", "battery", "%", stateClass: "measurement"),
+            Number(deviceId, "charge_limit_number", "Charge limit", stateTopic, "{{ value_json.charge_limit }}", BuildCommandTopic(stateTopic, "charge_limit"), "battery", "%", 50, 100, 1, "auto", icon: "mdi:battery-charging-80"),
+            Sensor(deviceId, "charging_amps", "Charging Amps", stateTopic, "{{ value_json.charging_amps }}", "current", "A", stateClass: "measurement"),
+            Number(deviceId, "charging_amps_number", "Charging amps", stateTopic, "{{ value_json.charging_amps }}", BuildCommandTopic(stateTopic, "charging_amps"), "current", "A", 5, maxChargingAmps, 1, "auto", icon: "mdi:current-ac"),
+            Switch(deviceId, "charger", "Charger", stateTopic, "{{ 'ON' if value_json.charging_state == 'Charging' else 'OFF' }}", BuildCommandTopic(stateTopic, "charger"), icon: "mdi:ev-station"),
+            Sensor(deviceId, "battery_range", "Battery Range", stateTopic, "{{ value_json.battery_range }}", "distance", "mi", stateClass: "measurement"),
+            Sensor(deviceId, "connected_charge_cable", "Connected Charge Cable", stateTopic, "{{ value_json.connected_charge_cable }}"),
+            BinarySensor(deviceId, "fast_charger_present", "Fast Charger Present", stateTopic, "{{ value_json.fast_charger_present | lower }}"),
+            BinarySensor(deviceId, "charge_port_door_open", "Charge Port Door Open", stateTopic, "{{ value_json.charge_port_door_open | lower }}", "opening"),
+            Button(deviceId, "charge_port_door_open_button", "Open charge port", BuildCommandTopic(stateTopic, "charge_port_door_open"), icon: "mdi:ev-plug-tesla"),
+            Button(deviceId, "charge_port_door_close_button", "Close charge port", BuildCommandTopic(stateTopic, "charge_port_door_close"), icon: "mdi:ev-plug-tesla"),
+            Sensor(deviceId, "inside_temp", "Inside Temperature", stateTopic, "{{ value_json.inside_temp }}", "temperature", "\u00b0C", stateClass: "measurement"),
+            Sensor(deviceId, "outside_temp", "Outside Temperature", stateTopic, "{{ value_json.outside_temp }}", "temperature", "\u00b0C", stateClass: "measurement"),
+            BinarySensor(deviceId, "climate_on", "Climate On", stateTopic, "{{ value_json.climate_on | lower }}"),
+            Switch(deviceId, "climate", "Climate", stateTopic, "{{ 'ON' if value_json.climate_on else 'OFF' }}", BuildCommandTopic(stateTopic, "climate"), icon: "mdi:fan"),
+            Sensor(deviceId, "driver_temp_setting", "Driver Temperature Setting", stateTopic, "{{ value_json.driver_temp_setting }}", "temperature", "\u00b0C", stateClass: "measurement"),
+            Sensor(deviceId, "passenger_temp_setting", "Passenger Temperature Setting", stateTopic, "{{ value_json.passenger_temp_setting }}", "temperature", "\u00b0C", stateClass: "measurement"),
+            DeviceTracker(deviceId, "location", "Location", stateTopic),
+            Sensor(deviceId, "latitude", "Latitude", stateTopic, "{{ value_json.latitude }}", enabledByDefault: false),
+            Sensor(deviceId, "longitude", "Longitude", stateTopic, "{{ value_json.longitude }}", enabledByDefault: false),
+            Sensor(deviceId, "heading", "Heading", stateTopic, "{{ value_json.heading }}", unitOfMeasurement: "\u00b0", stateClass: "measurement"),
+            Sensor(deviceId, "speed", "Speed", stateTopic, "{{ value_json.speed }}", "speed", "mph", stateClass: "measurement"),
+            Sensor(deviceId, "shift_state", "Shift State", stateTopic, "{{ value_json.shift_state }}"),
+            Sensor(deviceId, "firmware", "Firmware", stateTopic, "{{ value_json.firmware }}"),
+            Sensor(deviceId, "odometer", "Odometer", stateTopic, "{{ value_json.odometer }}", "distance", "mi", stateClass: "total_increasing"),
+            BinarySensor(deviceId, "locked", "Locked", stateTopic, "{{ value_json.locked | lower }}"),
+            Lock(deviceId, "doors", "Doors", stateTopic, "{{ 'LOCKED' if value_json.locked else 'UNLOCKED' }}", BuildCommandTopic(stateTopic, "door_lock")),
+            BinarySensor(deviceId, "sentry_mode", "Sentry Mode", stateTopic, "{{ value_json.sentry_mode | lower }}"),
+            Switch(deviceId, "sentry_mode_switch", "Sentry mode", stateTopic, "{{ 'ON' if value_json.sentry_mode else 'OFF' }}", BuildCommandTopic(stateTopic, "sentry_mode"), icon: "mdi:shield-car"),
+            Button(deviceId, "wake_up", "Wake up", BuildCommandTopic(stateTopic, "wake_up"), icon: "mdi:power"),
+            Button(deviceId, "flash_lights", "Flash lights", BuildCommandTopic(stateTopic, "flash_lights"), icon: "mdi:car-light-high"),
+            Button(deviceId, "honk_horn", "Horn", BuildCommandTopic(stateTopic, "honk_horn"), icon: "mdi:bullhorn"),
+            Button(deviceId, "open_frunk", "Open frunk", BuildCommandTopic(stateTopic, "open_frunk"), icon: "mdi:car-back"),
+            Button(deviceId, "open_trunk", "Open trunk", BuildCommandTopic(stateTopic, "open_trunk"), icon: "mdi:car-back"),
+            Sensor(deviceId, "fleet_key_status", "Fleet Key Status", stateTopic, "{{ value_json.fleet_key_status }}"),
+            BinarySensor(deviceId, "fleet_key_paired", "Fleet Key Paired", stateTopic, "{{ value_json.fleet_key_paired | lower }}", "connectivity"),
+            BinarySensor(deviceId, "vehicle_command_protocol_required", "Signed Commands Required", stateTopic, "{{ value_json.vehicle_command_protocol_required | lower }}"),
+            Sensor(deviceId, "total_keys", "Total Keys", stateTopic, "{{ value_json.total_keys }}", stateClass: "measurement")
+        ];
+    }
 
     private static IEnumerable<HomeAssistantMqttEntityProjection> BuildEnergyEntities(string deviceId, string stateTopic) =>
     [
@@ -204,9 +228,11 @@ sealed class HomeAssistantMqttProjectionMapper
         Sensor(deviceId, "generator_power", "Generator Power", stateTopic, "{{ value_json.generator_power }}", "power", "W", stateClass: "measurement", enabledByDefault: false),
         Sensor(deviceId, "backup_reserve", "Backup Reserve", stateTopic, "{{ value_json.backup_reserve }}", "battery", "%", stateClass: "measurement"),
         Number(deviceId, "backup_reserve_number", "Backup reserve", stateTopic, "{{ value_json.backup_reserve }}", BuildCommandTopic(stateTopic, "backup_reserve"), "battery", "%", 0, 100, 1, "auto", icon: "mdi:battery"),
+        Number(deviceId, "off_grid_vehicle_charging_reserve", "Off-grid vehicle charging reserve", stateTopic, "{{ value_json.off_grid_vehicle_charging_reserve }}", BuildCommandTopic(stateTopic, "off_grid_vehicle_charging_reserve"), "battery", "%", 0, 100, 1, "auto", icon: "mdi:car-battery"),
         Select(deviceId, "operation_mode", "Operation mode", stateTopic, "{{ value_json.operation_mode }}", BuildCommandTopic(stateTopic, "operation_mode"), ["Self-Powered", "Time-Based Control", "Backup"], icon: "mdi:home-battery"),
         Select(deviceId, "grid_charging", "Grid charging", stateTopic, "{{ value_json.grid_charging }}", BuildCommandTopic(stateTopic, "grid_charging"), ["Yes", "No"], icon: "mdi:transmission-tower-export"),
         Select(deviceId, "energy_exports", "Energy exports", stateTopic, "{{ value_json.energy_exports }}", BuildCommandTopic(stateTopic, "energy_exports"), ["Nothing", "Solar", "Everything"], icon: "mdi:home-export-outline"),
+        Switch(deviceId, "storm_mode", "Storm watch", stateTopic, "{{ 'ON' if value_json.storm_mode_active else 'OFF' }}", BuildCommandTopic(stateTopic, "storm_mode"), icon: "mdi:weather-lightning-rainy"),
         BinarySensor(deviceId, "grid_services_active", "Grid Services Active", stateTopic, "{{ value_json.grid_services_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic"),
         BinarySensor(deviceId, "storm_mode_active", "Storm Mode Active", stateTopic, "{{ value_json.storm_mode_active | lower }}", enabledByDefault: false, entityCategory: "diagnostic")
     ];
@@ -268,6 +294,8 @@ sealed class HomeAssistantMqttProjectionMapper
             ["usable_battery_level"] = vehicle.Charge.UsableBatteryLevelPercent,
             ["charging_state"] = vehicle.Charge.ChargingState,
             ["charge_limit"] = vehicle.Charge.ChargeLimitPercent,
+            ["charging_amps"] = vehicle.Charge.ChargingAmps,
+            ["max_charging_amps"] = vehicle.Charge.MaxChargingAmps,
             ["battery_range"] = vehicle.Charge.BatteryRange,
             ["connected_charge_cable"] = vehicle.Charge.ConnectedChargeCable,
             ["fast_charger_present"] = vehicle.Charge.FastChargerPresent,
@@ -320,6 +348,7 @@ sealed class HomeAssistantMqttProjectionMapper
             ["grid_power"] = site.Live.GridPowerWatts,
             ["generator_power"] = site.Live.GeneratorPowerWatts,
             ["backup_reserve"] = site.Live.BackupReservePercent,
+            ["off_grid_vehicle_charging_reserve"] = ResolveOffGridVehicleChargingReserve(site),
             ["operation_mode"] = ResolveOperationMode(site),
             ["grid_charging"] = ResolveGridCharging(site),
             ["energy_exports"] = ResolveEnergyExports(site),
@@ -442,6 +471,98 @@ sealed class HomeAssistantMqttProjectionMapper
             },
             commandTopic);
 
+    private static HomeAssistantMqttEntityProjection Switch(
+        string deviceId,
+        string id,
+        string name,
+        string stateTopic,
+        string valueTemplate,
+        string commandTopic,
+        bool enabledByDefault = true,
+        string? entityCategory = null,
+        string? icon = null) =>
+        new(
+            $"{deviceId}_{id}",
+            deviceId,
+            "switch",
+            name,
+            stateTopic,
+            valueTemplate,
+            null,
+            null,
+            enabledByDefault,
+            entityCategory,
+            null,
+            icon,
+            new Dictionary<string, object?>
+            {
+                ["payload_on"] = "ON",
+                ["payload_off"] = "OFF",
+                ["state_on"] = "ON",
+                ["state_off"] = "OFF"
+            },
+            commandTopic);
+
+    private static HomeAssistantMqttEntityProjection Button(
+        string deviceId,
+        string id,
+        string name,
+        string commandTopic,
+        string payload = "PRESS",
+        bool enabledByDefault = true,
+        string? entityCategory = null,
+        string? icon = null) =>
+        new(
+            $"{deviceId}_{id}",
+            deviceId,
+            "button",
+            name,
+            string.Empty,
+            string.Empty,
+            null,
+            null,
+            enabledByDefault,
+            entityCategory,
+            null,
+            icon,
+            new Dictionary<string, object?>
+            {
+                ["payload_press"] = payload
+            },
+            commandTopic);
+
+    private static HomeAssistantMqttEntityProjection Lock(
+        string deviceId,
+        string id,
+        string name,
+        string stateTopic,
+        string valueTemplate,
+        string commandTopic,
+        bool enabledByDefault = true,
+        string? entityCategory = null,
+        string? icon = null) =>
+        new(
+            $"{deviceId}_{id}",
+            deviceId,
+            "lock",
+            name,
+            stateTopic,
+            valueTemplate,
+            null,
+            null,
+            enabledByDefault,
+            entityCategory,
+            null,
+            icon,
+            new Dictionary<string, object?>
+            {
+                ["payload_lock"] = "LOCK",
+                ["payload_unlock"] = "UNLOCK",
+                ["state_locked"] = "LOCKED",
+                ["state_unlocked"] = "UNLOCKED"
+            },
+            commandTopic);
+
     private static HomeAssistantMqttEntityProjection BinarySensor(
         string deviceId,
         string id,
@@ -532,6 +653,14 @@ sealed class HomeAssistantMqttProjectionMapper
             "site_info.operation",
             "default_real_mode",
             "operation"));
+
+    private static int? ResolveOffGridVehicleChargingReserve(LmsTeslaEnergySiteState site) =>
+        ReadInt(
+            site.RawProperties,
+            "site_info.off_grid_vehicle_charging_reserve",
+            "site_info.off_grid_vehicle_charging_reserve_percent",
+            "off_grid_vehicle_charging_reserve",
+            "off_grid_vehicle_charging_reserve_percent");
 
     private static string? ResolveGridCharging(LmsTeslaEnergySiteState site)
     {
@@ -663,6 +792,37 @@ sealed class HomeAssistantMqttProjectionMapper
             if (!string.IsNullOrWhiteSpace(text))
             {
                 return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ReadInt(IReadOnlyDictionary<string, object?> values, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!values.TryGetValue(key, out var value) || value is null)
+            {
+                continue;
+            }
+
+            switch (value)
+            {
+                case int intValue:
+                    return intValue;
+                case long longValue when longValue is <= int.MaxValue and >= int.MinValue:
+                    return (int)longValue;
+                case double doubleValue when doubleValue is <= int.MaxValue and >= int.MinValue:
+                    return (int)Math.Round(doubleValue);
+                case decimal decimalValue when decimalValue is <= int.MaxValue and >= int.MinValue:
+                    return (int)Math.Round(decimalValue);
+            }
+
+            if (double.TryParse(value.ToString(), out var parsed) &&
+                parsed is <= int.MaxValue and >= int.MinValue)
+            {
+                return (int)Math.Round(parsed);
             }
         }
 

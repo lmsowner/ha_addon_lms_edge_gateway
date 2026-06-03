@@ -1,7 +1,10 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using MQTTnet;
@@ -659,11 +662,17 @@ sealed class TeslaFleetMqttPublisher(
         {
             ["name"] = entity.Name,
             ["unique_id"] = entity.Id,
-            ["state_topic"] = entity.StateTopic,
-            ["value_template"] = entity.ValueTemplate,
             ["availability_topic"] = $"{settings.BaseTopic}/availability",
             ["device"] = devicePayload
         };
+        if (!string.IsNullOrWhiteSpace(entity.StateTopic))
+        {
+            payload["state_topic"] = entity.StateTopic;
+        }
+        if (!string.IsNullOrWhiteSpace(entity.ValueTemplate))
+        {
+            payload["value_template"] = entity.ValueTemplate;
+        }
         if (!string.IsNullOrWhiteSpace(entity.DeviceClass))
         {
             payload["device_class"] = entity.DeviceClass;
@@ -784,6 +793,184 @@ sealed class TeslaFleetMqttPublisher(
     }
 }
 
+sealed class TeslaFleetVehicleCommandProxyService(
+    TeslaFleetStore store,
+    ILogger<TeslaFleetVehicleCommandProxyService> logger) : BackgroundService
+{
+    private const string ProxyHost = "127.0.0.1";
+    private const int ProxyPort = 4443;
+    private Process? proxyProcess;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                var state = await store.LoadAsync(stoppingToken);
+                if (string.IsNullOrWhiteSpace(state.PrivateKeyPath) || !File.Exists(state.PrivateKeyPath))
+                {
+                    await StopProxyAsync(stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                    continue;
+                }
+
+                if (proxyProcess is null || proxyProcess.HasExited)
+                {
+                    EnsureProxyTlsFiles();
+                    StartProxy(state.PrivateKeyPath);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Tesla vehicle command proxy supervision failed.");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+
+        await StopProxyAsync(CancellationToken.None);
+    }
+
+    private void StartProxy(string privateKeyPath)
+    {
+        var executable = Environment.GetEnvironmentVariable("TeslaFleetHelper__VehicleCommandProxyExecutable") ??
+                         "tesla-http-proxy";
+        var startInfo = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-tls-key");
+        startInfo.ArgumentList.Add(store.VehicleCommandProxyTlsKeyPath);
+        startInfo.ArgumentList.Add("-cert");
+        startInfo.ArgumentList.Add(store.VehicleCommandProxyTlsCertPath);
+        startInfo.ArgumentList.Add("-key-file");
+        startInfo.ArgumentList.Add(privateKeyPath);
+        startInfo.ArgumentList.Add("-host");
+        startInfo.ArgumentList.Add(ProxyHost);
+        startInfo.ArgumentList.Add("-port");
+        startInfo.ArgumentList.Add(ProxyPort.ToString(CultureInfo.InvariantCulture));
+        startInfo.ArgumentList.Add("-session-cache");
+        startInfo.ArgumentList.Add(store.VehicleCommandProxyCachePath);
+        startInfo.Environment["TESLA_CACHE_FILE"] = store.VehicleCommandProxyCachePath;
+
+        proxyProcess = new Process
+        {
+            StartInfo = startInfo,
+            EnableRaisingEvents = true
+        };
+        proxyProcess.OutputDataReceived += (_, args) =>
+        {
+            if (!string.IsNullOrWhiteSpace(args.Data))
+            {
+                logger.LogInformation("tesla-http-proxy: {Message}", args.Data);
+            }
+        };
+        proxyProcess.ErrorDataReceived += (_, args) =>
+        {
+            if (!string.IsNullOrWhiteSpace(args.Data))
+            {
+                logger.LogInformation("tesla-http-proxy: {Message}", args.Data);
+            }
+        };
+        proxyProcess.Exited += (_, _) =>
+            logger.LogWarning("Tesla vehicle command proxy exited with code {ExitCode}.", proxyProcess?.ExitCode);
+
+        if (!proxyProcess.Start())
+        {
+            throw new InvalidOperationException("Tesla vehicle command proxy did not start.");
+        }
+
+        proxyProcess.BeginOutputReadLine();
+        proxyProcess.BeginErrorReadLine();
+        logger.LogInformation("Started Tesla vehicle command proxy on https://{Host}:{Port}.", ProxyHost, ProxyPort);
+    }
+
+    private void EnsureProxyTlsFiles()
+    {
+        if (File.Exists(store.VehicleCommandProxyTlsCertPath) &&
+            File.Exists(store.VehicleCommandProxyTlsKeyPath))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(store.VehicleCommandProxyTlsCertPath)!);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+        var request = new CertificateRequest("CN=localhost", key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyCertSign,
+            critical: true));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection
+            {
+                new("1.3.6.1.5.5.7.3.1")
+            },
+            critical: false));
+        using var certificate = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(10));
+
+        File.WriteAllText(store.VehicleCommandProxyTlsCertPath, certificate.ExportCertificatePem());
+        File.WriteAllText(store.VehicleCommandProxyTlsKeyPath, key.ExportPkcs8PrivateKeyPem());
+        TrySetOwnerOnly(store.VehicleCommandProxyTlsKeyPath);
+    }
+
+    private async Task StopProxyAsync(CancellationToken cancellationToken)
+    {
+        if (proxyProcess is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!proxyProcess.HasExited)
+            {
+                proxyProcess.Kill(entireProcessTree: true);
+                await proxyProcess.WaitForExitAsync(cancellationToken);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogDebug(exception, "Failed to stop Tesla vehicle command proxy cleanly.");
+        }
+        finally
+        {
+            proxyProcess.Dispose();
+            proxyProcess = null;
+        }
+    }
+
+    private static void TrySetOwnerOnly(string path)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        catch
+        {
+            // Non-Unix/local dev filesystems can ignore this; Home Assistant runs on Linux.
+        }
+    }
+}
+
 sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -860,9 +1047,11 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
         return action switch
         {
             "backup_reserve" => BuildBackupReserveCommand(escapedSiteId, value),
+            "off_grid_vehicle_charging_reserve" => BuildOffGridVehicleChargingReserveCommand(escapedSiteId, value),
             "operation_mode" => BuildOperationModeCommand(escapedSiteId, value),
             "grid_charging" => BuildGridChargingCommand(escapedSiteId, value),
             "energy_exports" or "energy_export_rule" => BuildEnergyExportsCommand(escapedSiteId, value),
+            "storm_mode" => BuildStormModeCommand(escapedSiteId, value),
             _ => throw new InvalidOperationException($"Unsupported Energy command action '{action}'.")
         };
     }
@@ -894,6 +1083,36 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
                 ["default_real_mode"] = mode,
                 ["site_info.default_real_mode"] = mode,
                 ["site_info.operation"] = mode
+            });
+    }
+
+    private static TeslaEnergyCommand BuildOffGridVehicleChargingReserveCommand(string escapedSiteId, string value)
+    {
+        var percent = ParsePercent(value);
+        return new TeslaEnergyCommand(
+            "Off-grid vehicle charging reserve",
+            $"/api/1/energy_sites/{escapedSiteId}/off_grid_vehicle_charging_reserve",
+            new { off_grid_vehicle_charging_reserve_percent = percent },
+            new Dictionary<string, object?>
+            {
+                ["off_grid_vehicle_charging_reserve"] = percent,
+                ["off_grid_vehicle_charging_reserve_percent"] = percent,
+                ["site_info.off_grid_vehicle_charging_reserve"] = percent,
+                ["site_info.off_grid_vehicle_charging_reserve_percent"] = percent
+            });
+    }
+
+    private static TeslaEnergyCommand BuildStormModeCommand(string escapedSiteId, string value)
+    {
+        var enabled = ParseBoolean(value);
+        return new TeslaEnergyCommand(
+            "Storm watch",
+            $"/api/1/energy_sites/{escapedSiteId}/storm_mode",
+            new { enabled },
+            new Dictionary<string, object?>
+            {
+                ["storm_mode_active"] = enabled,
+                ["site_info.storm_mode_active"] = enabled
             });
     }
 
@@ -1144,10 +1363,396 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
             : $"{value[..600]}...";
 }
 
+sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
+{
+    private const string ProxyBaseUrl = "https://127.0.0.1:4443";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    public async Task<TeslaVehicleCommandResult> ExecuteAsync(
+        TeslaFleetState state,
+        string vin,
+        string action,
+        string payload,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(state.AccessToken))
+        {
+            throw new InvalidOperationException("Complete Tesla OAuth before sending vehicle commands.");
+        }
+
+        if (string.IsNullOrWhiteSpace(vin))
+        {
+            throw new InvalidOperationException("Vehicle command topic did not contain a VIN.");
+        }
+
+        if (string.IsNullOrWhiteSpace(state.PrivateKeyPath) || !File.Exists(state.PrivateKeyPath))
+        {
+            throw new InvalidOperationException("Generate and publish the Tesla Fleet virtual key before sending vehicle commands.");
+        }
+
+        var normalizedAction = action.Trim().ToLowerInvariant();
+        var value = NormalizePayload(payload);
+        var command = BuildCommand(vin, normalizedAction, value);
+        var checks = new List<string>
+        {
+            $"Received vehicle command '{normalizedAction}' for VIN {vin} with payload '{value}'.",
+            command.UsesProxy
+                ? "Sending through Tesla's official vehicle-command HTTP proxy so the request is signed with the installed virtual key."
+                : "Sending directly to the Fleet API because this vehicle endpoint is not a signed command endpoint."
+        };
+
+        var baseUrl = command.UsesProxy
+            ? ProxyBaseUrl
+            : TeslaFleetDefaults.NormalizeHttpUrl(state.FleetApiAudience, TeslaFleetDefaults.DefaultFleetApiAudience);
+        var result = await PostCommandAsync(
+            baseUrl,
+            command.Path,
+            state.AccessToken,
+            command.Payload,
+            vin,
+            command.StatePatch,
+            checks,
+            cancellationToken);
+
+        return result with
+        {
+            Summary = result.Succeeded
+                ? $"{command.DisplayName} command accepted for vehicle {vin}."
+                : $"{command.DisplayName} command failed for vehicle {vin}."
+        };
+    }
+
+    private static TeslaVehicleCommand BuildCommand(string vin, string action, string value)
+    {
+        var escapedVin = Uri.EscapeDataString(vin);
+        return action switch
+        {
+            "charge_limit" => BuildChargeLimitCommand(escapedVin, value),
+            "charging_amps" => BuildChargingAmpsCommand(escapedVin, value),
+            "charger" => BuildChargerCommand(escapedVin, value),
+            "climate" => BuildClimateCommand(escapedVin, value),
+            "sentry_mode" => BuildSentryModeCommand(escapedVin, value),
+            "door_lock" => BuildDoorLockCommand(escapedVin, value),
+            "wake_up" => new TeslaVehicleCommand("Wake up", $"/api/1/vehicles/{escapedVin}/wake_up", new { }, new Dictionary<string, object?>(), UsesProxy: false),
+            "flash_lights" => EmptyProxyCommand("Flash lights", escapedVin, "flash_lights"),
+            "honk_horn" => EmptyProxyCommand("Horn", escapedVin, "honk_horn"),
+            "charge_port_door_open" => BuildChargePortCommand(escapedVin, open: true),
+            "charge_port_door_close" => BuildChargePortCommand(escapedVin, open: false),
+            "open_frunk" => BuildTrunkCommand(escapedVin, "front", "Open frunk"),
+            "open_trunk" => BuildTrunkCommand(escapedVin, "rear", "Open trunk"),
+            _ => throw new InvalidOperationException($"Unsupported vehicle command action '{action}'.")
+        };
+    }
+
+    private static TeslaVehicleCommand BuildChargeLimitCommand(string escapedVin, string value)
+    {
+        var percent = ParsePercent(value, min: 50, max: 100, label: "charge limit");
+        return new TeslaVehicleCommand(
+            "Charge limit",
+            $"/api/1/vehicles/{escapedVin}/command/set_charge_limit",
+            new { percent },
+            new Dictionary<string, object?>
+            {
+                ["charge_state.charge_limit_soc"] = percent,
+                ["charge_limit_soc"] = percent
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildChargingAmpsCommand(string escapedVin, string value)
+    {
+        var amps = ParsePercent(value, min: 1, max: 80, label: "charging amps");
+        return new TeslaVehicleCommand(
+            "Charging amps",
+            $"/api/1/vehicles/{escapedVin}/command/set_charging_amps",
+            new { charging_amps = amps },
+            new Dictionary<string, object?>
+            {
+                ["charge_state.charge_current_request"] = amps,
+                ["charge_current_request"] = amps
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildChargerCommand(string escapedVin, string value)
+    {
+        var enabled = ParseOnOff(value);
+        return new TeslaVehicleCommand(
+            enabled ? "Start charging" : "Stop charging",
+            $"/api/1/vehicles/{escapedVin}/command/{(enabled ? "charge_start" : "charge_stop")}",
+            new { },
+            new Dictionary<string, object?>
+            {
+                ["charge_state.charging_state"] = enabled ? "Charging" : "Stopped",
+                ["charging_state"] = enabled ? "Charging" : "Stopped"
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildClimateCommand(string escapedVin, string value)
+    {
+        var enabled = ParseOnOff(value);
+        return new TeslaVehicleCommand(
+            enabled ? "Start climate" : "Stop climate",
+            $"/api/1/vehicles/{escapedVin}/command/{(enabled ? "auto_conditioning_start" : "auto_conditioning_stop")}",
+            new { },
+            new Dictionary<string, object?>
+            {
+                ["climate_state.is_climate_on"] = enabled,
+                ["is_climate_on"] = enabled
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildSentryModeCommand(string escapedVin, string value)
+    {
+        var enabled = ParseOnOff(value);
+        return new TeslaVehicleCommand(
+            "Sentry mode",
+            $"/api/1/vehicles/{escapedVin}/command/set_sentry_mode",
+            new { on = enabled },
+            new Dictionary<string, object?>
+            {
+                ["vehicle_state.sentry_mode"] = enabled,
+                ["sentry_mode"] = enabled
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildDoorLockCommand(string escapedVin, string value)
+    {
+        var lockDoors = value.Equals("LOCK", StringComparison.OrdinalIgnoreCase) || ParseOnOff(value);
+        return new TeslaVehicleCommand(
+            lockDoors ? "Lock doors" : "Unlock doors",
+            $"/api/1/vehicles/{escapedVin}/command/{(lockDoors ? "door_lock" : "door_unlock")}",
+            new { },
+            new Dictionary<string, object?>
+            {
+                ["vehicle_state.locked"] = lockDoors,
+                ["locked"] = lockDoors
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildChargePortCommand(string escapedVin, bool open) =>
+        new(
+            open ? "Open charge port" : "Close charge port",
+            $"/api/1/vehicles/{escapedVin}/command/{(open ? "charge_port_door_open" : "charge_port_door_close")}",
+            new { },
+            new Dictionary<string, object?>
+            {
+                ["charge_state.charge_port_door_open"] = open,
+                ["charge_port_door_open"] = open
+            },
+            UsesProxy: true);
+
+    private static TeslaVehicleCommand BuildTrunkCommand(string escapedVin, string whichTrunk, string displayName) =>
+        new(
+            displayName,
+            $"/api/1/vehicles/{escapedVin}/command/actuate_trunk",
+            new { which_trunk = whichTrunk },
+            new Dictionary<string, object?>(),
+            UsesProxy: true);
+
+    private static TeslaVehicleCommand EmptyProxyCommand(string displayName, string escapedVin, string command) =>
+        new(
+            displayName,
+            $"/api/1/vehicles/{escapedVin}/command/{command}",
+            new { },
+            new Dictionary<string, object?>(),
+            UsesProxy: true);
+
+    private async Task<TeslaVehicleCommandResult> PostCommandAsync(
+        string baseUrl,
+        string path,
+        string accessToken,
+        object payload,
+        string vin,
+        IReadOnlyDictionary<string, object?> statePatch,
+        List<string> checks,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}{path}")
+        {
+            Content = JsonContent.Create(payload, options: JsonOptions)
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        checks.Add($"POST {path} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}.");
+        if (!response.IsSuccessStatusCode)
+        {
+            checks.Add($"POST {path} response: {TruncateForDiagnostics(body)}");
+            if (body.Contains("Vehicle Command Protocol", StringComparison.OrdinalIgnoreCase))
+            {
+                checks.Add("Tesla rejected an unsigned command. The local vehicle-command proxy must be running and the virtual key must be installed on this vehicle.");
+            }
+
+            return new TeslaVehicleCommandResult(false, "Tesla vehicle command failed.", checks, vin, new Dictionary<string, object?>());
+        }
+
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            checks.Add($"POST {path} response: {TruncateForDiagnostics(body)}");
+            if (!IsAcceptedCommandResponse(body, checks))
+            {
+                return new TeslaVehicleCommandResult(false, "Tesla vehicle command was not accepted by the Fleet API response body.", checks, vin, new Dictionary<string, object?>());
+            }
+        }
+
+        return new TeslaVehicleCommandResult(true, "Tesla vehicle command accepted.", checks, vin, statePatch);
+    }
+
+    private static string NormalizePayload(string payload)
+    {
+        var value = (payload ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.String => document.RootElement.GetString()?.Trim() ?? string.Empty,
+                JsonValueKind.Number => document.RootElement.GetRawText(),
+                JsonValueKind.True => "ON",
+                JsonValueKind.False => "OFF",
+                _ => value.Trim('"')
+            };
+        }
+        catch (JsonException)
+        {
+            return value.Trim('"');
+        }
+    }
+
+    private static int ParsePercent(string value, int min, int max, string label)
+    {
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+            !double.TryParse(value, out parsed))
+        {
+            throw new InvalidOperationException($"{label} must be a whole number from {min} to {max}. Received '{value}'.");
+        }
+
+        var number = (int)Math.Round(parsed);
+        if (number < min || number > max)
+        {
+            throw new InvalidOperationException($"{label} must be between {min} and {max}. Received '{number}'.");
+        }
+
+        return number;
+    }
+
+    private static bool ParseOnOff(string value)
+    {
+        if (value.Equals("ON", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("LOCK", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("PRESS", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (value.Equals("OFF", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("UNLOCK", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        throw new InvalidOperationException($"Expected ON/OFF payload. Received '{value}'.");
+    }
+
+    private static bool IsAcceptedCommandResponse(string body, List<string> checks)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            var response = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("response", out var responseElement)
+                ? responseElement
+                : root;
+            if (response.ValueKind != JsonValueKind.Object)
+            {
+                return true;
+            }
+
+            if (TryReadInt(response, "code", out var code))
+            {
+                checks.Add($"Tesla command response code: {code}.");
+                return code is >= 200 and < 300;
+            }
+
+            if (TryReadBool(response, "result", out var result))
+            {
+                checks.Add($"Tesla command response result: {result}.");
+                return result;
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return true;
+        }
+    }
+
+    private static bool TryReadInt(JsonElement element, string propertyName, out int value)
+    {
+        value = 0;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out value))
+        {
+            return true;
+        }
+
+        return property.ValueKind == JsonValueKind.String &&
+               int.TryParse(property.GetString(), out value);
+    }
+
+    private static bool TryReadBool(JsonElement element, string propertyName, out bool value)
+    {
+        value = false;
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            value = property.GetBoolean();
+            return true;
+        }
+
+        return property.ValueKind == JsonValueKind.String &&
+               bool.TryParse(property.GetString(), out value);
+    }
+
+    private static string TruncateForDiagnostics(string value) =>
+        string.IsNullOrWhiteSpace(value) || value.Length <= 600
+            ? value
+            : $"{value[..600]}...";
+}
+
 sealed class TeslaFleetHomeAssistantCommandService(
     TeslaFleetStore store,
     TeslaFleetTokenCoordinator tokenCoordinator,
     TeslaFleetEnergyCommandClient commandClient,
+    TeslaFleetVehicleCommandClient vehicleCommandClient,
     TeslaFleetDataClient dataClient,
     TeslaFleetMqttPublisher mqttPublisher,
     ILogger<TeslaFleetHomeAssistantCommandService> logger) : BackgroundService
@@ -1206,7 +1811,8 @@ sealed class TeslaFleetHomeAssistantCommandService(
         client.ApplicationMessageReceivedAsync += args => HandleCommandMessageAsync(settings, args, cancellationToken);
 
         await client.ConnectAsync(optionsBuilder.Build(), cancellationToken);
-        var commandFilter = $"{settings.BaseTopic}/energy/+/command/+";
+        var energyCommandFilter = $"{settings.BaseTopic}/energy/+/command/+";
+        var vehicleCommandFilter = $"{settings.BaseTopic}/vehicles/+/command/+";
         await client.SubscribeAsync(
             new MqttClientSubscribeOptions
             {
@@ -1214,13 +1820,21 @@ sealed class TeslaFleetHomeAssistantCommandService(
                 [
                     new MqttTopicFilter
                     {
-                        Topic = commandFilter,
+                        Topic = energyCommandFilter,
+                        QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce
+                    },
+                    new MqttTopicFilter
+                    {
+                        Topic = vehicleCommandFilter,
                         QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce
                     }
                 ]
             },
             cancellationToken);
-        logger.LogInformation("Listening for Home Assistant MQTT Energy commands on {CommandFilter}.", commandFilter);
+        logger.LogInformation(
+            "Listening for Home Assistant MQTT commands on {EnergyCommandFilter} and {VehicleCommandFilter}.",
+            energyCommandFilter,
+            vehicleCommandFilter);
 
         var reconnectAfter = DateTimeOffset.UtcNow.AddMinutes(10);
         while (client.IsConnected &&
@@ -1241,8 +1855,9 @@ sealed class TeslaFleetHomeAssistantCommandService(
         MqttApplicationMessageReceivedEventArgs args,
         CancellationToken cancellationToken)
     {
-        var parsed = TryParseEnergyCommandTopic(settings, args.ApplicationMessage.Topic);
-        if (parsed is null)
+        var energyCommand = TryParseEnergyCommandTopic(settings, args.ApplicationMessage.Topic);
+        var vehicleCommand = TryParseVehicleCommandTopic(settings, args.ApplicationMessage.Topic);
+        if (energyCommand is null && vehicleCommand is null)
         {
             return;
         }
@@ -1254,33 +1869,67 @@ sealed class TeslaFleetHomeAssistantCommandService(
         try
         {
             var token = await tokenCoordinator.EnsureUsableAsync(state, cancellationToken);
-            var result = await commandClient.ExecuteAsync(
-                token.State,
-                parsed.Value.SiteId,
-                parsed.Value.Action,
-                payload,
-                cancellationToken);
-            var checks = token.Checks.Concat(result.Checks).ToList();
-            updated = token.State with
+            if (energyCommand is not null)
             {
-                LastStatus = result.Succeeded ? "Home Assistant command accepted" : "Home Assistant command failed",
-                LastMessage = result.Summary,
-                LastChecks = checks
-            };
-
-            if (result.Succeeded)
-            {
-                var snapshot = await dataClient.FetchSnapshotAsync(updated, cancellationToken);
-                snapshot = ApplyEnergyCommandPatch(snapshot, result.SiteId, result.StatePatch);
-                var publishResult = await mqttPublisher.PublishAsync(updated, snapshot, cancellationToken);
-                updated = updated with
+                var result = await commandClient.ExecuteAsync(
+                    token.State,
+                    energyCommand.Value.SiteId,
+                    energyCommand.Value.Action,
+                    payload,
+                    cancellationToken);
+                var checks = token.Checks.Concat(result.Checks).ToList();
+                updated = token.State with
                 {
-                    LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
-                    LastHomeAssistantPublishSummary = publishResult.Summary,
-                    LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
-                    LastMessage = publishResult.Summary,
-                    LastChecks = checks.Concat(publishResult.Checks).ToList()
+                    LastStatus = result.Succeeded ? "Home Assistant command accepted" : "Home Assistant command failed",
+                    LastMessage = result.Summary,
+                    LastChecks = checks
                 };
+
+                if (result.Succeeded)
+                {
+                    var snapshot = await dataClient.FetchSnapshotAsync(updated, cancellationToken);
+                    snapshot = ApplyEnergyCommandPatch(snapshot, result.SiteId, result.StatePatch);
+                    var publishResult = await mqttPublisher.PublishAsync(updated, snapshot, cancellationToken);
+                    updated = updated with
+                    {
+                        LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
+                        LastHomeAssistantPublishSummary = publishResult.Summary,
+                        LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
+                        LastMessage = publishResult.Summary,
+                        LastChecks = checks.Concat(publishResult.Checks).ToList()
+                    };
+                }
+            }
+            else
+            {
+                var result = await vehicleCommandClient.ExecuteAsync(
+                    token.State,
+                    vehicleCommand!.Value.Vin,
+                    vehicleCommand.Value.Action,
+                    payload,
+                    cancellationToken);
+                var checks = token.Checks.Concat(result.Checks).ToList();
+                updated = token.State with
+                {
+                    LastStatus = result.Succeeded ? "Home Assistant command accepted" : "Home Assistant command failed",
+                    LastMessage = result.Summary,
+                    LastChecks = checks
+                };
+
+                if (result.Succeeded)
+                {
+                    var snapshot = await dataClient.FetchSnapshotAsync(updated, cancellationToken);
+                    snapshot = ApplyVehicleCommandPatch(snapshot, result.Vin, result.StatePatch);
+                    var publishResult = await mqttPublisher.PublishAsync(updated, snapshot, cancellationToken);
+                    updated = updated with
+                    {
+                        LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
+                        LastHomeAssistantPublishSummary = publishResult.Summary,
+                        LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
+                        LastMessage = publishResult.Summary,
+                        LastChecks = checks.Concat(publishResult.Checks).ToList()
+                    };
+                }
             }
         }
         catch (Exception exception)
@@ -1344,6 +1993,49 @@ sealed class TeslaFleetHomeAssistantCommandService(
         };
     }
 
+    private static TeslaFleetSnapshot ApplyVehicleCommandPatch(
+        TeslaFleetSnapshot snapshot,
+        string vin,
+        IReadOnlyDictionary<string, object?> patch)
+    {
+        if (string.IsNullOrWhiteSpace(vin) || patch.Count == 0)
+        {
+            return snapshot;
+        }
+
+        var patched = false;
+        var vehicles = snapshot.Vehicles
+            .Select(vehicle =>
+            {
+                if (!vehicle.Vin.Equals(vin, StringComparison.OrdinalIgnoreCase))
+                {
+                    return vehicle;
+                }
+
+                var values = new Dictionary<string, object?>(vehicle.Values, StringComparer.OrdinalIgnoreCase);
+                foreach (var item in patch)
+                {
+                    values[item.Key] = item.Value;
+                }
+
+                patched = true;
+                return vehicle with { Values = values };
+            })
+            .ToList();
+        if (!patched)
+        {
+            return snapshot;
+        }
+
+        var checks = snapshot.Checks.ToList();
+        checks.Add($"Applied optimistic retained MQTT state patch for vehicle {vin} after a successful command.");
+        return snapshot with
+        {
+            Vehicles = vehicles,
+            Checks = checks
+        };
+    }
+
     private static (string SiteId, string Action)? TryParseEnergyCommandTopic(TeslaMqttSettings settings, string? topic)
     {
         if (string.IsNullOrWhiteSpace(topic))
@@ -1352,6 +2044,29 @@ sealed class TeslaFleetHomeAssistantCommandService(
         }
 
         var prefix = $"{settings.BaseTopic.TrimEnd('/')}/energy/";
+        if (!topic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var parts = topic[prefix.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 3 ||
+            !parts[1].Equals("command", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return (parts[0], parts[2]);
+    }
+
+    private static (string Vin, string Action)? TryParseVehicleCommandTopic(TeslaMqttSettings settings, string? topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return null;
+        }
+
+        var prefix = $"{settings.BaseTopic.TrimEnd('/')}/vehicles/";
         if (!topic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
         {
             return null;
@@ -1510,4 +2225,18 @@ sealed record TeslaEnergyCommandResult(
     string Summary,
     List<string> Checks,
     string SiteId,
+    IReadOnlyDictionary<string, object?> StatePatch);
+
+sealed record TeslaVehicleCommand(
+    string DisplayName,
+    string Path,
+    object Payload,
+    IReadOnlyDictionary<string, object?> StatePatch,
+    bool UsesProxy);
+
+sealed record TeslaVehicleCommandResult(
+    bool Succeeded,
+    string Summary,
+    List<string> Checks,
+    string Vin,
     IReadOnlyDictionary<string, object?> StatePatch);

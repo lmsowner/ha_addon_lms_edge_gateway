@@ -26,6 +26,8 @@ sealed record LmsTeslaChargeState(
     int? UsableBatteryLevelPercent,
     string ChargingState,
     int? ChargeLimitPercent,
+    int? ChargingAmps,
+    int? MaxChargingAmps,
     double? BatteryRange,
     string ConnectedChargeCable,
     bool? FastChargerPresent,

@@ -26,6 +26,7 @@ builder.Services.AddSingleton<TeslaFleetMqttPublisher>();
 builder.Services.AddSingleton<TeslaFleetPropertyHarness>();
 builder.Services.AddSingleton<TeslaFleetStateMapper>();
 builder.Services.AddSingleton<HomeAssistantMqttProjectionMapper>();
+builder.Services.AddHostedService<TeslaFleetVehicleCommandProxyService>();
 builder.Services.AddHostedService<TeslaFleetHomeAssistantPublisherService>();
 builder.Services.AddHostedService<TeslaFleetHomeAssistantCommandService>();
 builder.Services.AddHttpClient<EdgeGatewayCompanionResolver>(client =>
@@ -62,6 +63,14 @@ builder.Services.AddHttpClient<TeslaFleetEnergyCommandClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(45);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
+});
+builder.Services.AddHttpClient<TeslaFleetVehicleCommandClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(75);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LMS-Tesla-Fleet-Helper");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 });
 
 var app = builder.Build();
@@ -2259,6 +2268,12 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
         environment);
 
     public string PrivateKeyPath => Path.Combine(dataRoot, "secrets", "tesla_fleet.key");
+
+    public string VehicleCommandProxyTlsCertPath => Path.Combine(dataRoot, "vehicle-command-proxy", "tls-cert.pem");
+
+    public string VehicleCommandProxyTlsKeyPath => Path.Combine(dataRoot, "vehicle-command-proxy", "tls-key.pem");
+
+    public string VehicleCommandProxyCachePath => Path.Combine(dataRoot, "vehicle-command-proxy", "cache.json");
 
     private string StatePath => Path.Combine(dataRoot, "state.json");
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.16
+
+- Adds Tesla's official vehicle-command HTTP proxy to the add-on image and supervises it from the Helper using the generated Fleet private key.
+- Publishes writable Home Assistant MQTT vehicle controls for charge limit, charging amps, charger, climate, sentry mode, door lock, wake, lights, horn, charge port, frunk, and trunk.
+- Routes vehicle writes through the signed command proxy where Tesla requires the Vehicle Command Protocol, while keeping wake-up on the documented Fleet API vehicle endpoint.
+- Adds documented Energy write controls for Storm watch and Off-grid vehicle charging reserve.
+
 ## 0.2.15
 
 - Clears retired MQTT discovery configs for the previous Energy control labels/components.
