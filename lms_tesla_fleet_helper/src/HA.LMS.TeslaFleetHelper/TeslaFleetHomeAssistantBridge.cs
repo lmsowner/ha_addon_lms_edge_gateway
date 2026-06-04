@@ -159,9 +159,16 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
                 accessToken,
                 checks,
                 cancellationToken);
-            updated.Add(realtime.HasValue
-                ? vehicle with { Values = Merge(vehicle.Values, FlattenObject(ReadResponse(realtime.Value), null)) }
-                : vehicle);
+            if (realtime.HasValue)
+            {
+                var values = Merge(vehicle.Values, FlattenObject(ReadResponse(realtime.Value), null));
+                values["lms_helper.vehicle_data_refreshed_utc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+                updated.Add(vehicle with { Values = values });
+            }
+            else
+            {
+                updated.Add(vehicle);
+            }
         }
 
         return updated;
@@ -852,8 +859,9 @@ sealed class TeslaFleetMqttPublisher(
             state.Payload.TryGetValue("charging_amps", out var chargingAmps);
             state.Payload.TryGetValue("battery_level", out var batteryLevel);
             state.Payload.TryGetValue("charging_state", out var chargingState);
+            state.Payload.TryGetValue("vehicle_data_refreshed", out var vehicleDataRefreshed);
             yield return
-                $"Vehicle HA state payload {displayName ?? state.Topic}: battery_level={FormatCheckValue(batteryLevel)}, charging_state={FormatCheckValue(chargingState)}, charge_limit={FormatCheckValue(chargeLimit)}, charging_amps={FormatCheckValue(chargingAmps)}.";
+                $"Vehicle HA state payload {displayName ?? state.Topic}: battery_level={FormatCheckValue(batteryLevel)}, charging_state={FormatCheckValue(chargingState)}, charge_limit={FormatCheckValue(chargeLimit)}, charging_amps={FormatCheckValue(chargingAmps)}, vehicle_data_refreshed={FormatCheckValue(vehicleDataRefreshed)}.";
         }
     }
 

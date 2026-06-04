@@ -51,7 +51,8 @@ sealed record LmsTeslaVehicleMetaState(
     string FirmwareVersion,
     double? Odometer,
     bool? Locked,
-    bool? SentryMode);
+    bool? SentryMode,
+    string VehicleDataRefreshedUtc);
 
 sealed record LmsTeslaFleetKeyState(
     bool? VehicleCommandProtocolRequired,

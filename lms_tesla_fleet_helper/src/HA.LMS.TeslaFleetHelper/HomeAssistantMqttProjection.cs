@@ -157,6 +157,7 @@ sealed class HomeAssistantMqttProjectionMapper
         [
             Sensor(deviceId, "state", "State", stateTopic, "{{ value_json.state }}"),
             BinarySensor(deviceId, "online", "Online", stateTopic, "{{ (value_json.state == 'online') | lower }}", "connectivity"),
+            Sensor(deviceId, "vehicle_data_refreshed", "Vehicle Data Refreshed", stateTopic, "{{ value_json.vehicle_data_refreshed }}", "timestamp"),
             Sensor(deviceId, "battery_level", "Battery", stateTopic, "{{ value_json.battery_level }}", "battery", "%", stateClass: "measurement"),
             Sensor(deviceId, "usable_battery_level", "Usable Battery", stateTopic, "{{ value_json.usable_battery_level }}", "battery", "%", stateClass: "measurement"),
             Sensor(deviceId, "charging_state", "Charging State", stateTopic, "{{ value_json.charging_state }}"),
@@ -288,6 +289,7 @@ sealed class HomeAssistantMqttProjectionMapper
             ["vin"] = vehicle.Vin,
             ["display_name"] = vehicle.DisplayName,
             ["state"] = vehicle.ConnectivityState,
+            ["vehicle_data_refreshed"] = vehicle.Meta.VehicleDataRefreshedUtc,
             ["battery_level"] = vehicle.Charge.BatteryLevelPercent,
             ["usable_battery_level"] = vehicle.Charge.UsableBatteryLevelPercent,
             ["charging_state"] = vehicle.Charge.ChargingState,

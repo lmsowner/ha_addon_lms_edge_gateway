@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.23
+
+- Adds a per-vehicle Home Assistant timestamp sensor showing when live Tesla `vehicle_data` was last refreshed.
+- Includes `vehicle_data_refreshed` in the retained MQTT state payload and helper publish diagnostics.
+- Preserves the timestamp while vehicles are asleep so cached values clearly show when they were last updated.
+
 ## 0.2.22
 
 - Preserves last known vehicle MQTT state values so sleeping/offline vehicles do not overwrite Home Assistant sensors with unknown.

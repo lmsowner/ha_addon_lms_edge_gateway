@@ -90,7 +90,8 @@ sealed class TeslaFleetStateMapper
                 ReadString(values, "vehicle_state.car_version", "car_version", "fleet_status.firmware_version", "firmware_version"),
                 ReadDouble(values, "vehicle_state.odometer", "odometer"),
                 ReadBool(values, "vehicle_state.locked", "locked"),
-                ReadBool(values, "vehicle_state.sentry_mode", "sentry_mode")),
+                ReadBool(values, "vehicle_state.sentry_mode", "sentry_mode"),
+                ReadString(values, "lms_helper.vehicle_data_refreshed_utc", "vehicle_data_refreshed_utc", "vehicle_data_refreshed")),
             new LmsTeslaFleetKeyState(
                 ReadBool(values, "fleet_status.vehicle_command_protocol_required", "vehicle_command_protocol_required", "command_protocol_required"),
                 ReadInt(values, "fleet_status.total_number_of_keys", "total_number_of_keys", "total_keys"),
