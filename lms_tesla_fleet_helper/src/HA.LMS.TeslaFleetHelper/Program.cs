@@ -552,6 +552,7 @@ app.MapPost("/actions/publish-ha", async (
             LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
             LastHomeAssistantPublishSummary = result.Summary,
             LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
+            LastHomeAssistantStatePayloads = result.Succeeded ? result.StatePayloads : token.State.LastHomeAssistantStatePayloads,
             LastStatus = result.Succeeded ? "Home Assistant published" : "Home Assistant publish failed",
             LastMessage = result.Summary,
             LastChecks = checks
@@ -595,6 +596,7 @@ app.MapPost("/actions/reset-ha-discovery", async (
             LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
             LastHomeAssistantPublishSummary = result.Summary,
             LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
+            LastHomeAssistantStatePayloads = result.Succeeded ? result.StatePayloads : token.State.LastHomeAssistantStatePayloads,
             LastStatus = result.Succeeded ? "Home Assistant discovery reset" : "Home Assistant discovery reset failed",
             LastMessage = result.Summary,
             LastChecks = checks
@@ -2552,6 +2554,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
                 ? 15
                 : Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240),
             LastHomeAssistantDiscoveryTopics = state.LastHomeAssistantDiscoveryTopics ?? [],
+            LastHomeAssistantStatePayloads = state.LastHomeAssistantStatePayloads ?? [],
             DiscoveredProperties = state.DiscoveredProperties ?? [],
             HomeAssistantProjectionPreviewEntities = state.HomeAssistantProjectionPreviewEntities ?? [],
             LastChecks = state.LastChecks ?? []
@@ -3659,6 +3662,7 @@ sealed record TeslaFleetState(
     DateTimeOffset? LastHomeAssistantPublishUtc = null,
     string LastHomeAssistantPublishSummary = "",
     List<string>? LastHomeAssistantDiscoveryTopics = null,
+    List<HomeAssistantStatePayloadCacheEntry>? LastHomeAssistantStatePayloads = null,
     DateTimeOffset? LastPropertyDiscoveryUtc = null,
     string LastPropertyDiscoverySummary = "",
     List<TeslaDiscoveredProperty>? DiscoveredProperties = null,
@@ -3671,6 +3675,11 @@ sealed record TeslaFleetState(
     string LastStatus = "",
     string LastMessage = "",
     List<string>? LastChecks = null);
+
+sealed record HomeAssistantStatePayloadCacheEntry(
+    string Topic,
+    string PayloadJson,
+    DateTimeOffset UpdatedUtc);
 
 sealed record PublicAssetPublishRequest(
     string Hostname,

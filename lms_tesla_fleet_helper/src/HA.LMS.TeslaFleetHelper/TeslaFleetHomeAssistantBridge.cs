@@ -569,7 +569,7 @@ sealed class TeslaFleetMqttPublisher(
     {
         if (!state.HomeAssistantMqttEnabled)
         {
-            return new TeslaHomeAssistantPublishResult(false, "Home Assistant MQTT publishing is disabled.", [], []);
+            return new TeslaHomeAssistantPublishResult(false, "Home Assistant MQTT publishing is disabled.", [], [], []);
         }
 
         var settings = TeslaMqttSettings.FromState(state);
@@ -600,7 +600,7 @@ sealed class TeslaFleetMqttPublisher(
         {
             var resetResult = await ResetHomeAssistantDiscoveryAsync(client, settings, projection, state.LastHomeAssistantDiscoveryTopics ?? [], cancellationToken);
             checks.Add(
-                $"Reset Home Assistant MQTT discovery: cleared {resetResult.DiscoveryTopicCount} retained discovery config topic(s) and {resetResult.StateTopicCount} retained state topic(s).");
+                $"Reset Home Assistant MQTT discovery: cleared {resetResult.DiscoveryTopicCount} retained discovery config topic(s); retained state topics were left intact.");
         }
 
         await PublishStringAsync(client, $"{settings.BaseTopic}/availability", "online", retain: true, cancellationToken);
@@ -621,7 +621,8 @@ sealed class TeslaFleetMqttPublisher(
         var retiredEnergyDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredEnergyDiscoveryTopics(settings, projection), cancellationToken);
         var retiredVehicleDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredVehicleDiscoveryTopics(settings, projection), cancellationToken);
 
-        foreach (var stateProjection in projection.States)
+        var publishedStates = BuildPublishedStatePayloads(projection, state.LastHomeAssistantStatePayloads ?? []);
+        foreach (var stateProjection in publishedStates)
         {
             await PublishJsonAsync(client, stateProjection.Topic, stateProjection.Payload, retain: true, cancellationToken);
         }
@@ -641,23 +642,24 @@ sealed class TeslaFleetMqttPublisher(
         {
             checks.Add($"Cleared {retiredVehicleDiscoveryCount} retired vehicle MQTT discovery config(s).");
         }
-        checks.Add($"Published {projection.States.Count} retained state topic(s).");
+        checks.Add($"Published {publishedStates.Count} retained state topic(s).");
         if (discoveryTopics.Count > 0)
         {
             checks.Add($"Sample discovery topics: {string.Join(", ", discoveryTopics.Take(6))}.");
         }
-        if (projection.States.Count > 0)
+        if (publishedStates.Count > 0)
         {
-            checks.Add($"State topics: {string.Join(", ", projection.States.Select(topic => topic.Topic).Take(6))}.");
+            checks.Add($"State topics: {string.Join(", ", publishedStates.Select(topic => topic.Topic).Take(6))}.");
         }
-        checks.AddRange(BuildVehicleStatePayloadChecks(projection));
+        checks.AddRange(BuildVehicleStatePayloadChecks(publishedStates));
         checks.Add($"Snapshot source contained {snapshot.Vehicles.Count} vehicle(s) and {snapshot.EnergySites.Count} energy site(s).");
         checks.AddRange(snapshot.Checks);
         return new TeslaHomeAssistantPublishResult(
             true,
             $"Published {projection.Entities.Count} Home Assistant MQTT Discovery config(s) from typed LMS Tesla projection.",
             checks,
-            discoveryTopics);
+            discoveryTopics,
+            BuildStatePayloadCache(publishedStates));
     }
 
     private static async Task PublishEntityDiscoveryAsync(
@@ -740,9 +742,110 @@ sealed class TeslaFleetMqttPublisher(
         await PublishJsonAsync(client, BuildDiscoveryTopic(settings, entity), payload, retain: true, cancellationToken);
     }
 
-    private static IEnumerable<string> BuildVehicleStatePayloadChecks(HomeAssistantMqttProjection projection)
+    private static List<HomeAssistantMqttStateProjection> BuildPublishedStatePayloads(
+        HomeAssistantMqttProjection projection,
+        IReadOnlyCollection<HomeAssistantStatePayloadCacheEntry> cachedStatePayloads)
     {
-        foreach (var state in projection.States.Where(state => state.Topic.Contains("/vehicles/", StringComparison.OrdinalIgnoreCase)).Take(6))
+        var cachedByTopic = cachedStatePayloads
+            .Where(item => !string.IsNullOrWhiteSpace(item.Topic) && !string.IsNullOrWhiteSpace(item.PayloadJson))
+            .GroupBy(item => item.Topic, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.UpdatedUtc).First(), StringComparer.OrdinalIgnoreCase);
+
+        return projection.States
+            .Select(state =>
+            {
+                if (!state.Topic.Contains("/vehicles/", StringComparison.OrdinalIgnoreCase) ||
+                    !cachedByTopic.TryGetValue(state.Topic, out var cached) ||
+                    !TryReadCachedPayload(cached.PayloadJson, out var cachedPayload))
+                {
+                    return state;
+                }
+
+                return state with { Payload = MergeCachedPayload(cachedPayload, state.Payload) };
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyDictionary<string, object?> MergeCachedPayload(
+        IReadOnlyDictionary<string, object?> cachedPayload,
+        IReadOnlyDictionary<string, object?> currentPayload)
+    {
+        var merged = new Dictionary<string, object?>(cachedPayload, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in currentPayload)
+        {
+            if (IsUsefulStateValue(item.Value))
+            {
+                merged[item.Key] = item.Value;
+            }
+        }
+
+        return merged;
+    }
+
+    private static bool IsUsefulStateValue(object? value) =>
+        value switch
+        {
+            null => false,
+            string text => !string.IsNullOrWhiteSpace(text),
+            _ => true
+        };
+
+    private static List<HomeAssistantStatePayloadCacheEntry> BuildStatePayloadCache(
+        IReadOnlyCollection<HomeAssistantMqttStateProjection> states)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return states
+            .Where(state => state.Topic.Contains("/vehicles/", StringComparison.OrdinalIgnoreCase))
+            .Select(state => new HomeAssistantStatePayloadCacheEntry(
+                state.Topic,
+                JsonSerializer.Serialize(state.Payload, JsonOptions),
+                now))
+            .ToList();
+    }
+
+    private static bool TryReadCachedPayload(string payloadJson, out IReadOnlyDictionary<string, object?> payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                payload = new Dictionary<string, object?>();
+                return false;
+            }
+
+            var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                values[property.Name] = ReadCachedJsonValue(property.Value);
+            }
+
+            payload = values;
+            return true;
+        }
+        catch (JsonException)
+        {
+            payload = new Dictionary<string, object?>();
+            return false;
+        }
+    }
+
+    private static object? ReadCachedJsonValue(JsonElement value) =>
+        value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.TryGetInt64(out var longValue)
+                ? longValue
+                : value.TryGetDouble(out var doubleValue) ? doubleValue : value.GetRawText(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            _ => value.GetRawText()
+        };
+
+    private static IEnumerable<string> BuildVehicleStatePayloadChecks(IEnumerable<HomeAssistantMqttStateProjection> states)
+    {
+        foreach (var state in states.Where(state => state.Topic.Contains("/vehicles/", StringComparison.OrdinalIgnoreCase)).Take(6))
         {
             state.Payload.TryGetValue("display_name", out var displayName);
             state.Payload.TryGetValue("charge_limit", out var chargeLimit);
@@ -822,19 +925,7 @@ sealed class TeslaFleetMqttPublisher(
             await PublishStringAsync(client, topic, string.Empty, retain: true, cancellationToken);
         }
 
-        var stateTopics = projection.States
-            .Select(state => state.Topic)
-            .Append($"{settings.BaseTopic}/availability")
-            .Where(topic => !string.IsNullOrWhiteSpace(topic))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        foreach (var topic in stateTopics)
-        {
-            await PublishStringAsync(client, topic, string.Empty, retain: true, cancellationToken);
-        }
-
-        return (discoveryTopics.Count, stateTopics.Count);
+        return (discoveryTopics.Count, 0);
     }
 
     private static List<string> BuildRetiredEnergyDiscoveryTopics(
@@ -2033,6 +2124,7 @@ sealed class TeslaFleetHomeAssistantCommandService(
                         LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
                         LastHomeAssistantPublishSummary = publishResult.Summary,
                         LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : updated.LastHomeAssistantDiscoveryTopics,
+                        LastHomeAssistantStatePayloads = publishResult.Succeeded ? publishResult.StatePayloads : updated.LastHomeAssistantStatePayloads,
                         LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
                         LastMessage = publishResult.Summary,
                         LastChecks = checks.Concat(publishResult.Checks).ToList()
@@ -2065,6 +2157,7 @@ sealed class TeslaFleetHomeAssistantCommandService(
                         LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
                         LastHomeAssistantPublishSummary = publishResult.Summary,
                         LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : updated.LastHomeAssistantDiscoveryTopics,
+                        LastHomeAssistantStatePayloads = publishResult.Succeeded ? publishResult.StatePayloads : updated.LastHomeAssistantStatePayloads,
                         LastStatus = publishResult.Succeeded ? "Home Assistant command applied" : "Home Assistant command applied, publish failed",
                         LastMessage = publishResult.Summary,
                         LastChecks = checks.Concat(publishResult.Checks).ToList()
@@ -2296,6 +2389,7 @@ sealed class TeslaFleetHomeAssistantPublisherService(
             LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : token.State.LastHomeAssistantPublishUtc,
             LastHomeAssistantPublishSummary = result.Summary,
             LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
+            LastHomeAssistantStatePayloads = result.Succeeded ? result.StatePayloads : token.State.LastHomeAssistantStatePayloads,
             LastStatus = result.Succeeded ? "Home Assistant auto-published" : "Home Assistant auto-publish failed",
             LastMessage = result.Summary,
             LastChecks = token.Checks.Concat(result.Checks).ToList()
@@ -2354,7 +2448,8 @@ sealed record TeslaHomeAssistantPublishResult(
     bool Succeeded,
     string Summary,
     List<string> Checks,
-    List<string> DiscoveryTopics);
+    List<string> DiscoveryTopics,
+    List<HomeAssistantStatePayloadCacheEntry> StatePayloads);
 
 sealed record TeslaEnergyCommand(
     string DisplayName,

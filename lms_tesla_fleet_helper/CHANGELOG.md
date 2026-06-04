@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.22
+
+- Preserves last known vehicle MQTT state values so sleeping/offline vehicles do not overwrite Home Assistant sensors with unknown.
+- Stops the Home Assistant discovery reset action from clearing retained state topics; it now only clears retained discovery configs before republishing.
+- Persists the merged vehicle MQTT state payload cache across helper restarts.
+
 ## 0.2.21
 
 - Resolves vehicle state fields by normalized raw Tesla API path so diagnostics values flow into the typed Home Assistant MQTT payload even when Tesla changes casing or nesting.
