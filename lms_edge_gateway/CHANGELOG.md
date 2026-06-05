@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.45
+
+- Tightens the Domain Services template selector cards so they are shorter and fit more columns on desktop.
+- Narrows the compact Domain Services service dropdown so it no longer stretches across the page.
+
 ## 0.1.44
 
 - Reworks Domain Services so managed services for the selected template appear before the add/edit form.

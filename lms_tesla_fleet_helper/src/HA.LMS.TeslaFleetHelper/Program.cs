@@ -1968,8 +1968,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     .control-grid {
       align-items: end;
       display: grid;
-      gap: 10px;
-      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 8px;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
     }
     .control-form {
       align-items: end;

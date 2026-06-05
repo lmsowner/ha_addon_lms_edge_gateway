@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.33
+
+- Uses a denser four-column direct-control grid so dropdowns and switches do not stretch unnecessarily on desktop.
+
 ## 0.2.32
 
 - Removes card-style boxes from direct-control switches.
