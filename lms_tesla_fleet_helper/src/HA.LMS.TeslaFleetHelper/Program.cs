@@ -1715,15 +1715,38 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       margin-bottom: 10px;
     }
     .check-row input { width: 18px; min-height: 18px; height: 18px; margin: 0; }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       min-height: 42px;
       border: 1px solid var(--border);
       border-radius: 7px;
-      background: var(--input-bg);
+      background-color: var(--input-bg);
       color: var(--text);
       padding: 10px 12px;
       font: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: var(--shadow-focus);
+      outline: none;
+    }
+    select {
+      appearance: none;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position:
+        calc(100% - 18px) 50%,
+        calc(100% - 12px) 50%;
+      background-repeat: no-repeat;
+      background-size: 6px 6px, 6px 6px;
+      cursor: pointer;
+      padding-right: 40px;
+    }
+    select:hover { border-color: var(--tab-hover-border); }
+    select option {
+      background: var(--surface);
+      color: var(--text);
     }
     textarea { min-height: 220px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     code, .value {
@@ -1788,7 +1811,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       min-height: 38px;
       border: 1px solid var(--border);
       border-radius: 7px;
-      background: var(--surface-2);
+      background-color: var(--surface-2);
       color: var(--text);
       padding: 8px 10px;
       font: inherit;

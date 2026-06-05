@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.30
+
+- Applies proper themed select/dropdown styling across the Tesla Fleet Helper UI.
+- Adds consistent dropdown height, focus state, hover state, and a custom chevron for direct-control forms.
+
 ## 0.2.29
 
 - Enables user-facing Tesla feature controls by default, including rear/third-row seat heaters, heated steering wheel modes, sunroof controls, Homelink, charge range shortcuts, and media controls.
