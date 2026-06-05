@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.35
+
+- Splits Home Assistant refresh scheduling so Energy/Powerwall state can update every 10 seconds while vehicle detail refreshes stay on a slower 15 minute cadence.
+- Keeps fast Energy publishes state-only, reusing retained MQTT discovery and cached vehicle payloads so sleeping cars do not lose their last known values.
+- Adds separate Helper settings and status timestamps for Energy refresh and vehicle detail refresh.
+
 ## 0.2.34
 
 - Removes boxed styling from the Helper status strip and vehicle control summaries.

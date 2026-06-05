@@ -84,43 +84,68 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
 
     public async Task<TeslaFleetSnapshot> FetchSnapshotAsync(
         TeslaFleetState state,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool fetchVehicleDetails = true,
+        bool? fetchRealtimeVehicleData = null,
+        bool fetchUserDetails = true)
     {
         var audience = TeslaFleetDefaults.NormalizeHttpUrl(state.FleetApiAudience, TeslaFleetDefaults.DefaultFleetApiAudience);
         var checks = new List<string>();
-        JsonElement? me = await TryGetResponseAsync(audience, "/api/1/users/me", state.AccessToken, checks, cancellationToken);
-        JsonElement? region = await TryGetResponseAsync(audience, "/api/1/users/region", state.AccessToken, checks, cancellationToken);
-        JsonElement? products = await TryGetResponseAsync(audience, "/api/1/products", state.AccessToken, checks, cancellationToken);
-
-        var vehicles = ReadVehicles(products).Concat(await ReadVehiclesAsync(audience, state.AccessToken, checks, cancellationToken))
-            .GroupBy(vehicle => vehicle.Vin, StringComparer.OrdinalIgnoreCase)
-            .Select(group => MergeVehicle(group.ToArray()))
-            .OrderBy(vehicle => vehicle.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var fleetStatus = vehicles.Count == 0
-            ? null
-            : await TryPostResponseAsync(
-                audience,
-                "/api/1/vehicles/fleet_status",
-                state.AccessToken,
-                new { vins = vehicles.Select(vehicle => vehicle.Vin).Where(vin => !string.IsNullOrWhiteSpace(vin)).ToArray() },
-                checks,
-                cancellationToken);
-        if (fleetStatus.HasValue)
+        JsonElement? me = null;
+        JsonElement? region = null;
+        if (fetchUserDetails)
         {
-            vehicles = vehicles
-                .Select(vehicle => vehicle with { Values = Merge(vehicle.Values, ReadFleetStatusForVin(fleetStatus.Value, vehicle.Vin)) })
-                .ToList();
-        }
-
-        if (state.FetchRealtimeVehicleData || state.HomeAssistantMqttEnabled)
-        {
-            vehicles = await FetchRealtimeVehicleDataAsync(state, audience, state.AccessToken, vehicles, checks, cancellationToken);
+            me = await TryGetResponseAsync(audience, "/api/1/users/me", state.AccessToken, checks, cancellationToken);
+            region = await TryGetResponseAsync(audience, "/api/1/users/region", state.AccessToken, checks, cancellationToken);
         }
         else
         {
-            checks.Add("Realtime vehicle_data calls skipped because the setting is disabled. This does not wake vehicles.");
+            checks.Add("User profile endpoints skipped for this fast Home Assistant Energy refresh.");
+        }
+
+        JsonElement? products = await TryGetResponseAsync(audience, "/api/1/products", state.AccessToken, checks, cancellationToken);
+
+        var vehicles = ReadVehicles(products);
+        if (fetchVehicleDetails)
+        {
+            vehicles = vehicles.Concat(await ReadVehiclesAsync(audience, state.AccessToken, checks, cancellationToken))
+                .GroupBy(vehicle => vehicle.Vin, StringComparer.OrdinalIgnoreCase)
+                .Select(group => MergeVehicle(group.ToArray()))
+                .OrderBy(vehicle => vehicle.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var fleetStatus = vehicles.Count == 0
+                ? null
+                : await TryPostResponseAsync(
+                    audience,
+                    "/api/1/vehicles/fleet_status",
+                    state.AccessToken,
+                    new { vins = vehicles.Select(vehicle => vehicle.Vin).Where(vin => !string.IsNullOrWhiteSpace(vin)).ToArray() },
+                    checks,
+                    cancellationToken);
+            if (fleetStatus.HasValue)
+            {
+                vehicles = vehicles
+                    .Select(vehicle => vehicle with { Values = Merge(vehicle.Values, ReadFleetStatusForVin(fleetStatus.Value, vehicle.Vin)) })
+                    .ToList();
+            }
+
+            var shouldFetchRealtimeVehicleData = fetchRealtimeVehicleData ?? (state.FetchRealtimeVehicleData || state.HomeAssistantMqttEnabled);
+            if (shouldFetchRealtimeVehicleData)
+            {
+                vehicles = await FetchRealtimeVehicleDataAsync(state, audience, state.AccessToken, vehicles, checks, cancellationToken);
+            }
+            else
+            {
+                checks.Add("Realtime vehicle_data calls skipped because the setting is disabled. This does not wake vehicles.");
+            }
+        }
+        else
+        {
+            vehicles = vehicles
+                .OrderBy(vehicle => vehicle.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            checks.Add("Detailed vehicle endpoints skipped for this fast Home Assistant Energy refresh.");
         }
 
         var energySites = ReadEnergySites(products);
@@ -590,7 +615,8 @@ sealed class TeslaFleetMqttPublisher(
         TeslaFleetState state,
         TeslaFleetSnapshot snapshot,
         CancellationToken cancellationToken,
-        bool resetDiscovery = false)
+        bool resetDiscovery = false,
+        bool publishDiscovery = true)
     {
         if (!state.HomeAssistantMqttEnabled)
         {
@@ -632,19 +658,29 @@ sealed class TeslaFleetMqttPublisher(
         var devices = projection.Devices.ToDictionary(device => device.Id, StringComparer.OrdinalIgnoreCase);
         var discoveryTopics = new List<string>();
         var publishedByDevice = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entity in projection.Entities)
+        if (publishDiscovery || resetDiscovery)
         {
-            if (!devices.TryGetValue(entity.DeviceId, out var device))
+            foreach (var entity in projection.Entities)
             {
-                continue;
+                if (!devices.TryGetValue(entity.DeviceId, out var device))
+                {
+                    continue;
+                }
+
+                await PublishEntityDiscoveryAsync(client, settings, entity, device, cancellationToken);
+                publishedByDevice[device.Name] = publishedByDevice.GetValueOrDefault(device.Name) + 1;
+                discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
             }
 
-            await PublishEntityDiscoveryAsync(client, settings, entity, device, cancellationToken);
-            publishedByDevice[device.Name] = publishedByDevice.GetValueOrDefault(device.Name) + 1;
-            discoveryTopics.Add(BuildDiscoveryTopic(settings, entity));
+            var retiredEnergyDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredEnergyDiscoveryTopics(settings, projection), cancellationToken);
+            var retiredVehicleDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredVehicleDiscoveryTopics(settings, projection), cancellationToken);
+            AddRetiredDiscoveryChecks(checks, retiredEnergyDiscoveryCount, retiredVehicleDiscoveryCount);
         }
-        var retiredEnergyDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredEnergyDiscoveryTopics(settings, projection), cancellationToken);
-        var retiredVehicleDiscoveryCount = await PublishRetiredDiscoveryAsync(client, BuildRetiredVehicleDiscoveryTopics(settings, projection), cancellationToken);
+        else
+        {
+            discoveryTopics.AddRange(state.LastHomeAssistantDiscoveryTopics ?? []);
+            checks.Add("Skipped MQTT discovery config publish for this fast state-only refresh; retained Home Assistant discovery is reused.");
+        }
 
         var publishedStates = BuildPublishedStatePayloads(projection, state.LastHomeAssistantStatePayloads ?? []);
         foreach (var stateProjection in publishedStates)
@@ -654,18 +690,17 @@ sealed class TeslaFleetMqttPublisher(
 
         await client.DisconnectAsync(cancellationToken: cancellationToken);
         checks.Add($"Discovery prefix: {settings.DiscoveryPrefix}; base topic: {settings.BaseTopic}.");
-        checks.Add($"Published {projection.Entities.Count} MQTT discovery config(s) for {projection.Devices.Count} device(s).");
+        if (publishDiscovery || resetDiscovery)
+        {
+            checks.Add($"Published {projection.Entities.Count} MQTT discovery config(s) for {projection.Devices.Count} device(s).");
+        }
+        else
+        {
+            checks.Add($"Reused retained MQTT discovery for {projection.Devices.Count} device(s).");
+        }
         if (publishedByDevice.Count > 0)
         {
             checks.Add($"Discovery configs by device: {string.Join(", ", publishedByDevice.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase).Select(item => $"{item.Key}={item.Value}"))}.");
-        }
-        if (retiredEnergyDiscoveryCount > 0)
-        {
-            checks.Add($"Cleared {retiredEnergyDiscoveryCount} retired Energy MQTT discovery config(s).");
-        }
-        if (retiredVehicleDiscoveryCount > 0)
-        {
-            checks.Add($"Cleared {retiredVehicleDiscoveryCount} retired vehicle MQTT discovery config(s).");
         }
         checks.Add($"Published {publishedStates.Count} retained state topic(s).");
         if (discoveryTopics.Count > 0)
@@ -681,10 +716,30 @@ sealed class TeslaFleetMqttPublisher(
         checks.AddRange(snapshot.Checks);
         return new TeslaHomeAssistantPublishResult(
             true,
-            $"Published {projection.Entities.Count} Home Assistant MQTT Discovery config(s) from typed LMS Tesla projection.",
+            BuildPublishSummary(projection, publishedStates.Count, publishDiscovery || resetDiscovery),
             checks,
             discoveryTopics,
-            BuildStatePayloadCache(publishedStates));
+            MergeStatePayloadCache(state.LastHomeAssistantStatePayloads ?? [], BuildStatePayloadCache(publishedStates)));
+    }
+
+    private static string BuildPublishSummary(
+        HomeAssistantMqttProjection projection,
+        int stateTopicCount,
+        bool publishedDiscovery) =>
+        publishedDiscovery
+            ? $"Published {projection.Entities.Count} Home Assistant MQTT Discovery config(s) from typed LMS Tesla projection."
+            : $"Published {stateTopicCount} retained Home Assistant MQTT state topic(s) using retained discovery.";
+
+    private static void AddRetiredDiscoveryChecks(List<string> checks, int retiredEnergyDiscoveryCount, int retiredVehicleDiscoveryCount)
+    {
+        if (retiredEnergyDiscoveryCount > 0)
+        {
+            checks.Add($"Cleared {retiredEnergyDiscoveryCount} retired Energy MQTT discovery config(s).");
+        }
+        if (retiredVehicleDiscoveryCount > 0)
+        {
+            checks.Add($"Cleared {retiredVehicleDiscoveryCount} retired vehicle MQTT discovery config(s).");
+        }
     }
 
     private static async Task PublishEntityDiscoveryAsync(
@@ -827,6 +882,19 @@ sealed class TeslaFleetMqttPublisher(
                 state.Topic,
                 JsonSerializer.Serialize(state.Payload, JsonOptions),
                 now))
+            .ToList();
+    }
+
+    private static List<HomeAssistantStatePayloadCacheEntry> MergeStatePayloadCache(
+        IReadOnlyCollection<HomeAssistantStatePayloadCacheEntry> previous,
+        IReadOnlyCollection<HomeAssistantStatePayloadCacheEntry> current)
+    {
+        return previous
+            .Concat(current)
+            .Where(item => !string.IsNullOrWhiteSpace(item.Topic) && !string.IsNullOrWhiteSpace(item.PayloadJson))
+            .GroupBy(item => item.Topic, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(item => item.UpdatedUtc).First())
+            .OrderBy(item => item.Topic, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -3309,7 +3377,7 @@ sealed class TeslaFleetHomeAssistantPublisherService(
 
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -3327,27 +3395,72 @@ sealed class TeslaFleetHomeAssistantPublisherService(
             return;
         }
 
-        var interval = TimeSpan.FromMinutes(Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240));
-        if (state.LastHomeAssistantPublishUtc.HasValue &&
-            DateTimeOffset.UtcNow - state.LastHomeAssistantPublishUtc.Value < interval)
+        var now = DateTimeOffset.UtcNow;
+        var energyInterval = TimeSpan.FromSeconds(Math.Clamp(state.HomeAssistantEnergyRefreshIntervalSeconds, 5, 300));
+        var vehicleInterval = TimeSpan.FromMinutes(Math.Clamp(ResolveVehicleRefreshIntervalMinutes(state), 5, 240));
+        var lastEnergyPublishUtc = state.LastHomeAssistantEnergyPublishUtc ?? state.LastHomeAssistantPublishUtc;
+        var lastVehiclePublishUtc = state.LastHomeAssistantVehiclePublishUtc ?? state.LastHomeAssistantPublishUtc;
+        var energyDue = !lastEnergyPublishUtc.HasValue || now - lastEnergyPublishUtc.Value >= energyInterval;
+        var vehicleDue = !lastVehiclePublishUtc.HasValue || now - lastVehiclePublishUtc.Value >= vehicleInterval;
+        if (!energyDue && !vehicleDue)
         {
             return;
         }
 
         var token = await tokenCoordinator.EnsureUsableAsync(state, cancellationToken);
-        var snapshot = await dataClient.FetchSnapshotAsync(token.State, cancellationToken);
-        var result = await mqttPublisher.PublishAsync(token.State, snapshot, cancellationToken);
+        var fetchVehicleDetails = vehicleDue;
+        var fetchRealtimeVehicleData = vehicleDue && token.State.HomeAssistantMqttEnabled;
+        var publishDiscovery = vehicleDue || (token.State.LastHomeAssistantDiscoveryTopics ?? []).Count == 0;
+        var snapshot = await dataClient.FetchSnapshotAsync(
+            token.State,
+            cancellationToken,
+            fetchVehicleDetails,
+            fetchRealtimeVehicleData,
+            fetchUserDetails: vehicleDue);
+        var result = await mqttPublisher.PublishAsync(
+            token.State,
+            snapshot,
+            cancellationToken,
+            publishDiscovery: publishDiscovery);
+        var publishedUtc = DateTimeOffset.UtcNow;
+        var summary = BuildRefreshSummary(result.Summary, energyDue || vehicleDue, vehicleDue, fetchRealtimeVehicleData);
         var updated = token.State with
         {
-            LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : token.State.LastHomeAssistantPublishUtc,
-            LastHomeAssistantPublishSummary = result.Summary,
+            LastHomeAssistantPublishUtc = result.Succeeded ? publishedUtc : token.State.LastHomeAssistantPublishUtc,
+            LastHomeAssistantEnergyPublishUtc = result.Succeeded ? publishedUtc : token.State.LastHomeAssistantEnergyPublishUtc,
+            LastHomeAssistantVehiclePublishUtc = result.Succeeded && vehicleDue ? publishedUtc : token.State.LastHomeAssistantVehiclePublishUtc,
+            LastHomeAssistantPublishSummary = summary,
             LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
             LastHomeAssistantStatePayloads = result.Succeeded ? result.StatePayloads : token.State.LastHomeAssistantStatePayloads,
             LastStatus = result.Succeeded ? "Home Assistant auto-published" : "Home Assistant auto-publish failed",
-            LastMessage = result.Summary,
+            LastMessage = summary,
             LastChecks = token.Checks.Concat(result.Checks).ToList()
         };
         await store.SaveAsync(updated, cancellationToken);
+    }
+
+    private static int ResolveVehicleRefreshIntervalMinutes(TeslaFleetState state) =>
+        state.HomeAssistantVehicleRefreshIntervalMinutes > 0
+            ? state.HomeAssistantVehicleRefreshIntervalMinutes
+            : state.HomeAssistantRefreshIntervalMinutes;
+
+    private static string BuildRefreshSummary(
+        string summary,
+        bool energyRefreshed,
+        bool vehicleDetailsRefreshed,
+        bool realtimeVehicleDataFetched)
+    {
+        var parts = new List<string>();
+        if (energyRefreshed)
+        {
+            parts.Add("Energy state");
+        }
+        if (vehicleDetailsRefreshed)
+        {
+            parts.Add(realtimeVehicleDataFetched ? "vehicle detail" : "vehicle products");
+        }
+
+        return $"{summary} Refresh: {string.Join(" and ", parts)}.";
     }
 }
 

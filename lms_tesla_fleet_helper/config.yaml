@@ -1,5 +1,5 @@
 name: LMS Tesla Fleet Helper
-version: "0.2.34"
+version: "0.2.35"
 slug: lms_tesla_fleet_helper
 description: "Tesla Fleet key helper for Home Assistant using LMS Edge Gateway for public HTTPS publishing."
 url: https://github.com/lmsowner/ha_addon_lms_edge_gateway
@@ -34,6 +34,8 @@ options:
   homeassistant_mqtt_enabled: false
   fetch_realtime_vehicle_data: false
   homeassistant_refresh_interval_minutes: 15
+  homeassistant_energy_refresh_interval_seconds: 10
+  homeassistant_vehicle_refresh_interval_minutes: 15
 schema:
   mqtt_host: str
   mqtt_port: int
@@ -44,3 +46,5 @@ schema:
   homeassistant_mqtt_enabled: bool
   fetch_realtime_vehicle_data: bool
   homeassistant_refresh_interval_minutes: int
+  homeassistant_energy_refresh_interval_seconds: int
+  homeassistant_vehicle_refresh_interval_minutes: int

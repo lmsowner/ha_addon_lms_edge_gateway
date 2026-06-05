@@ -109,6 +109,26 @@ app.MapPost("/actions/save-settings", async (
         var hasMqttDiscoveryPrefix = form.ContainsKey("mqtt_discovery_prefix");
         var hasMqttBaseTopic = form.ContainsKey("mqtt_base_topic");
         var hasHomeAssistantRefreshInterval = form.ContainsKey("ha_refresh_interval_minutes");
+        var hasHomeAssistantEnergyRefreshInterval = form.ContainsKey("ha_energy_refresh_interval_seconds");
+        var hasHomeAssistantVehicleRefreshInterval =
+            form.ContainsKey("ha_vehicle_refresh_interval_minutes") ||
+            hasHomeAssistantRefreshInterval;
+        var energyRefreshIntervalSeconds = hasHomeAssistantEnergyRefreshInterval
+            ? NormalizeInt(
+                form["ha_energy_refresh_interval_seconds"].ToString(),
+                defaultValue: 10,
+                min: 5,
+                max: 300)
+            : state.HomeAssistantEnergyRefreshIntervalSeconds;
+        var vehicleRefreshIntervalMinutes = hasHomeAssistantVehicleRefreshInterval
+            ? NormalizeInt(
+                form.ContainsKey("ha_vehicle_refresh_interval_minutes")
+                    ? form["ha_vehicle_refresh_interval_minutes"].ToString()
+                    : form["ha_refresh_interval_minutes"].ToString(),
+                defaultValue: 15,
+                min: 5,
+                max: 240)
+            : state.HomeAssistantVehicleRefreshIntervalMinutes;
 
         state = state with
         {
@@ -143,13 +163,11 @@ app.MapPost("/actions/save-settings", async (
             MqttBaseTopic = hasMqttBaseTopic
                 ? NormalizeTopicRoot(form["mqtt_base_topic"].ToString(), "lms/tesla-fleet")
                 : state.MqttBaseTopic,
-            HomeAssistantRefreshIntervalMinutes = hasHomeAssistantRefreshInterval
-                ? NormalizeInt(
-                    form["ha_refresh_interval_minutes"].ToString(),
-                    defaultValue: 15,
-                    min: 5,
-                    max: 240)
+            HomeAssistantRefreshIntervalMinutes = hasHomeAssistantVehicleRefreshInterval
+                ? vehicleRefreshIntervalMinutes
                 : state.HomeAssistantRefreshIntervalMinutes,
+            HomeAssistantEnergyRefreshIntervalSeconds = energyRefreshIntervalSeconds,
+            HomeAssistantVehicleRefreshIntervalMinutes = vehicleRefreshIntervalMinutes,
             LastStatus = "Settings saved",
             LastMessage = "Tesla Fleet Helper settings were saved.",
             LastChecks = []
@@ -2333,10 +2351,16 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
               <input name="mqtt_base_topic" value="{{H(state.MqttBaseTopic)}}" autocomplete="off" />
             </label>
           </div>
-          <label>
-            Refresh interval minutes
-            <input name="ha_refresh_interval_minutes" value="{{H(state.HomeAssistantRefreshIntervalMinutes.ToString())}}" inputmode="numeric" autocomplete="off" />
-          </label>
+          <div class="form-grid">
+            <label>
+              Powerwall refresh seconds
+              <input name="ha_energy_refresh_interval_seconds" value="{{H(state.HomeAssistantEnergyRefreshIntervalSeconds.ToString())}}" inputmode="numeric" autocomplete="off" />
+            </label>
+            <label>
+              Vehicle detail refresh minutes
+              <input name="ha_vehicle_refresh_interval_minutes" value="{{H(state.HomeAssistantVehicleRefreshIntervalMinutes.ToString())}}" inputmode="numeric" autocomplete="off" />
+            </label>
+          </div>
           <div class="actions">
             <button type="submit">Save settings</button>
           </div>
@@ -2416,6 +2440,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
           <div><span>Last vehicle check</span><code>{{FormatDate(state.LastVehicleDiagnosticsUtc)}}</code></div>
           <div><span>Vehicle check summary</span><code>{{H(string.IsNullOrWhiteSpace(state.LastVehicleDiagnosticsSummary) ? "None" : state.LastVehicleDiagnosticsSummary)}}</code></div>
           <div><span>Last Home Assistant publish</span><code>{{FormatDate(state.LastHomeAssistantPublishUtc)}}</code></div>
+          <div><span>Last Energy refresh</span><code>{{FormatDate(state.LastHomeAssistantEnergyPublishUtc)}}</code></div>
+          <div><span>Last vehicle detail refresh</span><code>{{FormatDate(state.LastHomeAssistantVehiclePublishUtc)}}</code></div>
           <div><span>Home Assistant publish summary</span><code>{{H(string.IsNullOrWhiteSpace(state.LastHomeAssistantPublishSummary) ? "None" : state.LastHomeAssistantPublishSummary)}}</code></div>
           <div><span>Edge Gateway asset id</span><code>{{H(state.PublicAssetId?.ToString("D") ?? "None")}}</code></div>
           <div><span>Edge Gateway OAuth route id</span><code>{{H(state.PublicOAuthRouteId?.ToString("D") ?? "None")}}</code></div>
@@ -3981,6 +4007,12 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             HomeAssistantRefreshIntervalMinutes = state.HomeAssistantRefreshIntervalMinutes <= 0
                 ? 15
                 : Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240),
+            HomeAssistantEnergyRefreshIntervalSeconds = state.HomeAssistantEnergyRefreshIntervalSeconds <= 0
+                ? 10
+                : Math.Clamp(state.HomeAssistantEnergyRefreshIntervalSeconds, 5, 300),
+            HomeAssistantVehicleRefreshIntervalMinutes = state.HomeAssistantVehicleRefreshIntervalMinutes <= 0
+                ? Math.Clamp(state.HomeAssistantRefreshIntervalMinutes <= 0 ? 15 : state.HomeAssistantRefreshIntervalMinutes, 5, 240)
+                : Math.Clamp(state.HomeAssistantVehicleRefreshIntervalMinutes, 5, 240),
             DisabledVehiclePollingVins = NormalizeVinList(state.DisabledVehiclePollingVins),
             LastHomeAssistantDiscoveryTopics = state.LastHomeAssistantDiscoveryTopics ?? [],
             LastHomeAssistantStatePayloads = state.LastHomeAssistantStatePayloads ?? [],
@@ -4014,7 +4046,9 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             MqttPassword: ReadOptionString("mqtt_password", string.Empty),
             MqttDiscoveryPrefix: ReadOptionString("mqtt_discovery_prefix", "homeassistant"),
             MqttBaseTopic: ReadOptionString("mqtt_base_topic", "lms/tesla-fleet"),
-            HomeAssistantRefreshIntervalMinutes: Math.Clamp(ReadOptionInt("homeassistant_refresh_interval_minutes", 15), 5, 240));
+            HomeAssistantRefreshIntervalMinutes: Math.Clamp(ReadOptionInt("homeassistant_refresh_interval_minutes", 15), 5, 240),
+            HomeAssistantEnergyRefreshIntervalSeconds: Math.Clamp(ReadOptionInt("homeassistant_energy_refresh_interval_seconds", 10), 5, 300),
+            HomeAssistantVehicleRefreshIntervalMinutes: Math.Clamp(ReadOptionInt("homeassistant_vehicle_refresh_interval_minutes", ReadOptionInt("homeassistant_refresh_interval_minutes", 15)), 5, 240));
 
     private static List<string> NormalizeVinList(IEnumerable<string>? vins) =>
         (vins ?? [])
@@ -5096,8 +5130,12 @@ sealed record TeslaFleetState(
     string MqttDiscoveryPrefix = "homeassistant",
     string MqttBaseTopic = "lms/tesla-fleet",
     int HomeAssistantRefreshIntervalMinutes = 15,
+    int HomeAssistantEnergyRefreshIntervalSeconds = 10,
+    int HomeAssistantVehicleRefreshIntervalMinutes = 15,
     List<string>? DisabledVehiclePollingVins = null,
     DateTimeOffset? LastHomeAssistantPublishUtc = null,
+    DateTimeOffset? LastHomeAssistantEnergyPublishUtc = null,
+    DateTimeOffset? LastHomeAssistantVehiclePublishUtc = null,
     string LastHomeAssistantPublishSummary = "",
     List<string>? LastHomeAssistantDiscoveryTopics = null,
     List<HomeAssistantStatePayloadCacheEntry>? LastHomeAssistantStatePayloads = null,
