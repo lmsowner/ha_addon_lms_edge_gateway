@@ -1337,7 +1337,39 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
   <title>{{ProductName}}</title>
   <style>
     :root {
-      color-scheme: dark light;
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --surface-2: #edf3f8;
+      --border: #d6dee8;
+      --text: #172033;
+      --muted: #5d6b7c;
+      --accent: #0f8f83;
+      --accent-rgb: 15, 143, 131;
+      --accent-2: #2563eb;
+      --danger: #b42318;
+      --ready: #137333;
+      --warning: #9a6200;
+      --ready-border: rgba(19, 115, 51, .42);
+      --warning-border: rgba(154, 98, 0, .42);
+      --danger-border: rgba(180, 35, 24, .38);
+      --tab-background: #edf3f8;
+      --tab-border-subtle: rgba(15, 143, 131, .12);
+      --tab-hover-border: #93a4b8;
+      --tab-active-border: rgba(15, 143, 131, .45);
+      --input-bg: #ffffff;
+      --code-bg: #eef3f8;
+      --table-bg: #f8fbfe;
+      --table-border: rgba(214, 222, 232, .88);
+      --table-head-bg: rgba(238, 243, 248, .96);
+      --pre-bg: #f6f8fb;
+      --primary-text: #062320;
+      --shadow-card: 0 14px 34px rgba(37, 52, 73, .12);
+      --shadow-control: 0 8px 18px rgba(37, 52, 73, .12);
+      --shadow-focus: 0 0 0 3px rgba(15, 143, 131, .24);
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
       --bg: #0f141b;
       --surface: #161d27;
       --surface-2: #1d2734;
@@ -1345,10 +1377,28 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       --text: #eef2f7;
       --muted: #a8b3c2;
       --accent: #4fd1c5;
+      --accent-rgb: 79, 209, 197;
       --accent-2: #8bd5ff;
       --danger: #ff8a8a;
       --ready: #9be7b4;
       --warning: #ffd37d;
+      --ready-border: rgba(155, 231, 180, .5);
+      --warning-border: rgba(255, 211, 125, .5);
+      --danger-border: rgba(255, 138, 138, .5);
+      --tab-background: #111925;
+      --tab-border-subtle: rgba(79, 209, 197, .08);
+      --tab-hover-border: #526174;
+      --tab-active-border: rgba(79, 209, 197, .42);
+      --input-bg: #0c1118;
+      --code-bg: #0c1118;
+      --table-bg: #0c1118;
+      --table-border: rgba(51, 65, 85, .72);
+      --table-head-bg: rgba(29, 39, 52, .94);
+      --pre-bg: #05070a;
+      --primary-text: #061316;
+      --shadow-card: 0 16px 36px rgba(0, 0, 0, .2);
+      --shadow-control: 0 8px 18px rgba(0, 0, 0, .24);
+      --shadow-focus: 0 0 0 3px rgba(79, 209, 197, .28);
     }
     * { box-sizing: border-box; }
     body {
@@ -1360,6 +1410,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     }
     main { width: min(1540px, calc(100vw - 24px)); margin: 0 auto; padding: 28px 0 48px; }
     header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 18px; }
+    .header-actions { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 10px; }
     h1, h2, h3, p { margin-top: 0; }
     h1 { font-size: 28px; margin-bottom: 8px; }
     h2 { font-size: 18px; margin-bottom: 10px; }
@@ -1393,9 +1444,9 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     }
     .tab-trigger {
       align-items: center;
-      background: #111925;
+      background: var(--tab-background);
       border: 1px solid var(--border);
-      border-bottom-color: rgba(79, 209, 197, .08);
+      border-bottom-color: var(--tab-border-subtle);
       border-radius: 10px 10px 0 0;
       color: var(--muted);
       cursor: pointer;
@@ -1409,10 +1460,10 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       position: relative;
       text-align: left;
     }
-    .tab-trigger:hover { border-color: #526174; color: var(--text); }
+    .tab-trigger:hover { border-color: var(--tab-hover-border); color: var(--text); }
     .tab-trigger.active {
       background: var(--surface);
-      border-color: rgba(79, 209, 197, .42);
+      border-color: var(--tab-active-border);
       border-bottom-color: transparent;
       color: var(--text);
       margin-bottom: -1px;
@@ -1438,7 +1489,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 0 10px 10px 10px;
-      box-shadow: 0 16px 36px rgba(0, 0, 0, .2);
+      box-shadow: var(--shadow-card);
       margin-top: -1px;
       min-height: 0;
       min-width: 0;
@@ -1455,7 +1506,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 16px;
-      box-shadow: 0 16px 36px rgba(0, 0, 0, .2);
+      box-shadow: var(--shadow-card);
     }
     .status {
       display: inline-flex;
@@ -1468,9 +1519,9 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       font-size: 13px;
       white-space: nowrap;
     }
-    .status.ready { color: var(--ready); border-color: rgba(155, 231, 180, .5); }
-    .status.warn { color: var(--warning); border-color: rgba(255, 211, 125, .5); }
-    .status.fail { color: var(--danger); border-color: rgba(255, 138, 138, .5); }
+    .status.ready { color: var(--ready); border-color: var(--ready-border); }
+    .status.warn { color: var(--warning); border-color: var(--warning-border); }
+    .status.fail { color: var(--danger); border-color: var(--danger-border); }
     label { display: grid; gap: 7px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .check-row {
@@ -1487,7 +1538,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       min-height: 42px;
       border: 1px solid var(--border);
       border-radius: 7px;
-      background: #0c1118;
+      background: var(--input-bg);
       color: var(--text);
       padding: 10px 12px;
       font: inherit;
@@ -1498,7 +1549,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       overflow-wrap: anywhere;
       border: 1px solid var(--border);
       border-radius: 7px;
-      background: #0c1118;
+      background: var(--code-bg);
       padding: 10px 12px;
       color: var(--accent-2);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1520,7 +1571,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       font: inherit;
       font-weight: 650;
     }
-    button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: #061316; }
+    button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--primary-text); }
     button:disabled, .button.disabled { opacity: .55; cursor: not-allowed; }
     .fact-grid { display: grid; gap: 10px; }
     .fact-grid div span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
@@ -1533,7 +1584,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       line-height: 1.45;
     }
     .callout strong { color: var(--text); }
-    .callout.warn { border-color: rgba(255, 211, 125, .45); }
+    .callout.warn { border-color: var(--warning-border); }
     ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); line-height: 1.55; }
     .split-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .diagnostic-filter-bar {
@@ -1571,13 +1622,13 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       max-height: 640px;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: #0c1118;
+      background: var(--table-bg);
     }
     .property-table { width: 100%; min-width: 1660px; border-collapse: collapse; table-layout: fixed; }
     .property-table th,
     .property-table td {
       padding: 10px 12px;
-      border-bottom: 1px solid rgba(51, 65, 85, .72);
+      border-bottom: 1px solid var(--table-border);
       text-align: left;
       vertical-align: middle;
       font-size: 13px;
@@ -1588,7 +1639,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     .property-table th {
       color: var(--muted);
       font-weight: 700;
-      background: rgba(29, 39, 52, .94);
+      background: var(--table-head-bg);
       position: sticky;
       top: 0;
       z-index: 1;
@@ -1626,7 +1677,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       border-radius: 7px;
       max-height: 360px;
       overflow: auto;
-      background: #05070a;
+      background: var(--pre-bg);
       color: var(--text);
       white-space: pre-wrap;
       overflow-wrap: anywhere;
@@ -1648,10 +1699,85 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       color: var(--muted);
       white-space: nowrap;
     }
+    .theme-toggle {
+      align-items: center;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      box-shadow: var(--shadow-control);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      flex: 0 0 auto;
+      height: 32px;
+      justify-content: center;
+      padding: 3px;
+      position: relative;
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+      width: 60px;
+    }
+    .theme-toggle:hover { border-color: var(--tab-hover-border); }
+    .theme-toggle:focus-visible { box-shadow: var(--shadow-focus); outline: none; }
+    .theme-toggle::after {
+      background: var(--accent);
+      border: 2px solid var(--surface-2);
+      border-radius: 999px;
+      content: "";
+      height: 7px;
+      opacity: 0;
+      position: absolute;
+      right: 4px;
+      top: 4px;
+      transform: scale(.75);
+      transition: opacity 140ms ease, transform 140ms ease;
+      width: 7px;
+    }
+    :root[data-theme-mode="auto"] .theme-toggle::after { opacity: 1; transform: scale(1); }
+    .theme-toggle-track {
+      background: rgba(var(--accent-rgb), .12);
+      border-radius: inherit;
+      display: block;
+      height: 100%;
+      position: relative;
+      width: 100%;
+    }
+    .theme-toggle-thumb {
+      align-items: center;
+      background: #ffffff;
+      border: 1px solid rgba(60, 60, 67, .14);
+      border-radius: 999px;
+      box-shadow: 0 4px 12px rgba(55, 76, 105, .22);
+      color: #d08500;
+      display: grid;
+      height: 23px;
+      justify-content: center;
+      left: 2px;
+      position: absolute;
+      top: 2px;
+      transition: transform 180ms ease, background 180ms ease, color 180ms ease, border-color 180ms ease;
+      width: 23px;
+    }
+    .theme-toggle-icon {
+      grid-area: 1 / 1;
+      height: 15px;
+      transition: opacity 140ms ease, transform 180ms ease;
+      width: 15px;
+    }
+    .theme-toggle-moon { opacity: 0; transform: scale(.72) rotate(-18deg); }
+    :root[data-theme="dark"] .theme-toggle-track { background: rgba(var(--accent-rgb), .18); }
+    :root[data-theme="dark"] .theme-toggle-thumb {
+      background: #111823;
+      border-color: rgba(190, 207, 228, .3);
+      color: var(--accent-2);
+      transform: translateX(28px);
+    }
+    :root[data-theme="dark"] .theme-toggle-sun { opacity: 0; transform: scale(.72) rotate(22deg); }
+    :root[data-theme="dark"] .theme-toggle-moon { opacity: 1; transform: scale(1) rotate(0); }
     @media (max-width: 900px) {
       main { width: min(100vw - 20px, 760px); padding-top: 18px; }
       header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
       .diagnostic-filter-bar { grid-template-columns: 1fr; }
+      .header-actions { justify-content: space-between; }
       header { gap: 10px; }
     }
   </style>
@@ -1663,7 +1789,22 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         <h1>{{ProductName}}</h1>
         <p class="meta">Generate Tesla Fleet keys, publish the public key through LMS Edge Gateway, run Tesla OAuth through this helper, and keep Tesla-specific bridge state out of Edge Gateway.</p>
       </div>
-      <span class="status {{BuildStatusClass(state.LastStatus)}}">{{H(string.IsNullOrWhiteSpace(state.LastStatus) ? "Not configured" : state.LastStatus)}}</span>
+      <div class="header-actions">
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Change theme">
+          <span class="theme-toggle-track" aria-hidden="true">
+            <span class="theme-toggle-thumb">
+              <svg class="theme-toggle-icon theme-toggle-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+              </svg>
+              <svg class="theme-toggle-icon theme-toggle-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3a6.7 6.7 0 0 0 8.5 8.5A8.4 8.4 0 1 1 12 3Z"></path>
+              </svg>
+            </span>
+          </span>
+        </button>
+        <span class="status {{BuildStatusClass(state.LastStatus)}}">{{H(string.IsNullOrWhiteSpace(state.LastStatus) ? "Not configured" : state.LastStatus)}}</span>
+      </div>
     </header>
 
     <section class="cards">
@@ -1952,6 +2093,9 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       </div>
     </section>
   </main>
+  <script>
+    {{ThemeScript()}}
+  </script>
   <script>
     (() => {
       const root = document.querySelector("[data-helper-tabs]");
@@ -2320,6 +2464,7 @@ static string RenderOAuthCompletePage(TeslaFleetState state)
     <p>No virtual-key install was started. Return to the Tesla Fleet Helper tab in Home Assistant.</p>
     <p>Use the separate Install virtual key action only for first setup, a new vehicle, or after rotating the Fleet key.</p>
   </main>
+  <script>{{ThemeScript()}}</script>
 </body>
 </html>
 """;
@@ -2341,13 +2486,345 @@ static string RenderSimplePage(string title, string message) =>
     <p>{{H(message)}}</p>
     <p>Return to the Tesla Fleet Helper tab in Home Assistant to continue.</p>
   </main>
+  <script>{{ThemeScript()}}</script>
 </body>
 </html>
 """;
 
+static string ThemeScript() =>
+    """
+    (() => {
+      const modeStorageKey = "lms-tesla-helper-theme-mode";
+      const legacyThemeStorageKey = "lms-tesla-helper-theme";
+      const modeCookieName = "lms_tesla_helper_theme_mode";
+      const legacyThemeCookieName = "lms_tesla_helper_theme";
+      const root = document.documentElement;
+      const media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+      let parentThemeObserverAttached = false;
+
+      const normalizeTheme = value => value === "dark" || value === "light" ? value : null;
+      const normalizeMode = value => value === "auto" || value === "dark" || value === "light" ? value : null;
+
+      const readCookieValue = name => document.cookie
+        .split(";")
+        .map(value => value.trim())
+        .find(value => value.startsWith(`${name}=`))
+        ?.split("=")[1];
+
+      const readCookieMode = () => normalizeMode(readCookieValue(modeCookieName));
+
+      const writeCookie = (name, value, maxAge = 31536000) => {
+        document.cookie = `${name}=${value}; Max-Age=${maxAge}; Path=/; SameSite=Lax`;
+      };
+
+      const clearLegacyTheme = () => {
+        try {
+          localStorage.removeItem(legacyThemeStorageKey);
+        } catch {
+        }
+
+        writeCookie(legacyThemeCookieName, "", 0);
+      };
+
+      const readThemeMode = () => {
+        try {
+          return normalizeMode(localStorage.getItem(modeStorageKey)) || readCookieMode() || "auto";
+        } catch {
+          return readCookieMode() || "auto";
+        }
+      };
+
+      const saveThemeMode = mode => {
+        try {
+          localStorage.setItem(modeStorageKey, mode);
+        } catch {
+        }
+
+        writeCookie(modeCookieName, mode);
+        clearLegacyTheme();
+      };
+
+      const parseRgb = value => {
+        const match = value?.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([0-9.]+))?/i);
+        if (match?.[4] === "0" || match?.[4] === "0.0") {
+          return null;
+        }
+
+        return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+      };
+
+      const isDarkColor = value => {
+        const rgb = parseRgb(value);
+        return rgb ? (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 < 0.48 : false;
+      };
+
+      const readElementTheme = element => {
+        if (!element) {
+          return null;
+        }
+
+        const values = [
+          element.dataset?.theme,
+          element.dataset?.colorScheme,
+          element.getAttribute?.("data-theme"),
+          element.getAttribute?.("data-color-scheme"),
+          element.getAttribute?.("theme")
+        ].map(normalizeTheme);
+        const direct = values.find(Boolean);
+        if (direct) {
+          return direct;
+        }
+
+        const className = String(element.className || "").toLowerCase();
+        if (/\b(dark|dark-mode|theme-dark|ha-dark)\b/.test(className)) {
+          return "dark";
+        }
+
+        if (/\b(light|light-mode|theme-light|ha-light)\b/.test(className)) {
+          return "light";
+        }
+
+        return null;
+      };
+
+      const readThemeFromValue = value => {
+        if (typeof value === "boolean") {
+          return value ? "dark" : "light";
+        }
+
+        if (typeof value === "string") {
+          return normalizeTheme(value.trim().toLowerCase());
+        }
+
+        return null;
+      };
+
+      const readThemeFromObject = value => {
+        if (!value || typeof value !== "object") {
+          return null;
+        }
+
+        for (const key of ["darkMode", "dark", "isDark", "is_dark"]) {
+          const theme = readThemeFromValue(value[key]);
+          if (theme) {
+            return theme;
+          }
+        }
+
+        for (const key of ["mode", "themeMode", "theme_mode", "colorScheme", "color_scheme"]) {
+          const theme = readThemeFromValue(value[key]);
+          if (theme) {
+            return theme;
+          }
+        }
+
+        return null;
+      };
+
+      const readElementHass = element => {
+        try {
+          return element?.hass || null;
+        } catch {
+          return null;
+        }
+      };
+
+      const findHomeAssistantHass = parentDocument => {
+        const directSelectors = [
+          "home-assistant",
+          "home-assistant-main",
+          "ha-panel-lovelace",
+          "hui-root",
+          "partial-panel-resolver"
+        ];
+
+        for (const selector of directSelectors) {
+          const element = parentDocument.querySelector(selector);
+          const hass = readElementHass(element);
+          if (hass) {
+            return hass;
+          }
+        }
+
+        let inspected = 0;
+        for (const element of parentDocument.querySelectorAll("*")) {
+          const hass = readElementHass(element);
+          if (hass) {
+            return hass;
+          }
+
+          inspected += 1;
+          if (inspected >= 300) {
+            break;
+          }
+        }
+
+        return null;
+      };
+
+      const readHomeAssistantHassTheme = parentDocument => {
+        const hass = findHomeAssistantHass(parentDocument);
+        if (!hass) {
+          return null;
+        }
+
+        return readThemeFromObject(hass.selectedTheme) ||
+          readThemeFromObject(hass.themes?.selectedTheme) ||
+          readThemeFromObject(hass.themes) ||
+          readThemeFromObject(hass.userData?.selectedTheme) ||
+          readThemeFromObject(hass.userData?.theme);
+      };
+
+      const readHomeAssistantTheme = () => {
+        try {
+          if (!window.parent || window.parent === window || !window.parent.document) {
+            return null;
+          }
+
+          const parentDocument = window.parent.document;
+          const hassTheme = readHomeAssistantHassTheme(parentDocument);
+          if (hassTheme) {
+            return hassTheme;
+          }
+
+          const parentRoot = parentDocument.documentElement;
+          const parentBody = parentDocument.body;
+          const explicit = readElementTheme(parentRoot) || readElementTheme(parentBody);
+          if (explicit) {
+            return explicit;
+          }
+
+          const rootStyle = window.parent.getComputedStyle(parentRoot);
+          const bodyStyle = parentBody ? window.parent.getComputedStyle(parentBody) : null;
+          const colorScheme = `${rootStyle.colorScheme || ""} ${bodyStyle?.colorScheme || ""}`.toLowerCase();
+          if (colorScheme.includes("dark")) {
+            return "dark";
+          }
+
+          if (colorScheme.includes("light")) {
+            return "light";
+          }
+
+          const background =
+            rootStyle.getPropertyValue("--primary-background-color") ||
+            rootStyle.getPropertyValue("--card-background-color") ||
+            rootStyle.getPropertyValue("--ha-card-background") ||
+            bodyStyle?.backgroundColor ||
+            rootStyle.backgroundColor;
+          return isDarkColor(background) ? "dark" : "light";
+        } catch {
+          return null;
+        }
+      };
+
+      const resolveAutoTheme = () => readHomeAssistantTheme() || (media?.matches ? "dark" : "light");
+      const readTheme = () => {
+        const mode = readThemeMode();
+        return mode === "auto" ? resolveAutoTheme() : mode;
+      };
+
+      const nextThemeMode = () => {
+        const mode = readThemeMode();
+        if (mode === "auto") return "dark";
+        if (mode === "dark") return "light";
+        return "auto";
+      };
+
+      const applyTheme = (theme, mode = readThemeMode()) => {
+        root.dataset.theme = theme;
+        root.dataset.themeMode = mode;
+        root.style.colorScheme = theme;
+
+        for (const button of document.querySelectorAll("[data-theme-toggle]")) {
+          const label = mode === "auto"
+            ? `Following Home Assistant theme (${theme}). Click to force dark mode.`
+            : `${mode === "dark" ? "Dark" : "Light"} mode forced. Click to ${mode === "dark" ? "force light mode" : "follow Home Assistant theme"}.`;
+          button.title = label;
+          button.setAttribute("aria-label", label);
+          button.setAttribute("aria-pressed", mode === "auto" ? "mixed" : theme === "dark" ? "true" : "false");
+          button.dataset.themeMode = mode;
+        }
+      };
+
+      const syncTheme = () => applyTheme(readTheme(), readThemeMode());
+
+      const attachParentThemeObserver = () => {
+        if (parentThemeObserverAttached || !window.MutationObserver) {
+          return;
+        }
+
+        try {
+          if (!window.parent || window.parent === window || !window.parent.document) {
+            return;
+          }
+
+          const parentDocument = window.parent.document;
+          const observedElements = [parentDocument.documentElement, parentDocument.body].filter(Boolean);
+          if (observedElements.length === 0) {
+            return;
+          }
+
+          const observer = new MutationObserver(() => {
+            if (readThemeMode() === "auto") {
+              syncTheme();
+            }
+          });
+
+          for (const element of observedElements) {
+            observer.observe(element, {
+              attributes: true,
+              attributeFilter: ["class", "style", "data-theme", "data-color-scheme", "theme"]
+            });
+          }
+
+          window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+          parentThemeObserverAttached = true;
+        } catch {
+        }
+      };
+
+      document.addEventListener("click", event => {
+        const button = event.target.closest("[data-theme-toggle]");
+        if (!button) {
+          return;
+        }
+
+        saveThemeMode(event.shiftKey ? "auto" : nextThemeMode());
+        syncTheme();
+      });
+
+      document.addEventListener("DOMContentLoaded", syncTheme);
+      window.addEventListener("pageshow", syncTheme);
+      window.addEventListener("load", () => {
+        syncTheme();
+        attachParentThemeObserver();
+      });
+      window.setTimeout(attachParentThemeObserver, 0);
+      window.setTimeout(syncTheme, 0);
+
+      if (media?.addEventListener) {
+        media.addEventListener("change", () => {
+          if (readThemeMode() === "auto") {
+            syncTheme();
+          }
+        });
+      }
+
+      window.setInterval(() => {
+        if (readThemeMode() === "auto") {
+          syncTheme();
+        }
+      }, 3000);
+
+      clearLegacyTheme();
+      syncTheme();
+    })();
+    """;
+
 static string SimplePageCss() =>
     """
-    :root { color-scheme: dark light; --bg:#0f141b; --surface:#161d27; --border:#334155; --text:#eef2f7; --muted:#a8b3c2; --accent:#4fd1c5; }
+    :root { color-scheme: light; --bg:#f5f7fb; --surface:#ffffff; --border:#d6dee8; --text:#172033; --muted:#5d6b7c; --accent:#0f8f83; --accent-2:#2563eb; --surface-2:#edf3f8; --primary-text:#062320; }
+    :root[data-theme="dark"] { color-scheme: dark; --bg:#0f141b; --surface:#161d27; --border:#334155; --text:#eef2f7; --muted:#a8b3c2; --accent:#4fd1c5; --accent-2:#8bd5ff; --surface-2:#1d2734; --primary-text:#061316; }
     * { box-sizing: border-box; }
     body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     main { width:min(720px, calc(100vw - 32px)); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:24px; }
@@ -2355,10 +2832,10 @@ static string SimplePageCss() =>
     p { margin:0 0 16px; color:var(--muted); line-height:1.5; }
     .box { display:grid; gap:8px; margin:16px 0; }
     .box span { color:var(--muted); font-size:13px; }
-    code { display:block; overflow-wrap:anywhere; border:1px solid var(--border); border-radius:7px; padding:10px 12px; color:#8bd5ff; background:#0c1118; }
+    code { display:block; overflow-wrap:anywhere; border:1px solid var(--border); border-radius:7px; padding:10px 12px; color:var(--accent-2); background:var(--surface-2); }
     .actions { display:flex; flex-wrap:wrap; gap:10px; }
-    a { display:inline-flex; min-height:40px; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:7px; padding:9px 13px; background:#1d2734; color:var(--text); text-decoration:none; font-weight:650; }
-    a:last-child { background:var(--accent); border-color:var(--accent); color:#061316; }
+    a { display:inline-flex; min-height:40px; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:7px; padding:9px 13px; background:var(--surface-2); color:var(--text); text-decoration:none; font-weight:650; }
+    a:last-child { background:var(--accent); border-color:var(--accent); color:var(--primary-text); }
     """;
 
 static string NormalizeHttpUrl(string value, string defaultUrl = TeslaFleetDefaults.LocalEdgeGatewayUrl)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.27
+
+- Adds Light, Dark, and Auto theme support to the Tesla Fleet Helper UI.
+- Follows the current Home Assistant theme when Auto is selected and persists manual Light/Dark choices across navigation.
+- Applies the same theme handling to OAuth/status pages rendered by the helper.
+
 ## 0.2.26
 
 - Adds native Home Assistant controls for Tesla cabin overheat protection, seat heat/cool/auto climate, steering wheel heat, valet mode, and charge-port latch.
