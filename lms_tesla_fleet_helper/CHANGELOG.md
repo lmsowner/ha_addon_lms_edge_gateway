@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.32
+
+- Removes card-style boxes from direct-control switches.
+- Aligns switches to the same control baseline as number fields and dropdowns in Cars and Powerwalls tabs.
+
 ## 0.2.31
 
 - Replaces direct-control on/off button pairs with proper switches for vehicle and Powerwall boolean controls.

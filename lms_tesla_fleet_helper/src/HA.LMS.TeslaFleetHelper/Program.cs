@@ -1966,6 +1966,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       text-transform: uppercase;
     }
     .control-grid {
+      align-items: end;
       display: grid;
       gap: 10px;
       grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -2017,39 +2018,38 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       height: 18px;
       width: 18px;
     }
-    .switch-form { margin: 0; }
-    .control-switch {
-      align-items: center;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      cursor: pointer;
-      display: flex;
-      gap: 12px;
-      justify-content: space-between;
-      margin: 0;
-      min-height: 58px;
-      padding: 10px 12px;
-    }
-    .control-switch:hover { border-color: var(--tab-hover-border); }
-    .control-switch-copy {
-      color: var(--text);
+    .switch-form {
+      align-items: end;
       display: grid;
+      margin: 0;
+    }
+    .control-switch {
+      align-items: end;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      cursor: pointer;
+      display: grid;
+      gap: 7px;
+      justify-content: start;
+      margin: 0;
+      min-height: 0;
+      padding: 0;
+    }
+    .control-switch:hover .switch-track { border-color: var(--tab-hover-border); }
+    .control-switch-copy {
+      color: var(--muted);
+      display: block;
       font-size: 13px;
-      font-weight: 750;
-      gap: 3px;
+      font-weight: 400;
+      line-height: 1.2;
       min-width: 0;
     }
-    .control-switch-copy small {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 550;
-      line-height: 1.25;
-    }
+    .control-switch-copy small { display: none; }
     .switch-shell {
       display: inline-flex;
       flex: 0 0 auto;
-      height: 28px;
+      height: 42px;
       position: relative;
       width: 50px;
     }
@@ -2063,9 +2063,12 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       background: rgba(116, 128, 145, .22);
       border: 1px solid var(--border);
       border-radius: 999px;
-      inset: 0;
+      height: 28px;
+      left: 0;
       position: absolute;
+      top: 7px;
       transition: background 150ms ease, border-color 150ms ease;
+      width: 50px;
     }
     .switch-track::before {
       background: var(--surface);
@@ -3098,7 +3101,7 @@ static string CommandSwitchForm(
       <input type="hidden" name="{H(idName)}" value="{H(idValue)}" />
       <input type="hidden" name="action" value="{H(action)}" />
       <input type="hidden" name="payload" value="{H(payload)}" data-switch-payload-target />
-      <label class="control-switch">
+      <label class="control-switch" title="{H(description)}">
         <span class="control-switch-copy"><span>{H(label)}</span><small>{H(description)}</small></span>
         <span class="switch-shell">
           <input type="checkbox" data-switch-payload data-on-payload="{H(onPayload)}" data-off-payload="{H(offPayload)}" {checkedAttribute} />
