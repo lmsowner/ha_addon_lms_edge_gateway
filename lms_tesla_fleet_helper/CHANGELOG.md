@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.28
+
+- Adds explicit Home Assistant action buttons for Open/Close windows, frunk, trunk, sunroof, and charge port.
+- Keeps the native cover entities for state while giving Tesla-specific controls clear labels instead of generic cover action text.
+
 ## 0.2.27
 
 - Adds Light, Dark, and Auto theme support to the Tesla Fleet Helper UI.
