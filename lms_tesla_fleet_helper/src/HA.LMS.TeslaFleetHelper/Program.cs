@@ -616,6 +616,124 @@ app.MapPost("/actions/reset-ha-discovery", async (
     return RedirectToAppRoot();
 });
 
+app.MapPost("/actions/direct-vehicle-command", async (
+    HttpContext context,
+    TeslaFleetStore store,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetVehicleCommandClient vehicleCommandClient,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetMqttPublisher mqttPublisher) =>
+{
+    var form = await context.Request.ReadFormAsync(context.RequestAborted);
+    var state = await store.LoadAsync(context.RequestAborted);
+    try
+    {
+        var vin = form["vin"].ToString().Trim();
+        var action = form["action"].ToString().Trim();
+        var payload = form["payload"].ToString().Trim();
+        if (string.IsNullOrWhiteSpace(vin))
+        {
+            throw new InvalidOperationException("Select a vehicle before sending a command.");
+        }
+
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            throw new InvalidOperationException("Select a vehicle command to send.");
+        }
+
+        var token = await tokenCoordinator.EnsureUsableAsync(state, context.RequestAborted);
+        var result = await vehicleCommandClient.ExecuteAsync(token.State, vin, action, payload, context.RequestAborted);
+        var checks = token.Checks.Concat(result.Checks).ToList();
+        state = ApplyDirectVehicleCommandState(token.State, result) with
+        {
+            LastStatus = result.Succeeded ? "Vehicle command accepted" : "Vehicle command failed",
+            LastMessage = result.Summary,
+            LastChecks = checks
+        };
+
+        if (result.Succeeded && state.HomeAssistantMqttEnabled)
+        {
+            state = await RefreshAndPublishAfterDirectCommandAsync(
+                state,
+                dataClient,
+                mqttPublisher,
+                checks,
+                context.RequestAborted);
+        }
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Vehicle command failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+    }
+
+    await store.SaveAsync(state, context.RequestAborted);
+    return RedirectToAppRoot();
+});
+
+app.MapPost("/actions/direct-energy-command", async (
+    HttpContext context,
+    TeslaFleetStore store,
+    TeslaFleetTokenCoordinator tokenCoordinator,
+    TeslaFleetEnergyCommandClient energyCommandClient,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetMqttPublisher mqttPublisher) =>
+{
+    var form = await context.Request.ReadFormAsync(context.RequestAborted);
+    var state = await store.LoadAsync(context.RequestAborted);
+    try
+    {
+        var siteId = form["site_id"].ToString().Trim();
+        var action = form["action"].ToString().Trim();
+        var payload = form["payload"].ToString().Trim();
+        if (string.IsNullOrWhiteSpace(siteId))
+        {
+            throw new InvalidOperationException("Select an Energy site before sending a command.");
+        }
+
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            throw new InvalidOperationException("Select an Energy command to send.");
+        }
+
+        var token = await tokenCoordinator.EnsureUsableAsync(state, context.RequestAborted);
+        var result = await energyCommandClient.ExecuteAsync(token.State, siteId, action, payload, context.RequestAborted);
+        var checks = token.Checks.Concat(result.Checks).ToList();
+        state = token.State with
+        {
+            LastStatus = result.Succeeded ? "Powerwall command accepted" : "Powerwall command failed",
+            LastMessage = result.Summary,
+            LastChecks = checks
+        };
+
+        if (result.Succeeded && state.HomeAssistantMqttEnabled)
+        {
+            state = await RefreshAndPublishAfterDirectCommandAsync(
+                state,
+                dataClient,
+                mqttPublisher,
+                checks,
+                context.RequestAborted);
+        }
+    }
+    catch (Exception exception)
+    {
+        state = state with
+        {
+            LastStatus = "Powerwall command failed",
+            LastMessage = exception.Message,
+            LastChecks = []
+        };
+    }
+
+    await store.SaveAsync(state, context.RequestAborted);
+    return RedirectToAppRoot();
+});
+
 app.MapPost("/actions/discover-properties", async (
     HttpContext context,
     TeslaFleetStore store,
@@ -1240,6 +1358,68 @@ static void TrySetOwnerOnly(string path)
     }
 }
 
+static async Task<TeslaFleetState> RefreshAndPublishAfterDirectCommandAsync(
+    TeslaFleetState state,
+    TeslaFleetDataClient dataClient,
+    TeslaFleetMqttPublisher mqttPublisher,
+    IReadOnlyCollection<string> commandChecks,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        var snapshot = await dataClient.FetchSnapshotAsync(state, cancellationToken);
+        var publishResult = await mqttPublisher.PublishAsync(state, snapshot, cancellationToken);
+        return state with
+        {
+            LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantPublishSummary = publishResult.Summary,
+            LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : state.LastHomeAssistantDiscoveryTopics,
+            LastHomeAssistantStatePayloads = publishResult.Succeeded ? publishResult.StatePayloads : state.LastHomeAssistantStatePayloads,
+            LastStatus = publishResult.Succeeded ? $"{state.LastStatus}; HA refreshed" : $"{state.LastStatus}; HA refresh failed",
+            LastMessage = publishResult.Succeeded ? publishResult.Summary : $"{state.LastMessage} {publishResult.Summary}".Trim(),
+            LastChecks = commandChecks.Concat(publishResult.Checks).ToList()
+        };
+    }
+    catch (Exception exception)
+    {
+        return state with
+        {
+            LastStatus = $"{state.LastStatus}; HA refresh failed",
+            LastMessage = $"{state.LastMessage} Home Assistant refresh failed: {exception.Message}".Trim(),
+            LastChecks = commandChecks.Concat([$"Home Assistant refresh failed: {exception.Message}."]).ToList()
+        };
+    }
+}
+
+static TeslaFleetState ApplyDirectVehicleCommandState(TeslaFleetState state, TeslaVehicleCommandResult result)
+{
+    if (!result.Succeeded || !result.PollingEnabled.HasValue || string.IsNullOrWhiteSpace(result.Vin))
+    {
+        return state;
+    }
+
+    var disabledVins = (state.DisabledVehiclePollingVins ?? [])
+        .Where(vin => !string.IsNullOrWhiteSpace(vin))
+        .Select(vin => vin.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    if (result.PollingEnabled.Value)
+    {
+        disabledVins.RemoveAll(vin => vin.Equals(result.Vin, StringComparison.OrdinalIgnoreCase));
+    }
+    else if (!disabledVins.Contains(result.Vin, StringComparer.OrdinalIgnoreCase))
+    {
+        disabledVins.Add(result.Vin);
+    }
+
+    return state with
+    {
+        DisabledVehiclePollingVins = disabledVins
+            .OrderBy(vin => vin, StringComparer.OrdinalIgnoreCase)
+            .ToList()
+    };
+}
+
 static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? companion = null)
 {
     companion ??= EdgeGatewayCompanionStatus.Unknown();
@@ -1318,6 +1498,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     var projectionPreviewSummary = string.IsNullOrWhiteSpace(state.LastHomeAssistantProjectionPreviewSummary)
         ? "No Home Assistant projection preview has been run yet."
         : state.LastHomeAssistantProjectionPreviewSummary;
+    var vehicleControlCards = RenderVehicleControlCards(state);
+    var energyControlCards = RenderEnergyControlCards(state);
     var energyScopeWarning = HasScope(state.TeslaScopes, EnergyDeviceDataScope) &&
                              HasScope(state.TeslaScopes, EnergyCommandsScope)
         ? string.Empty
@@ -1699,6 +1881,89 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       color: var(--muted);
       white-space: nowrap;
     }
+    .section-header {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .section-header h2 { margin-bottom: 0; }
+    .control-list { display: grid; gap: 14px; }
+    .control-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .control-card-head {
+      align-items: flex-start;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .control-card-head h3 { font-size: 17px; margin-bottom: 4px; }
+    .control-card-head .meta { max-width: none; }
+    .control-summary {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      margin-bottom: 12px;
+    }
+    .control-summary div {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      padding: 8px 10px;
+    }
+    .control-summary span {
+      color: var(--muted);
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .control-summary strong {
+      color: var(--text);
+      display: block;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+    .control-section {
+      border-top: 1px solid var(--border);
+      display: grid;
+      gap: 10px;
+      padding-top: 12px;
+    }
+    .control-section + .control-section { margin-top: 12px; }
+    .control-section h4 {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0;
+      text-transform: uppercase;
+    }
+    .control-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+    }
+    .control-form {
+      align-items: end;
+      display: grid;
+      gap: 8px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      margin: 0;
+    }
+    .control-form label { margin: 0; }
+    .control-form button { white-space: nowrap; }
+    .control-buttons {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .control-buttons form { margin: 0; }
+    .control-buttons button { min-height: 36px; }
     .theme-toggle {
       align-items: center;
       background: var(--surface-2);
@@ -1777,6 +2042,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       main { width: min(100vw - 20px, 760px); padding-top: 18px; }
       header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
       .diagnostic-filter-bar { grid-template-columns: 1fr; }
+      .section-header, .control-card-head { align-items: stretch; display: grid; }
+      .control-summary, .control-grid, .control-form { grid-template-columns: 1fr; }
       .header-actions { justify-content: space-between; }
       header { gap: 10px; }
     }
@@ -1819,6 +2086,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       <div class="tab-control-bar">
         <div class="tab-list" role="tablist" aria-label="Tesla Fleet Helper sections">
           <button class="tab-trigger active" type="button" role="tab" aria-selected="true" data-helper-tab="setup"><span class="tab-trigger-title">Setup & Publish</span></button>
+          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span></button>
+          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="diagnostics"><span class="tab-trigger-title">Diagnostics</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="harness"><span class="tab-trigger-title">Entity Harness</span></button>
         </div>
@@ -1933,6 +2202,32 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
           Register the Tesla OAuth redirect URI exactly as shown above in the Tesla Developer app for this client ID. Do not use the OAuth start URL or the Home Assistant redirect URL for this helper flow.
           Install the virtual key only once per vehicle, or after rotating the Fleet key; OAuth reconnects do not require reinstalling it.
         </div>
+      </div>
+    </section>
+
+    <section class="card tab-panel" data-helper-tab-panel="cars">
+      <div class="section-header">
+        <div>
+          <h2>Cars</h2>
+          <p class="meta">Send vehicle commands directly from the helper using the same Tesla command layer as Home Assistant MQTT.</p>
+        </div>
+        <form method="post" action="actions/publish-ha"><button type="submit">Refresh from Tesla</button></form>
+      </div>
+      <div class="control-list">
+        {{vehicleControlCards}}
+      </div>
+    </section>
+
+    <section class="card tab-panel" data-helper-tab-panel="powerwalls">
+      <div class="section-header">
+        <div>
+          <h2>Powerwalls</h2>
+          <p class="meta">Control Tesla Energy sites directly from the helper and publish the refreshed state back to Home Assistant.</p>
+        </div>
+        <form method="post" action="actions/publish-ha"><button type="submit">Refresh from Tesla</button></form>
+      </div>
+      <div class="control-list">
+        {{energyControlCards}}
       </div>
     </section>
 
@@ -2229,6 +2524,352 @@ static string BuildStatusClass(string? status)
 
 static string FormatDate(DateTimeOffset? value) =>
     value.HasValue ? H(value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")) : "Never";
+
+static string RenderVehicleControlCards(TeslaFleetState state)
+{
+    var vehicles = BuildControlResources(state, "vehicles");
+    if (vehicles.Count == 0)
+    {
+        return """
+        <div class="callout">
+          <strong>No cached car state yet</strong>
+          <p style="margin:8px 0 0">Publish to Home Assistant once, or use Refresh from Tesla after MQTT publishing is enabled, so the helper can build direct car controls from the latest state payload.</p>
+        </div>
+        """;
+    }
+
+    return string.Concat(vehicles.Select(RenderVehicleControlCard));
+}
+
+static string RenderVehicleControlCard(DirectControlResource vehicle)
+{
+    var values = vehicle.Values;
+    var vin = FirstNonEmpty(ReadControlValue(values, "vin", ""), vehicle.Id);
+    var displayName = FirstNonEmpty(ReadControlValue(values, "display_name", ""), vehicle.DisplayName, vin);
+    var vehicleState = ReadControlValue(values, "state");
+    var statusClass = vehicleState.Equals("online", StringComparison.OrdinalIgnoreCase) ? "ready" : "warn";
+    var chargeLimit = ReadControlValue(values, "charge_limit", "80");
+    var chargingAmps = ReadControlValue(values, "charging_amps", "16");
+    var maxChargingAmps = ReadControlValue(values, "max_charging_amps", "80");
+    var climateTemp = FirstNonEmpty(ReadControlValue(values, "driver_temp_setting", ""), ReadControlValue(values, "passenger_temp_setting", ""), "20");
+    var updated = vehicle.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    return $"""
+        <article class="control-card">
+          <div class="control-card-head">
+            <div>
+              <h3>{H(displayName)}</h3>
+              <p class="meta">VIN {H(vin)} · cached {H(updated)}</p>
+            </div>
+            <span class="status {statusClass}">{H(vehicleState)}</span>
+          </div>
+          <div class="control-summary">
+            {ControlFact("Battery", $"{ReadControlValue(values, "battery_level")}%")}
+            {ControlFact("Charging", ReadControlValue(values, "charging_state"))}
+            {ControlFact("Charge limit", $"{chargeLimit}%")}
+            {ControlFact("Vehicle data", ReadControlValue(values, "vehicle_data_refreshed", "Not refreshed"))}
+            {ControlFact("Climate", ReadControlValue(values, "hvac_mode"))}
+            {ControlFact("Inside", $"{ReadControlValue(values, "inside_temp")}\u00b0C")}
+            {ControlFact("Doors", ReadControlValue(values, "locked").Equals("true", StringComparison.OrdinalIgnoreCase) ? "Locked" : "Unlocked")}
+            {ControlFact("Windows", ReadControlValue(values, "windows_state"))}
+          </div>
+
+          <div class="control-section">
+            <h4>Charging</h4>
+            <div class="control-grid">
+              {VehicleNumberForm(vin, "charge_limit", "Charge limit", chargeLimit, "50", "100", "1", "%")}
+              {VehicleNumberForm(vin, "charging_amps", "Charging amps", chargingAmps, "1", FirstNonEmpty(maxChargingAmps, "80"), "1", "A")}
+              <div class="control-buttons">
+                {VehicleButtonForm(vin, "charger", "ON", "Start charging")}
+                {VehicleButtonForm(vin, "charger", "OFF", "Stop charging")}
+                {VehicleButtonForm(vin, "charge_standard", "PRESS", "Charge standard")}
+                {VehicleButtonForm(vin, "charge_max_range", "PRESS", "Charge max range")}
+              </div>
+            </div>
+          </div>
+
+          <div class="control-section">
+            <h4>Climate and seats</h4>
+            <div class="control-grid">
+              {VehicleNumberForm(vin, "climate_temperature", "Cabin target", climateTemp, "15", "28", "0.5", "\u00b0C")}
+              {VehicleSelectForm(vin, "climate_preset", "Climate preset", ReadControlValue(values, "climate_preset_mode", "normal"), ["normal", "defrost", "keep", "dog", "camp"])}
+              {VehicleSelectForm(vin, "steering_wheel_heat", "Steering wheel heat", ReadControlValue(values, "steering_wheel_heat", "Off"), ["Off", "Low", "High", "Auto"])}
+              {VehicleSelectForm(vin, "seat_climate_left", "Left seat", ReadControlValue(values, "seat_climate_left", "Off"), ["Off", "Low", "Medium", "High", "Auto", "Cool Low", "Cool Medium", "Cool High"])}
+              {VehicleSelectForm(vin, "seat_climate_right", "Right seat", ReadControlValue(values, "seat_climate_right", "Off"), ["Off", "Low", "Medium", "High", "Auto", "Cool Low", "Cool Medium", "Cool High"])}
+              {VehicleSelectForm(vin, "seat_climate_rear_left", "Rear left seat", ReadControlValue(values, "seat_climate_rear_left", "Off"), ["Off", "Low", "Medium", "High"])}
+              {VehicleSelectForm(vin, "seat_climate_rear_center", "Rear center seat", ReadControlValue(values, "seat_climate_rear_center", "Off"), ["Off", "Low", "Medium", "High"])}
+              {VehicleSelectForm(vin, "seat_climate_rear_right", "Rear right seat", ReadControlValue(values, "seat_climate_rear_right", "Off"), ["Off", "Low", "Medium", "High"])}
+            </div>
+            <div class="control-buttons">
+              {VehicleButtonForm(vin, "climate", "ON", "Start climate")}
+              {VehicleButtonForm(vin, "climate", "OFF", "Stop climate")}
+              {VehicleButtonForm(vin, "climate_fan", "bioweapon", "Bioweapon on")}
+              {VehicleButtonForm(vin, "climate_fan", "off", "Bioweapon off")}
+            </div>
+          </div>
+
+          <div class="control-section">
+            <h4>Access and actions</h4>
+            <div class="control-buttons">
+              {VehicleButtonForm(vin, "door_lock", "LOCK", "Lock doors")}
+              {VehicleButtonForm(vin, "door_lock", "UNLOCK", "Unlock doors")}
+              {VehicleButtonForm(vin, "windows", "OPEN", "Open windows")}
+              {VehicleButtonForm(vin, "windows", "CLOSE", "Close windows")}
+              {VehicleButtonForm(vin, "frunk", "OPEN", "Open frunk")}
+              {VehicleButtonForm(vin, "frunk", "CLOSE", "Close frunk")}
+              {VehicleButtonForm(vin, "trunk", "OPEN", "Open trunk")}
+              {VehicleButtonForm(vin, "trunk", "CLOSE", "Close trunk")}
+              {VehicleButtonForm(vin, "charge_port_door", "OPEN", "Open charge port")}
+              {VehicleButtonForm(vin, "charge_port_door", "CLOSE", "Close charge port")}
+              {VehicleButtonForm(vin, "sentry_mode", "ON", "Sentry on")}
+              {VehicleButtonForm(vin, "sentry_mode", "OFF", "Sentry off")}
+              {VehicleButtonForm(vin, "wake_up", "PRESS", "Wake up")}
+              {VehicleButtonForm(vin, "force_data_update", "PRESS", "Force data update")}
+              {VehicleButtonForm(vin, "flash_lights", "PRESS", "Flash lights")}
+              {VehicleButtonForm(vin, "honk_horn", "PRESS", "Horn")}
+            </div>
+          </div>
+        </article>
+""";
+}
+
+static string RenderEnergyControlCards(TeslaFleetState state)
+{
+    var sites = BuildControlResources(state, "energy");
+    if (sites.Count == 0)
+    {
+        return """
+        <div class="callout">
+          <strong>No cached Powerwall state yet</strong>
+          <p style="margin:8px 0 0">Publish to Home Assistant once after this update so the helper caches Energy site payloads for direct Powerwall controls.</p>
+        </div>
+        """;
+    }
+
+    return string.Concat(sites.Select(RenderEnergyControlCard));
+}
+
+static string RenderEnergyControlCard(DirectControlResource site)
+{
+    var values = site.Values;
+    var siteId = FirstNonEmpty(ReadControlValue(values, "site_id", ""), site.Id);
+    var displayName = FirstNonEmpty(ReadControlValue(values, "display_name", ""), site.DisplayName, siteId);
+    var backupReserve = ReadControlValue(values, "backup_reserve", "20");
+    var offGridReserve = ReadControlValue(values, "off_grid_vehicle_charging_reserve", "20");
+    var updated = site.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    return $"""
+        <article class="control-card">
+          <div class="control-card-head">
+            <div>
+              <h3>{H(displayName)}</h3>
+              <p class="meta">Site {H(siteId)} · cached {H(updated)}</p>
+            </div>
+            <span class="status ready">{H(ReadControlValue(values, "energy_data_status", "Cached"))}</span>
+          </div>
+          <div class="control-summary">
+            {ControlFact("Battery", $"{ReadControlValue(values, "battery_percentage")}%")}
+            {ControlFact("Powerwalls", ReadControlValue(values, "powerwall_count"))}
+            {ControlFact("Grid", ReadControlValue(values, "grid_status"))}
+            {ControlFact("Solar", $"{ReadControlValue(values, "solar_power")} W")}
+            {ControlFact("Load", $"{ReadControlValue(values, "load_power")} W")}
+            {ControlFact("Battery power", $"{ReadControlValue(values, "battery_power")} W")}
+            {ControlFact("Backup reserve", $"{backupReserve}%")}
+            {ControlFact("Storm watch", ReadControlValue(values, "storm_mode_active"))}
+          </div>
+
+          <div class="control-section">
+            <h4>Energy controls</h4>
+            <div class="control-grid">
+              {EnergyNumberForm(siteId, "backup_reserve", "Backup reserve", backupReserve, "0", "100", "1", "%")}
+              {EnergyNumberForm(siteId, "off_grid_vehicle_charging_reserve", "Off-grid vehicle charging reserve", offGridReserve, "0", "100", "1", "%")}
+              {EnergySelectForm(siteId, "operation_mode", "Operation mode", ReadControlValue(values, "operation_mode", "Self-Powered"), ["Self-Powered", "Time-Based Control", "Backup"])}
+              {EnergySelectForm(siteId, "grid_charging", "Grid charging", ReadControlValue(values, "grid_charging", "No"), ["Yes", "No"])}
+              {EnergySelectForm(siteId, "energy_exports", "Energy exports", ReadControlValue(values, "energy_exports", "Solar"), ["Nothing", "Solar", "Everything"])}
+              <div class="control-buttons">
+                {EnergyButtonForm(siteId, "storm_mode", "ON", "Storm watch on")}
+                {EnergyButtonForm(siteId, "storm_mode", "OFF", "Storm watch off")}
+              </div>
+            </div>
+          </div>
+        </article>
+""";
+}
+
+static List<DirectControlResource> BuildControlResources(TeslaFleetState state, string topicSegment)
+{
+    var resources = new List<DirectControlResource>();
+    foreach (var entry in state.LastHomeAssistantStatePayloads ?? [])
+    {
+        if (!entry.Topic.Contains($"/{topicSegment}/", StringComparison.OrdinalIgnoreCase) ||
+            !TryReadControlPayload(entry.PayloadJson, out var values))
+        {
+            continue;
+        }
+
+        var id = FirstNonEmpty(ExtractControlTopicId(entry.Topic, topicSegment), ReadControlValue(values, "vin", ""), ReadControlValue(values, "site_id", ""));
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            continue;
+        }
+
+        var displayName = FirstNonEmpty(ReadControlValue(values, "display_name", ""), id);
+        resources.Add(new DirectControlResource(id, displayName, entry.Topic, entry.UpdatedUtc, values));
+    }
+
+    return resources
+        .DistinctBy(resource => resource.Id, StringComparer.OrdinalIgnoreCase)
+        .OrderBy(resource => resource.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+}
+
+static bool TryReadControlPayload(string payloadJson, out IReadOnlyDictionary<string, string> values)
+{
+    try
+    {
+        using var document = JsonDocument.Parse(payloadJson);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            values = new Dictionary<string, string>();
+            return false;
+        }
+
+        var parsed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            parsed[property.Name] = ReadControlJsonValue(property.Value);
+        }
+
+        values = parsed;
+        return true;
+    }
+    catch (JsonException)
+    {
+        values = new Dictionary<string, string>();
+        return false;
+    }
+}
+
+static string ExtractControlTopicId(string topic, string topicSegment)
+{
+    var marker = $"/{topicSegment}/";
+    var start = topic.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+    if (start < 0)
+    {
+        return string.Empty;
+    }
+
+    start += marker.Length;
+    var end = topic.IndexOf('/', start);
+    return end > start ? topic[start..end] : topic[start..];
+}
+
+static string ReadControlJsonValue(JsonElement element) =>
+    element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString() ?? string.Empty,
+        JsonValueKind.Number => element.GetRawText(),
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+        _ => element.GetRawText()
+    };
+
+static string ReadControlValue(IReadOnlyDictionary<string, string> values, string key, string fallback = "Unknown") =>
+    values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+        ? value
+        : fallback;
+
+static string ControlFact(string label, string value) =>
+    $"""<div><span>{H(label)}</span><strong>{H(string.IsNullOrWhiteSpace(value) ? "Unknown" : value)}</strong></div>""";
+
+static string VehicleNumberForm(
+    string vin,
+    string action,
+    string label,
+    string value,
+    string min,
+    string max,
+    string step,
+    string unit) =>
+    $"""
+    <form class="control-form" method="post" action="actions/direct-vehicle-command">
+      <input type="hidden" name="vin" value="{H(vin)}" />
+      <input type="hidden" name="action" value="{H(action)}" />
+      <label>{H(label)}
+        <input type="number" name="payload" value="{H(value)}" min="{H(min)}" max="{H(max)}" step="{H(step)}" inputmode="decimal" />
+      </label>
+      <button type="submit">Set {H(unit)}</button>
+    </form>
+""";
+
+static string VehicleSelectForm(string vin, string action, string label, string current, IReadOnlyList<string> options) =>
+    $"""
+    <form class="control-form" method="post" action="actions/direct-vehicle-command">
+      <input type="hidden" name="vin" value="{H(vin)}" />
+      <input type="hidden" name="action" value="{H(action)}" />
+      <label>{H(label)}
+        <select name="payload">{RenderControlOptions(options, current)}</select>
+      </label>
+      <button type="submit">Apply</button>
+    </form>
+""";
+
+static string VehicleButtonForm(string vin, string action, string payload, string label) =>
+    $"""
+    <form method="post" action="actions/direct-vehicle-command">
+      <input type="hidden" name="vin" value="{H(vin)}" />
+      <input type="hidden" name="action" value="{H(action)}" />
+      <input type="hidden" name="payload" value="{H(payload)}" />
+      <button type="submit">{H(label)}</button>
+    </form>
+""";
+
+static string EnergyNumberForm(
+    string siteId,
+    string action,
+    string label,
+    string value,
+    string min,
+    string max,
+    string step,
+    string unit) =>
+    $"""
+    <form class="control-form" method="post" action="actions/direct-energy-command">
+      <input type="hidden" name="site_id" value="{H(siteId)}" />
+      <input type="hidden" name="action" value="{H(action)}" />
+      <label>{H(label)}
+        <input type="number" name="payload" value="{H(value)}" min="{H(min)}" max="{H(max)}" step="{H(step)}" inputmode="decimal" />
+      </label>
+      <button type="submit">Set {H(unit)}</button>
+    </form>
+""";
+
+static string EnergySelectForm(string siteId, string action, string label, string current, IReadOnlyList<string> options) =>
+    $"""
+    <form class="control-form" method="post" action="actions/direct-energy-command">
+      <input type="hidden" name="site_id" value="{H(siteId)}" />
+      <input type="hidden" name="action" value="{H(action)}" />
+      <label>{H(label)}
+        <select name="payload">{RenderControlOptions(options, current)}</select>
+      </label>
+      <button type="submit">Apply</button>
+    </form>
+""";
+
+static string EnergyButtonForm(string siteId, string action, string payload, string label) =>
+    $"""
+    <form method="post" action="actions/direct-energy-command">
+      <input type="hidden" name="site_id" value="{H(siteId)}" />
+      <input type="hidden" name="action" value="{H(action)}" />
+      <input type="hidden" name="payload" value="{H(payload)}" />
+      <button type="submit">{H(label)}</button>
+    </form>
+""";
+
+static string RenderControlOptions(IReadOnlyList<string> options, string current) =>
+    string.Concat(options.Select(option =>
+        $"""<option value="{H(option)}" {(option.Equals(current, StringComparison.OrdinalIgnoreCase) ? "selected" : "")}>{H(option)}</option>"""));
 
 static string RenderPropertyScopeOptions(IReadOnlyList<TeslaDiscoveredProperty> properties) =>
     string.Concat(properties
@@ -4167,6 +4808,13 @@ sealed record HomeAssistantStatePayloadCacheEntry(
     string Topic,
     string PayloadJson,
     DateTimeOffset UpdatedUtc);
+
+sealed record DirectControlResource(
+    string Id,
+    string DisplayName,
+    string Topic,
+    DateTimeOffset UpdatedUtc,
+    IReadOnlyDictionary<string, string> Values);
 
 sealed record PublicAssetPublishRequest(
     string Hostname,

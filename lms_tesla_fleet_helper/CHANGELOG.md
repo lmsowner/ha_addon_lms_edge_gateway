@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.29
+
+- Enables user-facing Tesla feature controls by default, including rear/third-row seat heaters, heated steering wheel modes, sunroof controls, Homelink, charge range shortcuts, and media controls.
+- Adds Cars and Powerwalls tabs to the Helper for direct Tesla command testing outside Home Assistant.
+- Caches Energy state payloads as well as vehicle payloads so the Helper can render direct Powerwall controls from the same data published to Home Assistant.
+
 ## 0.2.28
 
 - Adds explicit Home Assistant action buttons for Open/Close windows, frunk, trunk, sunroof, and charge port.

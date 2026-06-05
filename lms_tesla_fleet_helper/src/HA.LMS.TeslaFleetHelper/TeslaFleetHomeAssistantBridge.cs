@@ -820,7 +820,9 @@ sealed class TeslaFleetMqttPublisher(
     {
         var now = DateTimeOffset.UtcNow;
         return states
-            .Where(state => state.Topic.Contains("/vehicles/", StringComparison.OrdinalIgnoreCase))
+            .Where(state =>
+                state.Topic.Contains("/vehicles/", StringComparison.OrdinalIgnoreCase) ||
+                state.Topic.Contains("/energy/", StringComparison.OrdinalIgnoreCase))
             .Select(state => new HomeAssistantStatePayloadCacheEntry(
                 state.Topic,
                 JsonSerializer.Serialize(state.Payload, JsonOptions),
