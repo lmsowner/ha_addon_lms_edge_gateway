@@ -87,6 +87,23 @@ app.MapGet("/", async (
     return Results.Content(RenderPage(state, companion), "text/html; charset=utf-8");
 });
 
+app.MapGet("/api/home-assistant/live", async (
+    TeslaFleetStore store,
+    CancellationToken cancellationToken) =>
+{
+    var state = await store.LoadAsync(cancellationToken);
+    var refresh = BuildHomeAssistantRefreshLabels(state);
+    return Results.Json(new
+    {
+        vehicleRefreshTab = refresh.VehicleRefreshTab,
+        energyRefreshTab = refresh.EnergyRefreshTab,
+        vehicleRefreshDetail = refresh.VehicleRefreshDetail,
+        energyRefreshDetail = refresh.EnergyRefreshDetail,
+        vehicleControlCards = RenderVehicleControlCards(state),
+        energyControlCards = RenderEnergyControlCards(state)
+    });
+});
+
 app.MapPost("/actions/save-settings", async (
     HttpContext context,
     TeslaFleetStore store) =>
@@ -1527,17 +1544,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         : state.LastHomeAssistantProjectionPreviewSummary;
     var vehicleControlCards = RenderVehicleControlCards(state);
     var energyControlCards = RenderEnergyControlCards(state);
-    var vehicleRefreshMinutes = state.HomeAssistantVehicleRefreshIntervalMinutes > 0
-        ? state.HomeAssistantVehicleRefreshIntervalMinutes
-        : state.HomeAssistantRefreshIntervalMinutes > 0 ? state.HomeAssistantRefreshIntervalMinutes : 15;
-    var energyRefreshInterval = TimeSpan.FromSeconds(Math.Clamp(state.HomeAssistantEnergyRefreshIntervalSeconds <= 0 ? 10 : state.HomeAssistantEnergyRefreshIntervalSeconds, 5, 300));
-    var vehicleRefreshInterval = TimeSpan.FromMinutes(Math.Clamp(vehicleRefreshMinutes, 5, 240));
-    var lastEnergyRefreshUtc = state.LastHomeAssistantEnergyPublishUtc ?? state.LastHomeAssistantPublishUtc;
-    var lastVehicleRefreshUtc = state.LastHomeAssistantVehiclePublishUtc ?? state.LastHomeAssistantPublishUtc;
-    var energyRefreshTab = FormatRefreshTab(lastEnergyRefreshUtc, energyRefreshInterval);
-    var vehicleRefreshTab = FormatRefreshTab(lastVehicleRefreshUtc, vehicleRefreshInterval);
-    var energyRefreshDetail = FormatRefreshDetail(lastEnergyRefreshUtc, energyRefreshInterval);
-    var vehicleRefreshDetail = FormatRefreshDetail(lastVehicleRefreshUtc, vehicleRefreshInterval);
+    var refresh = BuildHomeAssistantRefreshLabels(state);
     var energyScopeWarning = HasScope(state.TeslaScopes, EnergyDeviceDataScope) &&
                              HasScope(state.TeslaScopes, EnergyCommandsScope)
         ? string.Empty
@@ -2319,8 +2326,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       <div class="tab-control-bar">
         <div class="tab-list" role="tablist" aria-label="Tesla Fleet Helper sections">
           <button class="tab-trigger active" type="button" role="tab" aria-selected="true" data-helper-tab="setup"><span class="tab-trigger-title">Setup & Publish</span></button>
-          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span><span class="tab-trigger-meta">{{H(vehicleRefreshTab)}}</span></button>
-          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span><span class="tab-trigger-meta">{{H(energyRefreshTab)}}</span></button>
+          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span><span class="tab-trigger-meta" data-refresh-tab="vehicle">{{H(refresh.VehicleRefreshTab)}}</span></button>
+          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span><span class="tab-trigger-meta" data-refresh-tab="energy">{{H(refresh.EnergyRefreshTab)}}</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="diagnostics"><span class="tab-trigger-title">Diagnostics</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="harness"><span class="tab-trigger-title">Entity Harness</span></button>
         </div>
@@ -2449,11 +2456,11 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         <div>
           <h2>Cars</h2>
           <p class="meta">Send vehicle commands directly from the helper using the same Tesla command layer as Home Assistant MQTT.</p>
-          <p class="refresh-line">Vehicle detail refreshed <strong>{{H(vehicleRefreshDetail)}}</strong></p>
+          <p class="refresh-line">Vehicle detail refreshed <strong data-refresh-detail="vehicle">{{H(refresh.VehicleRefreshDetail)}}</strong></p>
         </div>
         <form method="post" action="actions/publish-ha"><button type="submit">Refresh from Tesla</button></form>
       </div>
-      <div class="control-list">
+      <div class="control-list" data-control-list="vehicles">
         {{vehicleControlCards}}
       </div>
     </section>
@@ -2463,11 +2470,11 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         <div>
           <h2>Powerwalls</h2>
           <p class="meta">Control Tesla Energy sites directly from the helper and publish the refreshed state back to Home Assistant.</p>
-          <p class="refresh-line">Energy state refreshed <strong>{{H(energyRefreshDetail)}}</strong></p>
+          <p class="refresh-line">Energy state refreshed <strong data-refresh-detail="energy">{{H(refresh.EnergyRefreshDetail)}}</strong></p>
         </div>
         <form method="post" action="actions/publish-ha"><button type="submit">Refresh from Tesla</button></form>
       </div>
-      <div class="control-list">
+      <div class="control-list" data-control-list="energy">
         {{energyControlCards}}
       </div>
     </section>
@@ -2717,11 +2724,55 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
                  (!search || normalize(row.dataset.search).includes(search));
         }
       });
-    })();
-    (() => {
-      const submittingForms = new WeakSet();
-      const debounceTimers = new WeakMap();
-      const submitForm = form => {
+            })();
+            (() => {
+              const setText = (selector, value) => {
+                const element = document.querySelector(selector);
+                if (element && typeof value === "string") {
+                  element.textContent = value;
+                }
+              };
+              const isEditingInside = element => {
+                const active = document.activeElement;
+                return active &&
+                  element.contains(active) &&
+                  ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(active.tagName);
+              };
+              const updateList = (selector, html) => {
+                const element = document.querySelector(selector);
+                if (!element || typeof html !== "string" || isEditingInside(element) || element.innerHTML === html) {
+                  return;
+                }
+
+                element.innerHTML = html;
+                if (window.lmsTeslaWireDirectControls) {
+                  window.lmsTeslaWireDirectControls(element);
+                }
+              };
+              const refresh = async () => {
+                try {
+                  const response = await fetch("api/home-assistant/live", {
+                    cache: "no-store",
+                    headers: { "Accept": "application/json" }
+                  });
+                  if (!response.ok) return;
+                  const data = await response.json();
+                  setText("[data-refresh-tab='vehicle']", data.vehicleRefreshTab);
+                  setText("[data-refresh-tab='energy']", data.energyRefreshTab);
+                  setText("[data-refresh-detail='vehicle']", data.vehicleRefreshDetail);
+                  setText("[data-refresh-detail='energy']", data.energyRefreshDetail);
+                  updateList("[data-control-list='vehicles']", data.vehicleControlCards);
+                  updateList("[data-control-list='energy']", data.energyControlCards);
+                } catch {
+                }
+              };
+              refresh();
+              window.setInterval(refresh, 5000);
+            })();
+            (() => {
+              const submittingForms = new WeakSet();
+              const debounceTimers = new WeakMap();
+              const submitForm = form => {
         if (!form || submittingForms.has(form)) {
           return;
         }
@@ -2744,41 +2795,48 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         }
       };
 
-      for (const checkbox of document.querySelectorAll("[data-switch-payload]")) {
-        const form = checkbox.closest("form");
-        const target = form?.querySelector("[data-switch-payload-target]");
-        const syncPayload = () => {
-          if (target) {
-            target.value = checkbox.checked ? checkbox.dataset.onPayload : checkbox.dataset.offPayload;
-          }
-        };
-        syncPayload();
-        checkbox.addEventListener("change", () => {
-          syncPayload();
-          submitForm(form);
-        });
-      }
+              const wire = root => {
+                for (const checkbox of root.querySelectorAll("[data-switch-payload]:not([data-control-wired])")) {
+                  checkbox.dataset.controlWired = "true";
+                  const form = checkbox.closest("form");
+                  const target = form?.querySelector("[data-switch-payload-target]");
+                  const syncPayload = () => {
+                    if (target) {
+                      target.value = checkbox.checked ? checkbox.dataset.onPayload : checkbox.dataset.offPayload;
+                    }
+                  };
+                  syncPayload();
+                  checkbox.addEventListener("change", () => {
+                    syncPayload();
+                    submitForm(form);
+                  });
+                }
 
-      for (const control of document.querySelectorAll("[data-auto-submit='change']")) {
-        control.addEventListener("change", () => submitForm(control.closest("form")));
-      }
+                for (const control of root.querySelectorAll("[data-auto-submit='change']:not([data-control-wired])")) {
+                  control.dataset.controlWired = "true";
+                  control.addEventListener("change", () => submitForm(control.closest("form")));
+                }
 
-      for (const control of document.querySelectorAll("[data-auto-submit='debounce']")) {
-        const schedule = () => {
-          const existing = debounceTimers.get(control);
-          if (existing) {
-            window.clearTimeout(existing);
-          }
+                for (const control of root.querySelectorAll("[data-auto-submit='debounce']:not([data-control-wired])")) {
+                  control.dataset.controlWired = "true";
+                  const schedule = () => {
+                    const existing = debounceTimers.get(control);
+                    if (existing) {
+                      window.clearTimeout(existing);
+                    }
 
-          debounceTimers.set(control, window.setTimeout(() => {
-            submitForm(control.closest("form"));
-          }, 850));
-        };
-        control.addEventListener("input", schedule);
-        control.addEventListener("change", () => submitForm(control.closest("form")));
-      }
-    })();
-  </script>
+                    debounceTimers.set(control, window.setTimeout(() => {
+                      submitForm(control.closest("form"));
+                    }, 850));
+                  };
+                  control.addEventListener("input", schedule);
+                  control.addEventListener("change", () => submitForm(control.closest("form")));
+                }
+              };
+              window.lmsTeslaWireDirectControls = wire;
+              wire(document);
+            })();
+          </script>
 </body>
 </html>
 """;
@@ -2827,6 +2885,22 @@ static string BuildStatusClass(string? status)
 
 static string FormatDate(DateTimeOffset? value) =>
     value.HasValue ? H(value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")) : "Never";
+
+static HomeAssistantRefreshLabels BuildHomeAssistantRefreshLabels(TeslaFleetState state)
+{
+    var vehicleRefreshMinutes = state.HomeAssistantVehicleRefreshIntervalMinutes > 0
+        ? state.HomeAssistantVehicleRefreshIntervalMinutes
+        : state.HomeAssistantRefreshIntervalMinutes > 0 ? state.HomeAssistantRefreshIntervalMinutes : 15;
+    var energyRefreshInterval = TimeSpan.FromSeconds(Math.Clamp(state.HomeAssistantEnergyRefreshIntervalSeconds <= 0 ? 10 : state.HomeAssistantEnergyRefreshIntervalSeconds, 5, 300));
+    var vehicleRefreshInterval = TimeSpan.FromMinutes(Math.Clamp(vehicleRefreshMinutes, 5, 240));
+    var lastEnergyRefreshUtc = state.LastHomeAssistantEnergyPublishUtc ?? state.LastHomeAssistantPublishUtc;
+    var lastVehicleRefreshUtc = state.LastHomeAssistantVehiclePublishUtc ?? state.LastHomeAssistantPublishUtc;
+    return new HomeAssistantRefreshLabels(
+        FormatRefreshTab(lastVehicleRefreshUtc, vehicleRefreshInterval),
+        FormatRefreshTab(lastEnergyRefreshUtc, energyRefreshInterval),
+        FormatRefreshDetail(lastVehicleRefreshUtc, vehicleRefreshInterval),
+        FormatRefreshDetail(lastEnergyRefreshUtc, energyRefreshInterval));
+}
 
 static string FormatRefreshTab(DateTimeOffset? value, TimeSpan interval) =>
     $"{FormatRefreshDate(value)} / {FormatRefreshInterval(interval)}";
@@ -5249,6 +5323,12 @@ sealed record HomeAssistantStatePayloadCacheEntry(
     string Topic,
     string PayloadJson,
     DateTimeOffset UpdatedUtc);
+
+sealed record HomeAssistantRefreshLabels(
+    string VehicleRefreshTab,
+    string EnergyRefreshTab,
+    string VehicleRefreshDetail,
+    string EnergyRefreshDetail);
 
 sealed record DirectControlResource(
     string Id,

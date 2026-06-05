@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.37
+
+- Polls the Helper live status every few seconds so Cars and Powerwalls refresh timestamps update without reloading the page.
+- Refreshes the Cars and Powerwalls control lists in-place from the latest retained MQTT payloads.
+- Rewires auto-apply controls after live updates while avoiding replacement when a control is actively being edited.
+
 ## 0.2.36
 
 - Shows the last Cars and Powerwalls refresh timestamps directly in the Helper tabs.
