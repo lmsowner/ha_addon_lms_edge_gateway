@@ -565,9 +565,12 @@ app.MapPost("/actions/publish-ha", async (
         var snapshot = await dataClient.FetchSnapshotAsync(token.State, context.RequestAborted);
         var result = await mqttPublisher.PublishAsync(token.State, snapshot, context.RequestAborted);
         var checks = token.Checks.Concat(result.Checks).ToList();
+        var publishUtc = DateTimeOffset.UtcNow;
         state = token.State with
         {
-            LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantPublishUtc = result.Succeeded ? publishUtc : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantEnergyPublishUtc = result.Succeeded ? publishUtc : state.LastHomeAssistantEnergyPublishUtc,
+            LastHomeAssistantVehiclePublishUtc = result.Succeeded ? publishUtc : state.LastHomeAssistantVehiclePublishUtc,
             LastHomeAssistantPublishSummary = result.Summary,
             LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
             LastHomeAssistantStatePayloads = result.Succeeded ? result.StatePayloads : token.State.LastHomeAssistantStatePayloads,
@@ -609,9 +612,12 @@ app.MapPost("/actions/reset-ha-discovery", async (
         var snapshot = await dataClient.FetchSnapshotAsync(token.State, context.RequestAborted);
         var result = await mqttPublisher.PublishAsync(token.State, snapshot, context.RequestAborted, resetDiscovery: true);
         var checks = token.Checks.Concat(result.Checks).ToList();
+        var publishUtc = DateTimeOffset.UtcNow;
         state = token.State with
         {
-            LastHomeAssistantPublishUtc = result.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantPublishUtc = result.Succeeded ? publishUtc : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantEnergyPublishUtc = result.Succeeded ? publishUtc : state.LastHomeAssistantEnergyPublishUtc,
+            LastHomeAssistantVehiclePublishUtc = result.Succeeded ? publishUtc : state.LastHomeAssistantVehiclePublishUtc,
             LastHomeAssistantPublishSummary = result.Summary,
             LastHomeAssistantDiscoveryTopics = result.Succeeded ? result.DiscoveryTopics : token.State.LastHomeAssistantDiscoveryTopics,
             LastHomeAssistantStatePayloads = result.Succeeded ? result.StatePayloads : token.State.LastHomeAssistantStatePayloads,
@@ -1387,9 +1393,12 @@ static async Task<TeslaFleetState> RefreshAndPublishAfterDirectCommandAsync(
     {
         var snapshot = await dataClient.FetchSnapshotAsync(state, cancellationToken);
         var publishResult = await mqttPublisher.PublishAsync(state, snapshot, cancellationToken);
+        var publishUtc = DateTimeOffset.UtcNow;
         return state with
         {
-            LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantPublishUtc = publishResult.Succeeded ? publishUtc : state.LastHomeAssistantPublishUtc,
+            LastHomeAssistantEnergyPublishUtc = publishResult.Succeeded ? publishUtc : state.LastHomeAssistantEnergyPublishUtc,
+            LastHomeAssistantVehiclePublishUtc = publishResult.Succeeded ? publishUtc : state.LastHomeAssistantVehiclePublishUtc,
             LastHomeAssistantPublishSummary = publishResult.Summary,
             LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : state.LastHomeAssistantDiscoveryTopics,
             LastHomeAssistantStatePayloads = publishResult.Succeeded ? publishResult.StatePayloads : state.LastHomeAssistantStatePayloads,
@@ -1518,6 +1527,17 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         : state.LastHomeAssistantProjectionPreviewSummary;
     var vehicleControlCards = RenderVehicleControlCards(state);
     var energyControlCards = RenderEnergyControlCards(state);
+    var vehicleRefreshMinutes = state.HomeAssistantVehicleRefreshIntervalMinutes > 0
+        ? state.HomeAssistantVehicleRefreshIntervalMinutes
+        : state.HomeAssistantRefreshIntervalMinutes > 0 ? state.HomeAssistantRefreshIntervalMinutes : 15;
+    var energyRefreshInterval = TimeSpan.FromSeconds(Math.Clamp(state.HomeAssistantEnergyRefreshIntervalSeconds <= 0 ? 10 : state.HomeAssistantEnergyRefreshIntervalSeconds, 5, 300));
+    var vehicleRefreshInterval = TimeSpan.FromMinutes(Math.Clamp(vehicleRefreshMinutes, 5, 240));
+    var lastEnergyRefreshUtc = state.LastHomeAssistantEnergyPublishUtc ?? state.LastHomeAssistantPublishUtc;
+    var lastVehicleRefreshUtc = state.LastHomeAssistantVehiclePublishUtc ?? state.LastHomeAssistantPublishUtc;
+    var energyRefreshTab = FormatRefreshTab(lastEnergyRefreshUtc, energyRefreshInterval);
+    var vehicleRefreshTab = FormatRefreshTab(lastVehicleRefreshUtc, vehicleRefreshInterval);
+    var energyRefreshDetail = FormatRefreshDetail(lastEnergyRefreshUtc, energyRefreshInterval);
+    var vehicleRefreshDetail = FormatRefreshDetail(lastVehicleRefreshUtc, vehicleRefreshInterval);
     var energyScopeWarning = HasScope(state.TeslaScopes, EnergyDeviceDataScope) &&
                              HasScope(state.TeslaScopes, EnergyCommandsScope)
         ? string.Empty
@@ -1686,6 +1706,15 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       text-align: left;
     }
     .tab-trigger:hover { border-color: var(--tab-hover-border); color: var(--text); }
+    .tab-trigger.with-meta {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 2px;
+      justify-content: center;
+      min-height: 48px;
+      padding-bottom: 5px;
+      padding-top: 6px;
+    }
     .tab-trigger.active {
       background: var(--surface);
       border-color: var(--tab-active-border);
@@ -1710,6 +1739,15 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       line-height: 1.2;
     }
     .tab-trigger.active .tab-trigger-title { font-weight: 850; }
+    .tab-trigger-meta {
+      color: var(--muted);
+      display: block;
+      font-size: 11px;
+      font-weight: 650;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+    .tab-trigger.active .tab-trigger-meta { color: var(--accent); }
     .page-tab-panel {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1955,6 +1993,16 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       margin-bottom: 12px;
     }
     .section-header h2 { margin-bottom: 0; }
+    .refresh-line {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+      margin: 5px 0 0;
+    }
+    .refresh-line strong {
+      color: var(--text);
+      font-weight: 750;
+    }
     .control-list { display: grid; gap: 18px; }
     .control-card {
       background: transparent;
@@ -2222,6 +2270,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
       .diagnostic-filter-bar { grid-template-columns: 1fr; }
       .section-header, .control-card-head { align-items: stretch; display: grid; }
+      .tab-trigger-meta { white-space: normal; }
       .control-summary { grid-template-columns: 1fr; }
       .control-grid { display: grid; grid-template-columns: 1fr; }
       .control-form,
@@ -2270,8 +2319,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       <div class="tab-control-bar">
         <div class="tab-list" role="tablist" aria-label="Tesla Fleet Helper sections">
           <button class="tab-trigger active" type="button" role="tab" aria-selected="true" data-helper-tab="setup"><span class="tab-trigger-title">Setup & Publish</span></button>
-          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span></button>
-          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span></button>
+          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span><span class="tab-trigger-meta">{{H(vehicleRefreshTab)}}</span></button>
+          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span><span class="tab-trigger-meta">{{H(energyRefreshTab)}}</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="diagnostics"><span class="tab-trigger-title">Diagnostics</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="harness"><span class="tab-trigger-title">Entity Harness</span></button>
         </div>
@@ -2400,6 +2449,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         <div>
           <h2>Cars</h2>
           <p class="meta">Send vehicle commands directly from the helper using the same Tesla command layer as Home Assistant MQTT.</p>
+          <p class="refresh-line">Vehicle detail refreshed <strong>{{H(vehicleRefreshDetail)}}</strong></p>
         </div>
         <form method="post" action="actions/publish-ha"><button type="submit">Refresh from Tesla</button></form>
       </div>
@@ -2413,6 +2463,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         <div>
           <h2>Powerwalls</h2>
           <p class="meta">Control Tesla Energy sites directly from the helper and publish the refreshed state back to Home Assistant.</p>
+          <p class="refresh-line">Energy state refreshed <strong>{{H(energyRefreshDetail)}}</strong></p>
         </div>
         <form method="post" action="actions/publish-ha"><button type="submit">Refresh from Tesla</button></form>
       </div>
@@ -2776,6 +2827,48 @@ static string BuildStatusClass(string? status)
 
 static string FormatDate(DateTimeOffset? value) =>
     value.HasValue ? H(value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")) : "Never";
+
+static string FormatRefreshTab(DateTimeOffset? value, TimeSpan interval) =>
+    $"{FormatRefreshDate(value)} / {FormatRefreshInterval(interval)}";
+
+static string FormatRefreshDetail(DateTimeOffset? value, TimeSpan interval) =>
+    $"{FormatRefreshDate(value)}; every {FormatRefreshIntervalLong(interval)}";
+
+static string FormatRefreshDate(DateTimeOffset? value) =>
+    value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "Never";
+
+static string FormatRefreshInterval(TimeSpan interval)
+{
+    if (interval.TotalSeconds < 60)
+    {
+        return $"{Math.Max(1, (int)Math.Round(interval.TotalSeconds))}s";
+    }
+
+    if (interval.TotalMinutes < 60)
+    {
+        return $"{Math.Max(1, (int)Math.Round(interval.TotalMinutes))}m";
+    }
+
+    return $"{Math.Max(1, (int)Math.Round(interval.TotalHours))}h";
+}
+
+static string FormatRefreshIntervalLong(TimeSpan interval)
+{
+    if (interval.TotalSeconds < 60)
+    {
+        var seconds = Math.Max(1, (int)Math.Round(interval.TotalSeconds));
+        return $"{seconds} second{(seconds == 1 ? "" : "s")}";
+    }
+
+    if (interval.TotalMinutes < 60)
+    {
+        var minutes = Math.Max(1, (int)Math.Round(interval.TotalMinutes));
+        return $"{minutes} minute{(minutes == 1 ? "" : "s")}";
+    }
+
+    var hours = Math.Max(1, (int)Math.Round(interval.TotalHours));
+    return $"{hours} hour{(hours == 1 ? "" : "s")}";
+}
 
 static string RenderVehicleControlCards(TeslaFleetState state)
 {

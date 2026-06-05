@@ -3111,9 +3111,12 @@ sealed class TeslaFleetHomeAssistantCommandService(
                     var snapshot = await dataClient.FetchSnapshotAsync(updated, cancellationToken);
                     snapshot = ApplyEnergyCommandPatch(snapshot, result.SiteId, result.StatePatch);
                     var publishResult = await mqttPublisher.PublishAsync(updated, snapshot, cancellationToken);
+                    var publishUtc = DateTimeOffset.UtcNow;
                     updated = updated with
                     {
-                        LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
+                        LastHomeAssistantPublishUtc = publishResult.Succeeded ? publishUtc : updated.LastHomeAssistantPublishUtc,
+                        LastHomeAssistantEnergyPublishUtc = publishResult.Succeeded ? publishUtc : updated.LastHomeAssistantEnergyPublishUtc,
+                        LastHomeAssistantVehiclePublishUtc = publishResult.Succeeded ? publishUtc : updated.LastHomeAssistantVehiclePublishUtc,
                         LastHomeAssistantPublishSummary = publishResult.Summary,
                         LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : updated.LastHomeAssistantDiscoveryTopics,
                         LastHomeAssistantStatePayloads = publishResult.Succeeded ? publishResult.StatePayloads : updated.LastHomeAssistantStatePayloads,
@@ -3144,9 +3147,12 @@ sealed class TeslaFleetHomeAssistantCommandService(
                     var snapshot = await dataClient.FetchSnapshotAsync(updated, cancellationToken);
                     snapshot = ApplyVehicleCommandPatch(snapshot, result.Vin, result.StatePatch);
                     var publishResult = await mqttPublisher.PublishAsync(updated, snapshot, cancellationToken);
+                    var publishUtc = DateTimeOffset.UtcNow;
                     updated = updated with
                     {
-                        LastHomeAssistantPublishUtc = publishResult.Succeeded ? DateTimeOffset.UtcNow : updated.LastHomeAssistantPublishUtc,
+                        LastHomeAssistantPublishUtc = publishResult.Succeeded ? publishUtc : updated.LastHomeAssistantPublishUtc,
+                        LastHomeAssistantEnergyPublishUtc = publishResult.Succeeded ? publishUtc : updated.LastHomeAssistantEnergyPublishUtc,
+                        LastHomeAssistantVehiclePublishUtc = publishResult.Succeeded ? publishUtc : updated.LastHomeAssistantVehiclePublishUtc,
                         LastHomeAssistantPublishSummary = publishResult.Summary,
                         LastHomeAssistantDiscoveryTopics = publishResult.Succeeded ? publishResult.DiscoveryTopics : updated.LastHomeAssistantDiscoveryTopics,
                         LastHomeAssistantStatePayloads = publishResult.Succeeded ? publishResult.StatePayloads : updated.LastHomeAssistantStatePayloads,

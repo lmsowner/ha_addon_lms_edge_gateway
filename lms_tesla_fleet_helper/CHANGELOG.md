@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.36
+
+- Shows the last Cars and Powerwalls refresh timestamps directly in the Helper tabs.
+- Adds matching refresh schedule details to the Cars and Powerwalls panel headers.
+- Updates the split refresh timestamps after manual refreshes and MQTT/direct commands so the tab dates stay accurate.
+
 ## 0.2.35
 
 - Splits Home Assistant refresh scheduling so Energy/Powerwall state can update every 10 seconds while vehicle detail refreshes stay on a slower 15 minute cadence.
