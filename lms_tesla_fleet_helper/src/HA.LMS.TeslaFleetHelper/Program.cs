@@ -1713,15 +1713,6 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       text-align: left;
     }
     .tab-trigger:hover { border-color: var(--tab-hover-border); color: var(--text); }
-    .tab-trigger.with-meta {
-      align-items: flex-start;
-      flex-direction: column;
-      gap: 2px;
-      justify-content: center;
-      min-height: 48px;
-      padding-bottom: 5px;
-      padding-top: 6px;
-    }
     .tab-trigger.active {
       background: var(--surface);
       border-color: var(--tab-active-border);
@@ -1746,15 +1737,6 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       line-height: 1.2;
     }
     .tab-trigger.active .tab-trigger-title { font-weight: 850; }
-    .tab-trigger-meta {
-      color: var(--muted);
-      display: block;
-      font-size: 11px;
-      font-weight: 650;
-      line-height: 1.15;
-      white-space: nowrap;
-    }
-    .tab-trigger.active .tab-trigger-meta { color: var(--accent); }
     .page-tab-panel {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -2277,7 +2259,6 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
       .diagnostic-filter-bar { grid-template-columns: 1fr; }
       .section-header, .control-card-head { align-items: stretch; display: grid; }
-      .tab-trigger-meta { white-space: normal; }
       .control-summary { grid-template-columns: 1fr; }
       .control-grid { display: grid; grid-template-columns: 1fr; }
       .control-form,
@@ -2326,8 +2307,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       <div class="tab-control-bar">
         <div class="tab-list" role="tablist" aria-label="Tesla Fleet Helper sections">
           <button class="tab-trigger active" type="button" role="tab" aria-selected="true" data-helper-tab="setup"><span class="tab-trigger-title">Setup & Publish</span></button>
-          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span><span class="tab-trigger-meta" data-refresh-tab="vehicle">{{H(refresh.VehicleRefreshTab)}}</span></button>
-          <button class="tab-trigger with-meta" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span><span class="tab-trigger-meta" data-refresh-tab="energy">{{H(refresh.EnergyRefreshTab)}}</span></button>
+          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span></button>
+          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="diagnostics"><span class="tab-trigger-title">Diagnostics</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="harness"><span class="tab-trigger-title">Entity Harness</span></button>
         </div>
@@ -2757,8 +2738,6 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
                   });
                   if (!response.ok) return;
                   const data = await response.json();
-                  setText("[data-refresh-tab='vehicle']", data.vehicleRefreshTab);
-                  setText("[data-refresh-tab='energy']", data.energyRefreshTab);
                   setText("[data-refresh-detail='vehicle']", data.vehicleRefreshDetail);
                   setText("[data-refresh-detail='energy']", data.energyRefreshDetail);
                   updateList("[data-control-list='vehicles']", data.vehicleControlCards);

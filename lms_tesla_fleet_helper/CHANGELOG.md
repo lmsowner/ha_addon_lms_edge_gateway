@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.38
+
+- Restores compact single-line Cars and Powerwalls tabs.
+- Keeps live refresh timing in the Cars and Powerwalls panel headers instead of wasting tab space.
+
 ## 0.2.37
 
 - Polls the Helper live status every few seconds so Cars and Powerwalls refresh timestamps update without reloading the page.
