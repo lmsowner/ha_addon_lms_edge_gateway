@@ -1974,11 +1974,31 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       align-items: end;
       display: grid;
       gap: 8px;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr);
       margin: 0;
     }
     .control-form label { margin: 0; }
-    .control-form button { white-space: nowrap; }
+    .control-form.is-submitting,
+    .control-buttons form.is-submitting {
+      opacity: .72;
+      pointer-events: none;
+    }
+    .control-field { position: relative; }
+    .control-input-wrap { display: grid; position: relative; }
+    .control-input-wrap.has-unit input { padding-right: 46px; }
+    .control-unit {
+      align-items: center;
+      bottom: 1px;
+      color: var(--muted);
+      display: inline-flex;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 0 12px;
+      pointer-events: none;
+      position: absolute;
+      right: 0;
+      top: 1px;
+    }
     .control-buttons {
       align-items: center;
       display: flex;
@@ -1986,7 +2006,89 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       gap: 8px;
     }
     .control-buttons form { margin: 0; }
-    .control-buttons button { min-height: 36px; }
+    .control-buttons button { min-height: 38px; }
+    .icon-action {
+      gap: 8px;
+      min-width: 0;
+      padding: 8px 11px;
+    }
+    .control-icon {
+      flex: 0 0 auto;
+      height: 18px;
+      width: 18px;
+    }
+    .switch-form { margin: 0; }
+    .control-switch {
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      margin: 0;
+      min-height: 58px;
+      padding: 10px 12px;
+    }
+    .control-switch:hover { border-color: var(--tab-hover-border); }
+    .control-switch-copy {
+      color: var(--text);
+      display: grid;
+      font-size: 13px;
+      font-weight: 750;
+      gap: 3px;
+      min-width: 0;
+    }
+    .control-switch-copy small {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 550;
+      line-height: 1.25;
+    }
+    .switch-shell {
+      display: inline-flex;
+      flex: 0 0 auto;
+      height: 28px;
+      position: relative;
+      width: 50px;
+    }
+    .switch-shell input {
+      height: 1px;
+      opacity: 0;
+      position: absolute;
+      width: 1px;
+    }
+    .switch-track {
+      background: rgba(116, 128, 145, .22);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      inset: 0;
+      position: absolute;
+      transition: background 150ms ease, border-color 150ms ease;
+    }
+    .switch-track::before {
+      background: var(--surface);
+      border: 1px solid rgba(116, 128, 145, .28);
+      border-radius: 999px;
+      box-shadow: var(--shadow-control);
+      content: "";
+      height: 22px;
+      left: 2px;
+      position: absolute;
+      top: 2px;
+      transition: transform 170ms ease, background 150ms ease;
+      width: 22px;
+    }
+    .switch-shell input:checked + .switch-track {
+      background: rgba(var(--accent-rgb), .72);
+      border-color: var(--accent);
+    }
+    .switch-shell input:checked + .switch-track::before {
+      background: var(--primary-text);
+      transform: translateX(22px);
+    }
+    .switch-shell input:focus-visible + .switch-track { box-shadow: var(--shadow-focus); }
     .theme-toggle {
       align-items: center;
       background: var(--surface-2);
@@ -2498,6 +2600,66 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         }
       });
     })();
+    (() => {
+      const submittingForms = new WeakSet();
+      const debounceTimers = new WeakMap();
+      const submitForm = form => {
+        if (!form || submittingForms.has(form)) {
+          return;
+        }
+
+        if (!form.checkValidity()) {
+          form.reportValidity();
+          return;
+        }
+
+        submittingForms.add(form);
+        form.classList.add("is-submitting");
+        for (const button of form.querySelectorAll("button")) {
+          button.disabled = true;
+        }
+
+        if (form.requestSubmit) {
+          form.requestSubmit();
+        } else {
+          form.submit();
+        }
+      };
+
+      for (const checkbox of document.querySelectorAll("[data-switch-payload]")) {
+        const form = checkbox.closest("form");
+        const target = form?.querySelector("[data-switch-payload-target]");
+        const syncPayload = () => {
+          if (target) {
+            target.value = checkbox.checked ? checkbox.dataset.onPayload : checkbox.dataset.offPayload;
+          }
+        };
+        syncPayload();
+        checkbox.addEventListener("change", () => {
+          syncPayload();
+          submitForm(form);
+        });
+      }
+
+      for (const control of document.querySelectorAll("[data-auto-submit='change']")) {
+        control.addEventListener("change", () => submitForm(control.closest("form")));
+      }
+
+      for (const control of document.querySelectorAll("[data-auto-submit='debounce']")) {
+        const schedule = () => {
+          const existing = debounceTimers.get(control);
+          if (existing) {
+            window.clearTimeout(existing);
+          }
+
+          debounceTimers.set(control, window.setTimeout(() => {
+            submitForm(control.closest("form"));
+          }, 850));
+        };
+        control.addEventListener("input", schedule);
+        control.addEventListener("change", () => submitForm(control.closest("form")));
+      }
+    })();
   </script>
 </body>
 </html>
@@ -2575,6 +2737,18 @@ static string RenderVehicleControlCard(DirectControlResource vehicle)
     var chargingAmps = ReadControlValue(values, "charging_amps", "16");
     var maxChargingAmps = ReadControlValue(values, "max_charging_amps", "80");
     var climateTemp = FirstNonEmpty(ReadControlValue(values, "driver_temp_setting", ""), ReadControlValue(values, "passenger_temp_setting", ""), "20");
+    var chargingState = ReadControlValue(values, "charging_state", "Unknown");
+    var climateMode = ReadControlValue(values, "hvac_mode", "off");
+    var climateFanMode = ReadControlValue(values, "climate_fan_mode", "off");
+    var isCharging = chargingState.Equals("Charging", StringComparison.OrdinalIgnoreCase);
+    var isClimateOn = IsTruthyControlValue(ReadControlValue(values, "climate_on", "")) ||
+        (!string.IsNullOrWhiteSpace(climateMode) &&
+         !climateMode.Equals("off", StringComparison.OrdinalIgnoreCase) &&
+         !climateMode.Equals("Unknown", StringComparison.OrdinalIgnoreCase));
+    var isBioweaponOn = climateFanMode.Equals("bioweapon", StringComparison.OrdinalIgnoreCase);
+    var isLocked = IsTruthyControlValue(ReadControlValue(values, "locked", ""));
+    var isSentryOn = IsTruthyControlValue(ReadControlValue(values, "sentry_mode", ""));
+    var isValetOn = IsTruthyControlValue(ReadControlValue(values, "valet_mode", ""));
     var updated = vehicle.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
     return $"""
@@ -2588,32 +2762,33 @@ static string RenderVehicleControlCard(DirectControlResource vehicle)
           </div>
           <div class="control-summary">
             {ControlFact("Battery", $"{ReadControlValue(values, "battery_level")}%")}
-            {ControlFact("Charging", ReadControlValue(values, "charging_state"))}
+            {ControlFact("Charging", chargingState)}
             {ControlFact("Charge limit", $"{chargeLimit}%")}
             {ControlFact("Vehicle data", ReadControlValue(values, "vehicle_data_refreshed", "Not refreshed"))}
-            {ControlFact("Climate", ReadControlValue(values, "hvac_mode"))}
+            {ControlFact("Climate", climateMode)}
             {ControlFact("Inside", $"{ReadControlValue(values, "inside_temp")}\u00b0C")}
-            {ControlFact("Doors", ReadControlValue(values, "locked").Equals("true", StringComparison.OrdinalIgnoreCase) ? "Locked" : "Unlocked")}
+            {ControlFact("Doors", isLocked ? "Locked" : "Unlocked")}
             {ControlFact("Windows", ReadControlValue(values, "windows_state"))}
           </div>
 
           <div class="control-section">
             <h4>Charging</h4>
             <div class="control-grid">
+              {VehicleSwitchForm(vin, "charger", "Charger", isCharging, $"Current state: {chargingState}", "ON", "OFF")}
               {VehicleNumberForm(vin, "charge_limit", "Charge limit", chargeLimit, "50", "100", "1", "%")}
               {VehicleNumberForm(vin, "charging_amps", "Charging amps", chargingAmps, "1", FirstNonEmpty(maxChargingAmps, "80"), "1", "A")}
-              <div class="control-buttons">
-                {VehicleButtonForm(vin, "charger", "ON", "Start charging")}
-                {VehicleButtonForm(vin, "charger", "OFF", "Stop charging")}
-                {VehicleButtonForm(vin, "charge_standard", "PRESS", "Charge standard")}
-                {VehicleButtonForm(vin, "charge_max_range", "PRESS", "Charge max range")}
-              </div>
+            </div>
+            <div class="control-buttons">
+              {VehicleButtonForm(vin, "charge_standard", "PRESS", "Charge standard", "battery")}
+              {VehicleButtonForm(vin, "charge_max_range", "PRESS", "Charge max range", "battery-full")}
             </div>
           </div>
 
           <div class="control-section">
             <h4>Climate and seats</h4>
             <div class="control-grid">
+              {VehicleSwitchForm(vin, "climate", "Cabin climate", isClimateOn, $"HVAC mode: {climateMode}", "ON", "OFF")}
+              {VehicleSwitchForm(vin, "climate_fan", "Bioweapon mode", isBioweaponOn, $"Fan mode: {climateFanMode}", "bioweapon", "off")}
               {VehicleNumberForm(vin, "climate_temperature", "Cabin target", climateTemp, "15", "28", "0.5", "\u00b0C")}
               {VehicleSelectForm(vin, "climate_preset", "Climate preset", ReadControlValue(values, "climate_preset_mode", "normal"), ["normal", "defrost", "keep", "dog", "camp"])}
               {VehicleSelectForm(vin, "steering_wheel_heat", "Steering wheel heat", ReadControlValue(values, "steering_wheel_heat", "Off"), ["Off", "Low", "High", "Auto"])}
@@ -2623,33 +2798,30 @@ static string RenderVehicleControlCard(DirectControlResource vehicle)
               {VehicleSelectForm(vin, "seat_climate_rear_center", "Rear center seat", ReadControlValue(values, "seat_climate_rear_center", "Off"), ["Off", "Low", "Medium", "High"])}
               {VehicleSelectForm(vin, "seat_climate_rear_right", "Rear right seat", ReadControlValue(values, "seat_climate_rear_right", "Off"), ["Off", "Low", "Medium", "High"])}
             </div>
-            <div class="control-buttons">
-              {VehicleButtonForm(vin, "climate", "ON", "Start climate")}
-              {VehicleButtonForm(vin, "climate", "OFF", "Stop climate")}
-              {VehicleButtonForm(vin, "climate_fan", "bioweapon", "Bioweapon on")}
-              {VehicleButtonForm(vin, "climate_fan", "off", "Bioweapon off")}
-            </div>
           </div>
 
           <div class="control-section">
             <h4>Access and actions</h4>
+            <div class="control-grid">
+              {VehicleSwitchForm(vin, "door_lock", "Door lock", isLocked, isLocked ? "Currently locked" : "Currently unlocked", "LOCK", "UNLOCK")}
+              {VehicleSwitchForm(vin, "sentry_mode", "Sentry mode", isSentryOn, isSentryOn ? "Sentry is enabled" : "Sentry is disabled", "ON", "OFF")}
+              {VehicleSwitchForm(vin, "valet_mode", "Valet mode", isValetOn, isValetOn ? "Valet mode enabled" : "Valet mode disabled", "ON", "OFF")}
+            </div>
             <div class="control-buttons">
-              {VehicleButtonForm(vin, "door_lock", "LOCK", "Lock doors")}
-              {VehicleButtonForm(vin, "door_lock", "UNLOCK", "Unlock doors")}
-              {VehicleButtonForm(vin, "windows", "OPEN", "Open windows")}
-              {VehicleButtonForm(vin, "windows", "CLOSE", "Close windows")}
-              {VehicleButtonForm(vin, "frunk", "OPEN", "Open frunk")}
-              {VehicleButtonForm(vin, "frunk", "CLOSE", "Close frunk")}
-              {VehicleButtonForm(vin, "trunk", "OPEN", "Open trunk")}
-              {VehicleButtonForm(vin, "trunk", "CLOSE", "Close trunk")}
-              {VehicleButtonForm(vin, "charge_port_door", "OPEN", "Open charge port")}
-              {VehicleButtonForm(vin, "charge_port_door", "CLOSE", "Close charge port")}
-              {VehicleButtonForm(vin, "sentry_mode", "ON", "Sentry on")}
-              {VehicleButtonForm(vin, "sentry_mode", "OFF", "Sentry off")}
-              {VehicleButtonForm(vin, "wake_up", "PRESS", "Wake up")}
-              {VehicleButtonForm(vin, "force_data_update", "PRESS", "Force data update")}
-              {VehicleButtonForm(vin, "flash_lights", "PRESS", "Flash lights")}
-              {VehicleButtonForm(vin, "honk_horn", "PRESS", "Horn")}
+              {VehicleButtonForm(vin, "windows", "OPEN", "Open windows", "window-open")}
+              {VehicleButtonForm(vin, "windows", "CLOSE", "Close windows", "window-close")}
+              {VehicleButtonForm(vin, "frunk", "OPEN", "Open frunk", "trunk-open")}
+              {VehicleButtonForm(vin, "frunk", "CLOSE", "Close frunk", "trunk-close")}
+              {VehicleButtonForm(vin, "trunk", "OPEN", "Open trunk", "trunk-open")}
+              {VehicleButtonForm(vin, "trunk", "CLOSE", "Close trunk", "trunk-close")}
+              {VehicleButtonForm(vin, "charge_port_door", "OPEN", "Open charge port", "plug")}
+              {VehicleButtonForm(vin, "charge_port_door", "CLOSE", "Close charge port", "plug-off")}
+              {VehicleButtonForm(vin, "sunroof", "OPEN", "Vent sunroof", "window-open")}
+              {VehicleButtonForm(vin, "sunroof", "CLOSE", "Close sunroof", "window-close")}
+              {VehicleButtonForm(vin, "wake_up", "PRESS", "Wake up", "power")}
+              {VehicleButtonForm(vin, "force_data_update", "PRESS", "Force data update", "refresh")}
+              {VehicleButtonForm(vin, "flash_lights", "PRESS", "Flash lights", "light")}
+              {VehicleButtonForm(vin, "honk_horn", "PRESS", "Horn", "speaker")}
             </div>
           </div>
         </article>
@@ -2679,6 +2851,8 @@ static string RenderEnergyControlCard(DirectControlResource site)
     var displayName = FirstNonEmpty(ReadControlValue(values, "display_name", ""), site.DisplayName, siteId);
     var backupReserve = ReadControlValue(values, "backup_reserve", "20");
     var offGridReserve = ReadControlValue(values, "off_grid_vehicle_charging_reserve", "20");
+    var gridCharging = ReadControlValue(values, "grid_charging", "No");
+    var stormWatch = ReadControlValue(values, "storm_mode_active", "false");
     var updated = site.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
     return $"""
@@ -2698,21 +2872,18 @@ static string RenderEnergyControlCard(DirectControlResource site)
             {ControlFact("Load", $"{ReadControlValue(values, "load_power")} W")}
             {ControlFact("Battery power", $"{ReadControlValue(values, "battery_power")} W")}
             {ControlFact("Backup reserve", $"{backupReserve}%")}
-            {ControlFact("Storm watch", ReadControlValue(values, "storm_mode_active"))}
+            {ControlFact("Storm watch", IsTruthyControlValue(stormWatch) ? "On" : "Off")}
           </div>
 
           <div class="control-section">
             <h4>Energy controls</h4>
             <div class="control-grid">
+              {EnergySwitchForm(siteId, "storm_mode", "Storm watch", IsTruthyControlValue(stormWatch), IsTruthyControlValue(stormWatch) ? "Storm watch enabled" : "Storm watch disabled", "ON", "OFF")}
+              {EnergySwitchForm(siteId, "grid_charging", "Grid charging", gridCharging.Equals("Yes", StringComparison.OrdinalIgnoreCase), $"Current setting: {gridCharging}", "Yes", "No")}
               {EnergyNumberForm(siteId, "backup_reserve", "Backup reserve", backupReserve, "0", "100", "1", "%")}
               {EnergyNumberForm(siteId, "off_grid_vehicle_charging_reserve", "Off-grid vehicle charging reserve", offGridReserve, "0", "100", "1", "%")}
               {EnergySelectForm(siteId, "operation_mode", "Operation mode", ReadControlValue(values, "operation_mode", "Self-Powered"), ["Self-Powered", "Time-Based Control", "Backup"])}
-              {EnergySelectForm(siteId, "grid_charging", "Grid charging", ReadControlValue(values, "grid_charging", "No"), ["Yes", "No"])}
               {EnergySelectForm(siteId, "energy_exports", "Energy exports", ReadControlValue(values, "energy_exports", "Solar"), ["Nothing", "Solar", "Everything"])}
-              <div class="control-buttons">
-                {EnergyButtonForm(siteId, "storm_mode", "ON", "Storm watch on")}
-                {EnergyButtonForm(siteId, "storm_mode", "OFF", "Storm watch off")}
-              </div>
             </div>
           </div>
         </article>
@@ -2806,6 +2977,9 @@ static string ReadControlValue(IReadOnlyDictionary<string, string> values, strin
 static string ControlFact(string label, string value) =>
     $"""<div><span>{H(label)}</span><strong>{H(string.IsNullOrWhiteSpace(value) ? "Unknown" : value)}</strong></div>""";
 
+static bool IsTruthyControlValue(string? value) =>
+    value?.Trim().ToLowerInvariant() is "true" or "on" or "yes" or "1" or "enabled" or "active";
+
 static string VehicleNumberForm(
     string vin,
     string action,
@@ -2815,36 +2989,28 @@ static string VehicleNumberForm(
     string max,
     string step,
     string unit) =>
-    $"""
-    <form class="control-form" method="post" action="actions/direct-vehicle-command">
-      <input type="hidden" name="vin" value="{H(vin)}" />
-      <input type="hidden" name="action" value="{H(action)}" />
-      <label>{H(label)}
-        <input type="number" name="payload" value="{H(value)}" min="{H(min)}" max="{H(max)}" step="{H(step)}" inputmode="decimal" />
-      </label>
-      <button type="submit">Set {H(unit)}</button>
-    </form>
-""";
+    CommandNumberForm("actions/direct-vehicle-command", "vin", vin, action, label, value, min, max, step, unit);
 
 static string VehicleSelectForm(string vin, string action, string label, string current, IReadOnlyList<string> options) =>
-    $"""
-    <form class="control-form" method="post" action="actions/direct-vehicle-command">
-      <input type="hidden" name="vin" value="{H(vin)}" />
-      <input type="hidden" name="action" value="{H(action)}" />
-      <label>{H(label)}
-        <select name="payload">{RenderControlOptions(options, current)}</select>
-      </label>
-      <button type="submit">Apply</button>
-    </form>
-""";
+    CommandSelectForm("actions/direct-vehicle-command", "vin", vin, action, label, current, options);
 
-static string VehicleButtonForm(string vin, string action, string payload, string label) =>
+static string VehicleSwitchForm(
+    string vin,
+    string action,
+    string label,
+    bool isOn,
+    string description,
+    string onPayload,
+    string offPayload) =>
+    CommandSwitchForm("actions/direct-vehicle-command", "vin", vin, action, label, isOn, description, onPayload, offPayload);
+
+static string VehicleButtonForm(string vin, string action, string payload, string label, string icon = "") =>
     $"""
     <form method="post" action="actions/direct-vehicle-command">
       <input type="hidden" name="vin" value="{H(vin)}" />
       <input type="hidden" name="action" value="{H(action)}" />
       <input type="hidden" name="payload" value="{H(payload)}" />
-      <button type="submit">{H(label)}</button>
+      <button class="icon-action" type="submit">{ControlIcon(icon)}<span>{H(label)}</span></button>
     </form>
 """;
 
@@ -2857,38 +3023,118 @@ static string EnergyNumberForm(
     string max,
     string step,
     string unit) =>
-    $"""
-    <form class="control-form" method="post" action="actions/direct-energy-command">
-      <input type="hidden" name="site_id" value="{H(siteId)}" />
-      <input type="hidden" name="action" value="{H(action)}" />
-      <label>{H(label)}
-        <input type="number" name="payload" value="{H(value)}" min="{H(min)}" max="{H(max)}" step="{H(step)}" inputmode="decimal" />
-      </label>
-      <button type="submit">Set {H(unit)}</button>
-    </form>
-""";
+    CommandNumberForm("actions/direct-energy-command", "site_id", siteId, action, label, value, min, max, step, unit);
 
 static string EnergySelectForm(string siteId, string action, string label, string current, IReadOnlyList<string> options) =>
+    CommandSelectForm("actions/direct-energy-command", "site_id", siteId, action, label, current, options);
+
+static string EnergySwitchForm(
+    string siteId,
+    string action,
+    string label,
+    bool isOn,
+    string description,
+    string onPayload,
+    string offPayload) =>
+    CommandSwitchForm("actions/direct-energy-command", "site_id", siteId, action, label, isOn, description, onPayload, offPayload);
+
+static string CommandNumberForm(
+    string endpoint,
+    string idName,
+    string idValue,
+    string action,
+    string label,
+    string value,
+    string min,
+    string max,
+    string step,
+    string unit) =>
     $"""
-    <form class="control-form" method="post" action="actions/direct-energy-command">
-      <input type="hidden" name="site_id" value="{H(siteId)}" />
+    <form class="control-form" method="post" action="{H(endpoint)}">
+      <input type="hidden" name="{H(idName)}" value="{H(idValue)}" />
       <input type="hidden" name="action" value="{H(action)}" />
-      <label>{H(label)}
-        <select name="payload">{RenderControlOptions(options, current)}</select>
+      <label class="control-field">{H(label)}
+        <span class="control-input-wrap has-unit">
+          <input type="number" name="payload" value="{H(value)}" min="{H(min)}" max="{H(max)}" step="{H(step)}" inputmode="decimal" data-auto-submit="debounce" />
+          <span class="control-unit">{H(unit)}</span>
+        </span>
       </label>
-      <button type="submit">Apply</button>
     </form>
 """;
 
-static string EnergyButtonForm(string siteId, string action, string payload, string label) =>
+static string CommandSelectForm(
+    string endpoint,
+    string idName,
+    string idValue,
+    string action,
+    string label,
+    string current,
+    IReadOnlyList<string> options) =>
     $"""
-    <form method="post" action="actions/direct-energy-command">
-      <input type="hidden" name="site_id" value="{H(siteId)}" />
+    <form class="control-form" method="post" action="{H(endpoint)}">
+      <input type="hidden" name="{H(idName)}" value="{H(idValue)}" />
       <input type="hidden" name="action" value="{H(action)}" />
-      <input type="hidden" name="payload" value="{H(payload)}" />
-      <button type="submit">{H(label)}</button>
+      <label class="control-field">{H(label)}
+        <select name="payload" data-auto-submit="change">{RenderControlOptions(options, current)}</select>
+      </label>
     </form>
 """;
+
+static string CommandSwitchForm(
+    string endpoint,
+    string idName,
+    string idValue,
+    string action,
+    string label,
+    bool isOn,
+    string description,
+    string onPayload,
+    string offPayload)
+{
+    var payload = isOn ? onPayload : offPayload;
+    var checkedAttribute = isOn ? "checked" : string.Empty;
+    return $"""
+    <form class="switch-form" method="post" action="{H(endpoint)}">
+      <input type="hidden" name="{H(idName)}" value="{H(idValue)}" />
+      <input type="hidden" name="action" value="{H(action)}" />
+      <input type="hidden" name="payload" value="{H(payload)}" data-switch-payload-target />
+      <label class="control-switch">
+        <span class="control-switch-copy"><span>{H(label)}</span><small>{H(description)}</small></span>
+        <span class="switch-shell">
+          <input type="checkbox" data-switch-payload data-on-payload="{H(onPayload)}" data-off-payload="{H(offPayload)}" {checkedAttribute} />
+          <span class="switch-track" aria-hidden="true"></span>
+        </span>
+      </label>
+    </form>
+""";
+}
+
+static string ControlIcon(string? icon)
+{
+    if (string.IsNullOrWhiteSpace(icon))
+    {
+        return string.Empty;
+    }
+
+    var body = icon.Trim().ToLowerInvariant() switch
+    {
+        "battery" => """<rect x="3" y="7" width="15" height="10" rx="2"></rect><path d="M21 11v3"></path><path d="M7 11h7"></path>""",
+        "battery-full" => """<rect x="3" y="7" width="15" height="10" rx="2"></rect><path d="M21 11v3"></path><path d="M7 11h10"></path><path d="M7 14h10"></path>""",
+        "light" => """<path d="M8 18h8"></path><path d="M10 22h4"></path><path d="M12 2a6 6 0 0 0-3 11.2V16h6v-2.8A6 6 0 0 0 12 2Z"></path>""",
+        "plug" => """<path d="M7 7V3"></path><path d="M13 7V3"></path><path d="M6 7h8v4a4 4 0 0 1-4 4h0a4 4 0 0 1-4-4Z"></path><path d="M10 15v7"></path><path d="M10 22h6a4 4 0 0 0 4-4v-1"></path>""",
+        "plug-off" => """<path d="M7 7V3"></path><path d="M13 7V3"></path><path d="M6 7h8v4a4 4 0 0 1-4 4h0"></path><path d="M10 15v2"></path><path d="M3 3l18 18"></path>""",
+        "power" => """<path d="M12 2v10"></path><path d="M18.4 6.6a9 9 0 1 1-12.8 0"></path>""",
+        "refresh" => """<path d="M21 12a9 9 0 0 1-15.5 6.2"></path><path d="M3 12A9 9 0 0 1 18.5 5.8"></path><path d="M18 2v5h-5"></path><path d="M6 22v-5h5"></path>""",
+        "speaker" => """<path d="M4 9v6h4l5 4V5L8 9Z"></path><path d="M16 9.5a4 4 0 0 1 0 5"></path><path d="M19 7a8 8 0 0 1 0 10"></path>""",
+        "trunk-open" => """<path d="M4 13h16l-2 7H6Z"></path><path d="M7 13V8l5-4 5 4v5"></path><path d="M9 16h6"></path>""",
+        "trunk-close" => """<path d="M4 13h16l-2 7H6Z"></path><path d="M7 13h10"></path><path d="M9 16h6"></path>""",
+        "window-open" => """<path d="M5 4h14v16H5Z"></path><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h5"></path>""",
+        "window-close" => """<path d="M5 4h14v16H5Z"></path><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h8"></path>""",
+        _ => """<circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>"""
+    };
+
+    return $"""<svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{body}</svg>""";
+}
 
 static string RenderControlOptions(IReadOnlyList<string> options, string current) =>
     string.Concat(options.Select(option =>

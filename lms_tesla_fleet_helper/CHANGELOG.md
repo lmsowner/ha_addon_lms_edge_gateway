@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.31
+
+- Replaces direct-control on/off button pairs with proper switches for vehicle and Powerwall boolean controls.
+- Auto-applies direct control number, select, and switch changes without per-field Apply buttons.
+- Adds compact SVG icon buttons for one-shot vehicle actions such as windows, trunks, charge port, wake, refresh, lights, and horn.
+
 ## 0.2.30
 
 - Applies proper themed select/dropdown styling across the Tesla Fleet Helper UI.
