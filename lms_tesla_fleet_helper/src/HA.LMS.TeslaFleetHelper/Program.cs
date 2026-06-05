@@ -1599,7 +1599,32 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     h3 { font-size: 15px; margin-bottom: 8px; }
     .meta { color: var(--muted); line-height: 1.5; max-width: 820px; }
     .grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; align-items: start; }
-    .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+    .cards {
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+      margin: 14px 0;
+      padding: 10px 0;
+    }
+    .cards .card {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      display: inline-flex;
+      gap: 8px;
+      min-width: max-content;
+      padding: 0;
+    }
+    .cards .card h3 {
+      font-size: 13px;
+      margin: 0;
+      white-space: nowrap;
+    }
     .tab-control {
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
@@ -1912,12 +1937,16 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       margin-bottom: 12px;
     }
     .section-header h2 { margin-bottom: 0; }
-    .control-list { display: grid; gap: 14px; }
+    .control-list { display: grid; gap: 18px; }
     .control-card {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+    }
+    .control-card + .control-card {
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
     }
     .control-card-head {
       align-items: flex-start;
@@ -1930,15 +1959,15 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     .control-card-head .meta { max-width: none; }
     .control-summary {
       display: grid;
-      gap: 8px;
-      grid-template-columns: repeat(4, minmax(120px, 1fr));
-      margin-bottom: 12px;
+      gap: 5px 18px;
+      grid-template-columns: repeat(auto-fit, minmax(110px, max-content));
+      margin-bottom: 14px;
     }
     .control-summary div {
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      background: var(--surface);
-      padding: 8px 10px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
     }
     .control-summary span {
       color: var(--muted);
@@ -1967,9 +1996,9 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     }
     .control-grid {
       align-items: end;
-      display: grid;
-      gap: 8px;
-      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
     }
     .control-form {
       align-items: end;
@@ -1977,7 +2006,10 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       gap: 8px;
       grid-template-columns: minmax(0, 1fr);
       margin: 0;
+      width: 12rem;
     }
+    .control-form.number-control { width: 9.25rem; }
+    .control-form.select-control { width: 12rem; }
     .control-form label { margin: 0; }
     .control-form.is-submitting,
     .control-buttons form.is-submitting {
@@ -2022,6 +2054,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       align-items: end;
       display: grid;
       margin: 0;
+      width: 7.25rem;
     }
     .control-switch {
       align-items: end;
@@ -2171,7 +2204,12 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       header, .grid, .cards, .split-actions, .form-grid { grid-template-columns: 1fr; display: grid; }
       .diagnostic-filter-bar { grid-template-columns: 1fr; }
       .section-header, .control-card-head { align-items: stretch; display: grid; }
-      .control-summary, .control-grid, .control-form { grid-template-columns: 1fr; }
+      .control-summary { grid-template-columns: 1fr; }
+      .control-grid { display: grid; grid-template-columns: 1fr; }
+      .control-form,
+      .control-form.number-control,
+      .control-form.select-control,
+      .switch-form { width: 100%; }
       .header-actions { justify-content: space-between; }
       header { gap: 10px; }
     }
@@ -3053,7 +3091,7 @@ static string CommandNumberForm(
     string step,
     string unit) =>
     $"""
-    <form class="control-form" method="post" action="{H(endpoint)}">
+    <form class="control-form number-control" method="post" action="{H(endpoint)}">
       <input type="hidden" name="{H(idName)}" value="{H(idValue)}" />
       <input type="hidden" name="action" value="{H(action)}" />
       <label class="control-field">{H(label)}
@@ -3074,7 +3112,7 @@ static string CommandSelectForm(
     string current,
     IReadOnlyList<string> options) =>
     $"""
-    <form class="control-form" method="post" action="{H(endpoint)}">
+    <form class="control-form select-control" method="post" action="{H(endpoint)}">
       <input type="hidden" name="{H(idName)}" value="{H(idValue)}" />
       <input type="hidden" name="action" value="{H(action)}" />
       <label class="control-field">{H(label)}

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.34
+
+- Removes boxed styling from the Helper status strip and vehicle control summaries.
+- Uses compact fixed-width direct controls so switches, small number inputs, and dropdowns no longer waste horizontal space.
+
 ## 0.2.33
 
 - Uses a denser four-column direct-control grid so dropdowns and switches do not stretch unnecessarily on desktop.
