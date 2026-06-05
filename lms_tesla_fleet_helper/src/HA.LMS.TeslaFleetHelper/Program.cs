@@ -1715,7 +1715,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
           {{energyScopeWarning}}
           <div class="callout" style="margin:14px 0">
             <strong>Home Assistant MQTT Discovery</strong>
-            <p style="margin:8px 0 0">Publishes Tesla vehicles and energy sites as MQTT-discovered Home Assistant devices. Realtime vehicle data is optional and only fetched for online vehicles.</p>
+            <p style="margin:8px 0 0">Publishes Tesla vehicles and energy sites as MQTT-discovered Home Assistant devices. Background refreshes only fetch vehicle data for online vehicles and never wake sleeping cars; explicit wake, force-update and write commands may wake the target vehicle.</p>
           </div>
           <label class="check-row">
             <input type="hidden" name="ha_mqtt_enabled_present" value="true" />
@@ -2553,6 +2553,7 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             HomeAssistantRefreshIntervalMinutes = state.HomeAssistantRefreshIntervalMinutes <= 0
                 ? 15
                 : Math.Clamp(state.HomeAssistantRefreshIntervalMinutes, 5, 240),
+            DisabledVehiclePollingVins = NormalizeVinList(state.DisabledVehiclePollingVins),
             LastHomeAssistantDiscoveryTopics = state.LastHomeAssistantDiscoveryTopics ?? [],
             LastHomeAssistantStatePayloads = state.LastHomeAssistantStatePayloads ?? [],
             DiscoveredProperties = state.DiscoveredProperties ?? [],
@@ -2586,6 +2587,14 @@ sealed class TeslaFleetStore(IConfiguration configuration, IWebHostEnvironment e
             MqttDiscoveryPrefix: ReadOptionString("mqtt_discovery_prefix", "homeassistant"),
             MqttBaseTopic: ReadOptionString("mqtt_base_topic", "lms/tesla-fleet"),
             HomeAssistantRefreshIntervalMinutes: Math.Clamp(ReadOptionInt("homeassistant_refresh_interval_minutes", 15), 5, 240));
+
+    private static List<string> NormalizeVinList(IEnumerable<string>? vins) =>
+        (vins ?? [])
+        .Select(vin => vin.Trim())
+        .Where(vin => !string.IsNullOrWhiteSpace(vin))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(vin => vin, StringComparer.OrdinalIgnoreCase)
+        .ToList();
 
     private static string NormalizeStoredScopes(string value)
     {
@@ -3659,6 +3668,7 @@ sealed record TeslaFleetState(
     string MqttDiscoveryPrefix = "homeassistant",
     string MqttBaseTopic = "lms/tesla-fleet",
     int HomeAssistantRefreshIntervalMinutes = 15,
+    List<string>? DisabledVehiclePollingVins = null,
     DateTimeOffset? LastHomeAssistantPublishUtc = null,
     string LastHomeAssistantPublishSummary = "",
     List<string>? LastHomeAssistantDiscoveryTopics = null,

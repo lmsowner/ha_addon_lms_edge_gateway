@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.26
+
+- Adds native Home Assistant controls for Tesla cabin overheat protection, seat heat/cool/auto climate, steering wheel heat, valet mode, and charge-port latch.
+- Adds vehicle one-shot buttons for Homelink, remote start, emissions test, charge standard/max range, and optional media controls.
+- Routes seat and steering controls through proper multi-step Tesla Fleet command sequences where preconditioning or auto-mode clearing is required.
+
+## 0.2.25
+
+- Publishes Tesla HVAC as a native Home Assistant climate entity with on/off, target temperature, presets, and Bioweapon fan mode.
+- Replaces crude vehicle buttons with native covers for charge port, windows, frunk, trunk, and sunroof.
+- Adds door/window open sensors and clears the old retained climate/cover button discovery topics during MQTT publish.
+
+## 0.2.24
+
+- Keeps normal Home Assistant MQTT refreshes conservative: sleeping/offline vehicles are not woken for background `vehicle_data` polling.
+- Adds per-vehicle Home Assistant Polling switches so `vehicle_data` reads can be disabled for a VIN without calling Tesla.
+- Adds a Force Data Update button and wakes vehicles before explicit vehicle write commands so updates happen on deliberate user action.
+
 ## 0.2.23
 
 - Adds a per-vehicle Home Assistant timestamp sensor showing when live Tesla `vehicle_data` was last refreshed.

@@ -116,11 +116,11 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
 
         if (state.FetchRealtimeVehicleData || state.HomeAssistantMqttEnabled)
         {
-            vehicles = await FetchRealtimeVehicleDataAsync(audience, state.AccessToken, vehicles, checks, cancellationToken);
+            vehicles = await FetchRealtimeVehicleDataAsync(state, audience, state.AccessToken, vehicles, checks, cancellationToken);
         }
         else
         {
-            checks.Add("Realtime vehicle_data calls skipped because the setting is disabled.");
+            checks.Add("Realtime vehicle_data calls skipped because the setting is disabled. This does not wake vehicles.");
         }
 
         var energySites = ReadEnergySites(products);
@@ -137,19 +137,35 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
     }
 
     private async Task<List<TeslaVehicleSnapshot>> FetchRealtimeVehicleDataAsync(
+        TeslaFleetState state,
         string audience,
         string accessToken,
         IReadOnlyList<TeslaVehicleSnapshot> vehicles,
         List<string> checks,
         CancellationToken cancellationToken)
     {
+        var disabledPollingVins = (state.DisabledVehiclePollingVins ?? [])
+            .Where(vin => !string.IsNullOrWhiteSpace(vin))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var updated = new List<TeslaVehicleSnapshot>();
         foreach (var vehicle in vehicles)
         {
+            var values = new Dictionary<string, object?>(vehicle.Values, StringComparer.OrdinalIgnoreCase)
+            {
+                ["lms_helper.polling_enabled"] = !disabledPollingVins.Contains(vehicle.Vin)
+            };
+
+            if (disabledPollingVins.Contains(vehicle.Vin))
+            {
+                checks.Add($"Skipped vehicle_data for {vehicle.DisplayName}: vehicle polling is disabled.");
+                updated.Add(vehicle with { Values = values });
+                continue;
+            }
+
             if (!vehicle.State.Equals("online", StringComparison.OrdinalIgnoreCase))
             {
-                checks.Add($"Skipped vehicle_data for {vehicle.DisplayName}: vehicle state is {FirstNonEmpty(vehicle.State, "unknown")}.");
-                updated.Add(vehicle);
+                checks.Add($"Skipped vehicle_data for {vehicle.DisplayName}: vehicle state is {FirstNonEmpty(vehicle.State, "unknown")}. Regular refreshes do not wake vehicles.");
+                updated.Add(vehicle with { Values = values });
                 continue;
             }
 
@@ -161,13 +177,13 @@ sealed class TeslaFleetDataClient(HttpClient httpClient)
                 cancellationToken);
             if (realtime.HasValue)
             {
-                var values = Merge(vehicle.Values, FlattenObject(ReadResponse(realtime.Value), null));
-                values["lms_helper.vehicle_data_refreshed_utc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-                updated.Add(vehicle with { Values = values });
+                var refreshedValues = Merge(values, FlattenObject(ReadResponse(realtime.Value), null));
+                refreshedValues["lms_helper.vehicle_data_refreshed_utc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+                updated.Add(vehicle with { Values = refreshedValues });
             }
             else
             {
-                updated.Add(vehicle);
+                updated.Add(vehicle with { Values = values });
             }
         }
 
@@ -559,6 +575,8 @@ sealed class TeslaFleetMqttPublisher(
         "switch",
         "button",
         "lock",
+        "climate",
+        "cover",
         "device_tracker"
     ];
 
@@ -974,7 +992,12 @@ sealed class TeslaFleetMqttPublisher(
             ("sensor", "charge_limit"),
             ("sensor", "charging_amps"),
             ("number", "charge_limit_number"),
-            ("number", "charging_amps_number")
+            ("number", "charging_amps_number"),
+            ("switch", "climate"),
+            ("button", "charge_port_door_open_button"),
+            ("button", "charge_port_door_close_button"),
+            ("button", "open_frunk"),
+            ("button", "open_trunk")
         };
         return vehicleDeviceIds
             .SelectMany(deviceId => retired.Select(item => BuildDiscoveryTopic(settings, item.Component, $"{deviceId}_{item.IdSuffix}")))
@@ -1593,6 +1616,19 @@ sealed class TeslaFleetEnergyCommandClient(HttpClient httpClient)
 sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
 {
     private const string ProxyBaseUrl = "https://127.0.0.1:4443";
+    private static readonly TimeSpan WakeTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan WakePollInterval = TimeSpan.FromSeconds(2);
+    private static readonly IReadOnlyDictionary<string, TeslaSeatCommandDefinition> SeatCommandDefinitions =
+        new Dictionary<string, TeslaSeatCommandDefinition>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["left"] = new("left", "Left seat climate", 0, 1, 1, "seat_heater_left", "seat_fan_front_left", "auto_seat_climate_left", true),
+            ["right"] = new("right", "Right seat climate", 1, 2, 2, "seat_heater_right", "seat_fan_front_right", "auto_seat_climate_right", true),
+            ["rear_left"] = new("rear_left", "Rear left seat heater", 2, null, null, "seat_heater_rear_left", null, null, false),
+            ["rear_center"] = new("rear_center", "Rear center seat heater", 4, null, null, "seat_heater_rear_center", null, null, false),
+            ["rear_right"] = new("rear_right", "Rear right seat heater", 5, null, null, "seat_heater_rear_right", null, null, false),
+            ["third_row_left"] = new("third_row_left", "Third row left seat heater", 6, null, null, "seat_heater_third_row_left", null, null, false),
+            ["third_row_right"] = new("third_row_right", "Third row right seat heater", 7, null, null, "seat_heater_third_row_right", null, null, false)
+        };
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -1628,50 +1664,239 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
             $"Received vehicle command '{normalizedAction}' for VIN {vin} with payload '{value}'.",
             command.UsesProxy
                 ? "Sending through Tesla's official vehicle-command HTTP proxy so the request is signed with the installed virtual key."
-                : "Sending directly to the Fleet API because this vehicle endpoint is not a signed command endpoint."
+                : "Sending directly to the Fleet API because this vehicle endpoint is not a signed command endpoint.",
+            command.WakesVehicle
+                ? "This command may wake the vehicle; normal background refreshes never send wake requests."
+                : "This command does not wake the vehicle."
         };
 
-        var baseUrl = command.UsesProxy
-            ? ProxyBaseUrl
-            : TeslaFleetDefaults.NormalizeHttpUrl(state.FleetApiAudience, TeslaFleetDefaults.DefaultFleetApiAudience);
-        var result = await PostCommandAsync(
-            baseUrl,
-            command.Path,
-            state.AccessToken,
-            command.Payload,
-            vin,
-            command.StatePatch,
-            checks,
-            cancellationToken);
+        var fleetApiBaseUrl = TeslaFleetDefaults.NormalizeHttpUrl(state.FleetApiAudience, TeslaFleetDefaults.DefaultFleetApiAudience);
+        if (command.WakesVehicle)
+        {
+            var wakeResult = await WakeVehicleAsync(fleetApiBaseUrl, vin, state.AccessToken, checks, cancellationToken);
+            if (!wakeResult)
+            {
+                return new TeslaVehicleCommandResult(false, "Tesla vehicle wake-up failed.", checks, vin, new Dictionary<string, object?>());
+            }
+        }
+
+        if (command.WakeOnly)
+        {
+            return new TeslaVehicleCommandResult(true, $"{command.DisplayName} command accepted.", checks, vin, command.StatePatch, command.PollingEnabled);
+        }
+
+        var requests = command.Requests is { Count: > 0 }
+            ? command.Requests
+            : [new TeslaVehicleCommandRequest(command.Path, command.Payload, command.UsesProxy)];
+        if (requests.Count > 1)
+        {
+            checks.Add($"Sending {requests.Count} Tesla command requests for {command.DisplayName}.");
+        }
+
+        TeslaVehicleCommandResult? result = null;
+        for (var index = 0; index < requests.Count; index++)
+        {
+            var request = requests[index];
+            var baseUrl = request.UsesProxy ? ProxyBaseUrl : fleetApiBaseUrl;
+            var statePatch = index == requests.Count - 1
+                ? command.StatePatch
+                : new Dictionary<string, object?>();
+            result = await PostCommandAsync(
+                baseUrl,
+                request.Path,
+                state.AccessToken,
+                request.Payload,
+                vin,
+                statePatch,
+                checks,
+                cancellationToken);
+            if (!result.Succeeded)
+            {
+                return result with
+                {
+                    Summary = $"{command.DisplayName} command failed for vehicle {vin}.",
+                    PollingEnabled = command.PollingEnabled
+                };
+            }
+        }
+
+        result ??= new TeslaVehicleCommandResult(true, "Tesla vehicle command accepted.", checks, vin, command.StatePatch);
 
         return result with
         {
             Summary = result.Succeeded
                 ? $"{command.DisplayName} command accepted for vehicle {vin}."
-                : $"{command.DisplayName} command failed for vehicle {vin}."
+                : $"{command.DisplayName} command failed for vehicle {vin}.",
+            PollingEnabled = command.PollingEnabled
         };
     }
 
     private static TeslaVehicleCommand BuildCommand(string vin, string action, string value)
     {
         var escapedVin = Uri.EscapeDataString(vin);
+        if (action.StartsWith("seat_climate_", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildSeatClimateCommand(escapedVin, action["seat_climate_".Length..], value);
+        }
+
         return action switch
         {
             "charge_limit" => BuildChargeLimitCommand(escapedVin, value),
             "charging_amps" => BuildChargingAmpsCommand(escapedVin, value),
             "charger" => BuildChargerCommand(escapedVin, value),
             "climate" => BuildClimateCommand(escapedVin, value),
+            "climate_mode" => BuildClimateModeCommand(escapedVin, value),
+            "climate_temperature" => BuildClimateTemperatureCommand(escapedVin, value),
+            "climate_preset" => BuildClimatePresetCommand(escapedVin, value),
+            "climate_fan" => BuildClimateFanCommand(escapedVin, value),
+            "cabin_overheat_protection" => BuildCabinOverheatProtectionCommand(escapedVin, value),
+            "heated_steering_wheel" => BuildHeatedSteeringWheelCommand(escapedVin, value),
+            "steering_wheel_heat" => BuildSteeringWheelHeatCommand(escapedVin, value),
             "sentry_mode" => BuildSentryModeCommand(escapedVin, value),
             "door_lock" => BuildDoorLockCommand(escapedVin, value),
-            "wake_up" => new TeslaVehicleCommand("Wake up", $"/api/1/vehicles/{escapedVin}/wake_up", new { }, new Dictionary<string, object?>(), UsesProxy: false),
+            "charge_port_latch" => BuildChargePortLatchCommand(escapedVin, value),
+            "valet_mode" => BuildValetModeCommand(escapedVin, value),
+            "polling" => BuildPollingCommand(value),
+            "wake_up" => new TeslaVehicleCommand("Wake up", string.Empty, new { }, new Dictionary<string, object?>(), UsesProxy: false, WakesVehicle: true, WakeOnly: true),
+            "force_data_update" => new TeslaVehicleCommand("Force data update", string.Empty, new { }, new Dictionary<string, object?>(), UsesProxy: false, WakesVehicle: true, WakeOnly: true),
             "flash_lights" => EmptyProxyCommand("Flash lights", escapedVin, "flash_lights"),
             "honk_horn" => EmptyProxyCommand("Horn", escapedVin, "honk_horn"),
+            "homelink" => ProxyCommand("Homelink", escapedVin, "trigger_homelink", new { lat = 0, lon = 0 }),
+            "remote_start" => EmptyProxyCommand("Remote start", escapedVin, "remote_start_drive"),
+            "remote_boombox" => ProxyCommand("Emissions test", escapedVin, "remote_boombox", new { sound_id = 2000 }),
+            "charge_standard" => EmptyProxyCommand("Charge standard", escapedVin, "charge_standard"),
+            "charge_max_range" => EmptyProxyCommand("Charge max range", escapedVin, "charge_max_range"),
+            "media_toggle_playback" => EmptyProxyCommand("Media play pause", escapedVin, "media_toggle_playback", wakesVehicle: false),
+            "media_next_track" => EmptyProxyCommand("Media next track", escapedVin, "media_next_track", wakesVehicle: false),
+            "media_prev_track" => EmptyProxyCommand("Media previous track", escapedVin, "media_prev_track", wakesVehicle: false),
+            "media_next_fav" => EmptyProxyCommand("Media next favorite", escapedVin, "media_next_fav", wakesVehicle: false),
+            "media_prev_fav" => EmptyProxyCommand("Media previous favorite", escapedVin, "media_prev_fav", wakesVehicle: false),
+            "media_volume_up" => EmptyProxyCommand("Media volume up", escapedVin, "media_volume_up", wakesVehicle: false),
+            "media_volume_down" => EmptyProxyCommand("Media volume down", escapedVin, "media_volume_down", wakesVehicle: false),
+            "charge_port_door" => BuildChargePortCoverCommand(escapedVin, value),
             "charge_port_door_open" => BuildChargePortCommand(escapedVin, open: true),
             "charge_port_door_close" => BuildChargePortCommand(escapedVin, open: false),
+            "windows" => BuildWindowsCommand(escapedVin, value),
+            "frunk" => BuildFrunkCoverCommand(escapedVin, value),
+            "trunk" => BuildTrunkCoverCommand(escapedVin, value),
+            "sunroof" => BuildSunroofCommand(escapedVin, value),
             "open_frunk" => BuildTrunkCommand(escapedVin, "front", "Open frunk"),
             "open_trunk" => BuildTrunkCommand(escapedVin, "rear", "Open trunk"),
             _ => throw new InvalidOperationException($"Unsupported vehicle command action '{action}'.")
         };
+    }
+
+    private async Task<bool> WakeVehicleAsync(
+        string baseUrl,
+        string vin,
+        string accessToken,
+        List<string> checks,
+        CancellationToken cancellationToken)
+    {
+        var escapedVin = Uri.EscapeDataString(vin);
+        var wakePath = $"/api/1/vehicles/{escapedVin}/wake_up";
+        using (var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}{wakePath}")
+        {
+            Content = JsonContent.Create(new { }, options: JsonOptions)
+        })
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            checks.Add($"POST {wakePath} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}.");
+            if (!response.IsSuccessStatusCode)
+            {
+                checks.Add($"POST {wakePath} response: {TruncateForDiagnostics(body)}");
+                return false;
+            }
+
+            var state = ReadVehicleState(body);
+            if (!string.IsNullOrWhiteSpace(state))
+            {
+                checks.Add($"Wake response vehicle state: {state}.");
+                if (state.Equals("online", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        var deadline = DateTimeOffset.UtcNow.Add(WakeTimeout);
+        var summaryPath = $"/api/1/vehicles/{escapedVin}";
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(WakePollInterval, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl.TrimEnd('/')}{summaryPath}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            checks.Add($"GET {summaryPath} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase} while waiting for wake-up.");
+            if (!response.IsSuccessStatusCode)
+            {
+                checks.Add($"GET {summaryPath} response: {TruncateForDiagnostics(body)}");
+                continue;
+            }
+
+            var state = ReadVehicleState(body);
+            checks.Add($"Wake poll vehicle state: {FirstNonEmpty(state, "unknown")}.");
+            if (state.Equals("online", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        checks.Add($"Vehicle {vin} did not report online within {WakeTimeout.TotalSeconds:0} seconds.");
+        return false;
+    }
+
+    private static string ReadVehicleState(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.TryGetProperty("response", out var response))
+            {
+                root = response;
+            }
+
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("state", out var state))
+            {
+                return state.ValueKind == JsonValueKind.String
+                    ? state.GetString()?.Trim() ?? string.Empty
+                    : state.GetRawText();
+            }
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private static TeslaVehicleCommand BuildPollingCommand(string value)
+    {
+        var enabled = ParseOnOff(value);
+        return new TeslaVehicleCommand(
+            enabled ? "Enable polling" : "Disable polling",
+            string.Empty,
+            new { },
+            new Dictionary<string, object?>
+            {
+                ["lms_helper.polling_enabled"] = enabled,
+                ["polling_enabled"] = enabled
+            },
+            UsesProxy: false,
+            WakesVehicle: false,
+            WakeOnly: true,
+            PollingEnabled: enabled);
     }
 
     private static TeslaVehicleCommand BuildChargeLimitCommand(string escapedVin, string value)
@@ -1739,9 +1964,407 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
             new Dictionary<string, object?>
             {
                 ["climate_state.is_climate_on"] = enabled,
-                ["is_climate_on"] = enabled
+                ["is_climate_on"] = enabled,
+                ["hvac_mode"] = enabled ? "heat_cool" : "off"
+            },
+            UsesProxy: true,
+            WakesVehicle: enabled);
+    }
+
+    private static TeslaVehicleCommand BuildClimateModeCommand(string escapedVin, string value)
+    {
+        var mode = value.Trim().ToLowerInvariant().Replace("-", "_", StringComparison.Ordinal);
+        return mode switch
+        {
+            "off" => BuildClimateCommand(escapedVin, "OFF"),
+            "heat_cool" or "auto" or "on" => BuildClimateCommand(escapedVin, "ON"),
+            _ => throw new InvalidOperationException($"Unsupported climate mode '{value}'.")
+        };
+    }
+
+    private static TeslaVehicleCommand BuildClimateTemperatureCommand(string escapedVin, string value)
+    {
+        var temperature = ParseTemperature(value, min: 5, max: 35, label: "climate temperature");
+        return new TeslaVehicleCommand(
+            "Climate temperature",
+            $"/api/1/vehicles/{escapedVin}/command/set_temps",
+            new { driver_temp = temperature, passenger_temp = temperature },
+            new Dictionary<string, object?>
+            {
+                ["climate_state.driver_temp_setting"] = temperature,
+                ["climate_state.passenger_temp_setting"] = temperature,
+                ["driver_temp_setting"] = temperature,
+                ["passenger_temp_setting"] = temperature
             },
             UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildClimatePresetCommand(string escapedVin, string value)
+    {
+        var preset = value.Trim().ToLowerInvariant().Replace("-", "_", StringComparison.Ordinal);
+        return preset switch
+        {
+            "normal" => new TeslaVehicleCommand(
+                "Climate preset normal",
+                $"/api/1/vehicles/{escapedVin}/command/set_climate_keeper_mode",
+                new { climate_keeper_mode = 0 },
+                new Dictionary<string, object?>
+                {
+                    ["climate_state.climate_keeper_mode"] = "off",
+                    ["climate_state.defrost_mode"] = 0,
+                    ["climate_keeper_mode"] = "off",
+                    ["defrost_mode"] = 0,
+                    ["climate_preset_mode"] = "normal"
+                },
+                UsesProxy: true,
+                WakesVehicle: false,
+                Requests:
+                [
+                    new TeslaVehicleCommandRequest(
+                        $"/api/1/vehicles/{escapedVin}/command/set_preconditioning_max",
+                        new { on = 0 },
+                        UsesProxy: true),
+                    new TeslaVehicleCommandRequest(
+                        $"/api/1/vehicles/{escapedVin}/command/set_climate_keeper_mode",
+                        new { climate_keeper_mode = 0 },
+                        UsesProxy: true)
+                ]),
+            "defrost" => new TeslaVehicleCommand(
+                "Climate preset defrost",
+                $"/api/1/vehicles/{escapedVin}/command/set_preconditioning_max",
+                new { on = 2 },
+                new Dictionary<string, object?>
+                {
+                    ["climate_state.defrost_mode"] = 2,
+                    ["climate_state.is_climate_on"] = true,
+                    ["defrost_mode"] = 2,
+                    ["is_climate_on"] = true,
+                    ["climate_preset_mode"] = "defrost",
+                    ["hvac_mode"] = "heat_cool"
+                },
+                UsesProxy: true),
+            "keep" or "dog" or "camp" => BuildClimateKeeperCommand(escapedVin, preset),
+            _ => throw new InvalidOperationException($"Unsupported climate preset '{value}'.")
+        };
+    }
+
+    private static TeslaVehicleCommand BuildClimateKeeperCommand(string escapedVin, string preset)
+    {
+        var keeperId = preset switch
+        {
+            "keep" => 1,
+            "dog" => 2,
+            "camp" => 3,
+            _ => 0
+        };
+        var keeperState = preset == "keep" ? "on" : preset;
+        return new TeslaVehicleCommand(
+            $"Climate preset {preset}",
+            $"/api/1/vehicles/{escapedVin}/command/set_climate_keeper_mode",
+            new { climate_keeper_mode = keeperId },
+            new Dictionary<string, object?>
+            {
+                ["climate_state.climate_keeper_mode"] = keeperState,
+                ["climate_state.is_climate_on"] = true,
+                ["climate_keeper_mode"] = keeperState,
+                ["is_climate_on"] = true,
+                ["climate_preset_mode"] = preset,
+                ["hvac_mode"] = "heat_cool"
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildClimateFanCommand(string escapedVin, string value)
+    {
+        var fanMode = value.Trim().ToLowerInvariant();
+        return fanMode switch
+        {
+            "off" => BuildBioweaponCommand(escapedVin, enabled: false),
+            "bioweapon" => BuildBioweaponCommand(escapedVin, enabled: true),
+            _ => throw new InvalidOperationException($"Unsupported climate fan mode '{value}'.")
+        };
+    }
+
+    private static TeslaVehicleCommand BuildBioweaponCommand(string escapedVin, bool enabled) =>
+        new(
+            enabled ? "Enable bioweapon defense mode" : "Disable bioweapon defense mode",
+            $"/api/1/vehicles/{escapedVin}/command/set_bioweapon_mode",
+            new { on = enabled, manual_override = true },
+            new Dictionary<string, object?>
+            {
+                ["climate_state.bioweapon_mode"] = enabled,
+                ["climate_state.is_climate_on"] = enabled ? true : null,
+                ["bioweapon_mode"] = enabled,
+                ["climate_fan_mode"] = enabled ? "bioweapon" : "off",
+                ["hvac_mode"] = enabled ? "heat_cool" : null
+            },
+            UsesProxy: true,
+            WakesVehicle: enabled);
+
+    private static TeslaVehicleCommand BuildCabinOverheatProtectionCommand(string escapedVin, string value)
+    {
+        var mode = NormalizeCabinOverheatProtection(value);
+        var (on, fanOnly) = mode switch
+        {
+            "Off" => (false, false),
+            "No A/C" => (true, true),
+            "On" => (true, false),
+            _ => throw new InvalidOperationException($"Unsupported cabin overheat protection mode '{value}'.")
+        };
+        return new TeslaVehicleCommand(
+            "Cabin overheat protection",
+            $"/api/1/vehicles/{escapedVin}/command/set_cabin_overheat_protection",
+            new { on, fan_only = fanOnly },
+            new Dictionary<string, object?>
+            {
+                ["climate_state.cabin_overheat_protection"] = mode,
+                ["cabin_overheat_protection"] = mode
+            },
+            UsesProxy: true,
+            WakesVehicle: on);
+    }
+
+    private static TeslaVehicleCommand BuildHeatedSteeringWheelCommand(string escapedVin, string value)
+    {
+        var enabled = ParseOnOff(value);
+        return new TeslaVehicleCommand(
+            enabled ? "Enable heated steering wheel" : "Disable heated steering wheel",
+            $"/api/1/vehicles/{escapedVin}/command/remote_steering_wheel_heater_request",
+            new { on = enabled },
+            new Dictionary<string, object?>
+            {
+                ["climate_state.steering_wheel_heater"] = enabled,
+                ["steering_wheel_heater"] = enabled,
+                ["heated_steering_wheel"] = enabled,
+                ["steering_wheel_heat"] = enabled ? "High" : "Off"
+            },
+            UsesProxy: true,
+            WakesVehicle: enabled);
+    }
+
+    private static TeslaVehicleCommand BuildSteeringWheelHeatCommand(string escapedVin, string value)
+    {
+        var mode = NormalizeSteeringWheelHeat(value);
+        if (mode == "Auto")
+        {
+            return new TeslaVehicleCommand(
+                "Steering wheel heat auto",
+                $"/api/1/vehicles/{escapedVin}/command/remote_auto_steering_wheel_heat_climate_request",
+                new { on = true },
+                new Dictionary<string, object?>
+                {
+                    ["climate_state.auto_steering_wheel_heat"] = true,
+                    ["auto_steering_wheel_heat"] = true,
+                    ["steering_wheel_heat"] = "Auto",
+                    ["hvac_mode"] = "heat_cool"
+                },
+                UsesProxy: true,
+                Requests:
+                [
+                    ClimateOnRequest(escapedVin),
+                    new TeslaVehicleCommandRequest(
+                        $"/api/1/vehicles/{escapedVin}/command/remote_auto_steering_wheel_heat_climate_request",
+                        new { on = true },
+                        UsesProxy: true)
+                ]);
+        }
+
+        if (mode == "Off")
+        {
+            return new TeslaVehicleCommand(
+                "Steering wheel heat off",
+                $"/api/1/vehicles/{escapedVin}/command/remote_steering_wheel_heater_request",
+                new { on = false },
+                new Dictionary<string, object?>
+                {
+                    ["climate_state.auto_steering_wheel_heat"] = false,
+                    ["climate_state.steering_wheel_heater"] = false,
+                    ["climate_state.steering_wheel_heat_level"] = 0,
+                    ["auto_steering_wheel_heat"] = false,
+                    ["steering_wheel_heater"] = false,
+                    ["steering_wheel_heat_level"] = 0,
+                    ["steering_wheel_heat"] = "Off",
+                    ["heated_steering_wheel"] = false
+                },
+                UsesProxy: true,
+                WakesVehicle: false,
+                Requests:
+                [
+                    new TeslaVehicleCommandRequest(
+                        $"/api/1/vehicles/{escapedVin}/command/remote_auto_steering_wheel_heat_climate_request",
+                        new { on = false },
+                        UsesProxy: true),
+                    new TeslaVehicleCommandRequest(
+                        $"/api/1/vehicles/{escapedVin}/command/remote_steering_wheel_heater_request",
+                        new { on = false },
+                        UsesProxy: true)
+                ]);
+        }
+
+        var level = mode == "Low" ? 1 : 3;
+        return new TeslaVehicleCommand(
+            $"Steering wheel heat {mode}",
+            $"/api/1/vehicles/{escapedVin}/command/remote_steering_wheel_heat_level_request",
+            new { level },
+            new Dictionary<string, object?>
+            {
+                ["climate_state.auto_steering_wheel_heat"] = false,
+                ["climate_state.steering_wheel_heater"] = true,
+                ["climate_state.steering_wheel_heat_level"] = level,
+                ["auto_steering_wheel_heat"] = false,
+                ["steering_wheel_heater"] = true,
+                ["steering_wheel_heat_level"] = level,
+                ["steering_wheel_heat"] = mode,
+                ["heated_steering_wheel"] = true,
+                ["hvac_mode"] = "heat_cool"
+            },
+            UsesProxy: true,
+            Requests:
+            [
+                ClimateOnRequest(escapedVin),
+                new TeslaVehicleCommandRequest(
+                    $"/api/1/vehicles/{escapedVin}/command/remote_auto_steering_wheel_heat_climate_request",
+                    new { on = false },
+                    UsesProxy: true),
+                new TeslaVehicleCommandRequest(
+                    $"/api/1/vehicles/{escapedVin}/command/remote_steering_wheel_heat_level_request",
+                    new { level },
+                    UsesProxy: true)
+            ]);
+    }
+
+    private static TeslaVehicleCommand BuildSeatClimateCommand(string escapedVin, string seatId, string value)
+    {
+        if (!SeatCommandDefinitions.TryGetValue(seatId, out var seat))
+        {
+            throw new InvalidOperationException($"Unsupported seat climate control '{seatId}'.");
+        }
+
+        var option = NormalizeSeatClimateOption(value);
+        if (option == "Auto")
+        {
+            if (!seat.AutoSeatPosition.HasValue)
+            {
+                throw new InvalidOperationException($"{seat.DisplayName} does not support automatic seat climate.");
+            }
+
+            return SeatCommand(
+                escapedVin,
+                seat,
+                option,
+                new Dictionary<string, object?>
+                {
+                    [$"climate_state.{seat.AutoPath}"] = true,
+                    [seat.AutoPath!] = true,
+                    [$"seat_climate_{seat.Id}"] = "Auto",
+                    ["hvac_mode"] = "heat_cool"
+                },
+                true,
+                ClimateOnRequest(escapedVin),
+                AutoSeatRequest(escapedVin, seat, true));
+        }
+
+        if (option == "Off")
+        {
+            var requests = new List<TeslaVehicleCommandRequest>();
+            if (seat.AutoSeatPosition.HasValue)
+            {
+                requests.Add(AutoSeatRequest(escapedVin, seat, false));
+            }
+            requests.Add(SeatHeaterRequest(escapedVin, seat, 0));
+            if (seat.CoolerSeatPosition.HasValue)
+            {
+                requests.Add(SeatCoolerRequest(escapedVin, seat, 1));
+            }
+
+            var patch = new Dictionary<string, object?>
+            {
+                [$"climate_state.{seat.HeaterPath}"] = 0,
+                [seat.HeaterPath] = 0,
+                [$"seat_climate_{seat.Id}"] = "Off"
+            };
+            if (!string.IsNullOrWhiteSpace(seat.CoolerPath))
+            {
+                patch[$"climate_state.{seat.CoolerPath}"] = 1;
+                patch[seat.CoolerPath] = 1;
+            }
+            if (!string.IsNullOrWhiteSpace(seat.AutoPath))
+            {
+                patch[$"climate_state.{seat.AutoPath}"] = false;
+                patch[seat.AutoPath] = false;
+            }
+
+            return SeatCommand(escapedVin, seat, option, patch, false, requests.ToArray());
+        }
+
+        if (TryResolveSeatHeatLevel(option, out var heatLevel))
+        {
+            var requests = new List<TeslaVehicleCommandRequest> { ClimateOnRequest(escapedVin) };
+            if (seat.AutoSeatPosition.HasValue)
+            {
+                requests.Add(AutoSeatRequest(escapedVin, seat, false));
+            }
+            if (seat.CoolerSeatPosition.HasValue)
+            {
+                requests.Add(SeatCoolerRequest(escapedVin, seat, 1));
+            }
+            requests.Add(SeatHeaterRequest(escapedVin, seat, heatLevel));
+
+            var patch = new Dictionary<string, object?>
+            {
+                [$"climate_state.{seat.HeaterPath}"] = heatLevel,
+                [seat.HeaterPath] = heatLevel,
+                [$"seat_climate_{seat.Id}"] = option,
+                ["hvac_mode"] = "heat_cool"
+            };
+            if (!string.IsNullOrWhiteSpace(seat.AutoPath))
+            {
+                patch[$"climate_state.{seat.AutoPath}"] = false;
+                patch[seat.AutoPath] = false;
+            }
+            if (!string.IsNullOrWhiteSpace(seat.CoolerPath))
+            {
+                patch[$"climate_state.{seat.CoolerPath}"] = 1;
+                patch[seat.CoolerPath] = 1;
+            }
+
+            return SeatCommand(escapedVin, seat, option, patch, true, requests.ToArray());
+        }
+
+        if (TryResolveSeatCoolLevel(option, out var coolLevel))
+        {
+            if (!seat.CoolerSeatPosition.HasValue)
+            {
+                throw new InvalidOperationException($"{seat.DisplayName} does not support seat cooling.");
+            }
+
+            var requests = new List<TeslaVehicleCommandRequest> { ClimateOnRequest(escapedVin) };
+            if (seat.AutoSeatPosition.HasValue)
+            {
+                requests.Add(AutoSeatRequest(escapedVin, seat, false));
+            }
+            requests.Add(SeatHeaterRequest(escapedVin, seat, 0));
+            requests.Add(SeatCoolerRequest(escapedVin, seat, coolLevel));
+
+            var patch = new Dictionary<string, object?>
+            {
+                [$"climate_state.{seat.HeaterPath}"] = 0,
+                [seat.HeaterPath] = 0,
+                [$"climate_state.{seat.CoolerPath}"] = coolLevel,
+                [seat.CoolerPath!] = coolLevel,
+                [$"seat_climate_{seat.Id}"] = option,
+                ["hvac_mode"] = "heat_cool"
+            };
+            if (!string.IsNullOrWhiteSpace(seat.AutoPath))
+            {
+                patch[$"climate_state.{seat.AutoPath}"] = false;
+                patch[seat.AutoPath] = false;
+            }
+
+            return SeatCommand(escapedVin, seat, option, patch, true, requests.ToArray());
+        }
+
+        throw new InvalidOperationException($"Unsupported seat climate option '{value}'.");
     }
 
     private static TeslaVehicleCommand BuildSentryModeCommand(string escapedVin, string value)
@@ -1756,7 +2379,8 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
                 ["vehicle_state.sentry_mode"] = enabled,
                 ["sentry_mode"] = enabled
             },
-            UsesProxy: true);
+            UsesProxy: true,
+            WakesVehicle: enabled);
     }
 
     private static TeslaVehicleCommand BuildDoorLockCommand(string escapedVin, string value)
@@ -1774,6 +2398,44 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
             UsesProxy: true);
     }
 
+    private static TeslaVehicleCommand BuildChargePortLatchCommand(string escapedVin, string value)
+    {
+        if (value.Equals("OPEN", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("UNLOCK", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildChargePortCommand(escapedVin, open: true);
+        }
+
+        if (value.Equals("LOCK", StringComparison.OrdinalIgnoreCase))
+        {
+            return new TeslaVehicleCommand(
+                "Charge port latch lock",
+                string.Empty,
+                new { },
+                new Dictionary<string, object?>(),
+                UsesProxy: false,
+                WakesVehicle: false,
+                WakeOnly: true);
+        }
+
+        throw new InvalidOperationException($"Unsupported charge port latch payload '{value}'.");
+    }
+
+    private static TeslaVehicleCommand BuildValetModeCommand(string escapedVin, string value)
+    {
+        var enabled = ParseOnOff(value);
+        return new TeslaVehicleCommand(
+            enabled ? "Enable valet mode" : "Disable valet mode",
+            $"/api/1/vehicles/{escapedVin}/command/set_valet_mode",
+            new { on = enabled },
+            new Dictionary<string, object?>
+            {
+                ["vehicle_state.valet_mode"] = enabled,
+                ["valet_mode"] = enabled
+            },
+            UsesProxy: true);
+    }
+
     private static TeslaVehicleCommand BuildChargePortCommand(string escapedVin, bool open) =>
         new(
             open ? "Open charge port" : "Close charge port",
@@ -1782,9 +2444,84 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
             new Dictionary<string, object?>
             {
                 ["charge_state.charge_port_door_open"] = open,
-                ["charge_port_door_open"] = open
+                ["charge_port_door_open"] = open,
+                ["charge_port_door_state"] = open ? "open" : "closed"
             },
             UsesProxy: true);
+
+    private static TeslaVehicleCommand BuildChargePortCoverCommand(string escapedVin, string value) =>
+        BuildChargePortCommand(escapedVin, ParseOpenClose(value));
+
+    private static TeslaVehicleCommand BuildWindowsCommand(string escapedVin, string value)
+    {
+        var open = ParseOpenClose(value);
+        return new TeslaVehicleCommand(
+            open ? "Vent windows" : "Close windows",
+            $"/api/1/vehicles/{escapedVin}/command/window_control",
+            new { command = open ? "vent" : "close", lat = 0, @long = 0 },
+            new Dictionary<string, object?>
+            {
+                ["vehicle_state.fd_window"] = open ? 1 : 0,
+                ["vehicle_state.fp_window"] = open ? 1 : 0,
+                ["vehicle_state.rd_window"] = open ? 1 : 0,
+                ["vehicle_state.rp_window"] = open ? 1 : 0,
+                ["fd_window"] = open ? 1 : 0,
+                ["fp_window"] = open ? 1 : 0,
+                ["rd_window"] = open ? 1 : 0,
+                ["rp_window"] = open ? 1 : 0,
+                ["windows_open"] = open,
+                ["windows_state"] = open ? "open" : "closed"
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildFrunkCoverCommand(string escapedVin, string value)
+    {
+        var open = ParseOpenClose(value);
+        return new TeslaVehicleCommand(
+            open ? "Open frunk" : "Close frunk",
+            $"/api/1/vehicles/{escapedVin}/command/actuate_trunk",
+            new { which_trunk = "front" },
+            new Dictionary<string, object?>
+            {
+                ["vehicle_state.ft"] = open ? 1 : 0,
+                ["ft"] = open ? 1 : 0,
+                ["frunk_state"] = open ? "open" : "closed"
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildTrunkCoverCommand(string escapedVin, string value)
+    {
+        var open = ParseOpenClose(value);
+        return new TeslaVehicleCommand(
+            open ? "Open trunk" : "Close trunk",
+            $"/api/1/vehicles/{escapedVin}/command/actuate_trunk",
+            new { which_trunk = "rear" },
+            new Dictionary<string, object?>
+            {
+                ["vehicle_state.rt"] = open ? 1 : 0,
+                ["rt"] = open ? 1 : 0,
+                ["trunk_state"] = open ? "open" : "closed"
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommand BuildSunroofCommand(string escapedVin, string value)
+    {
+        var open = ParseOpenClose(value);
+        return new TeslaVehicleCommand(
+            open ? "Vent sunroof" : "Close sunroof",
+            $"/api/1/vehicles/{escapedVin}/command/sun_roof_control",
+            new { state = open ? "vent" : "close" },
+            new Dictionary<string, object?>
+            {
+                ["vehicle_state.sun_roof_state"] = open ? "vent" : "closed",
+                ["sun_roof_state"] = open ? "vent" : "closed",
+                ["sunroof_state"] = open ? "open" : "closed"
+            },
+            UsesProxy: true);
+    }
 
     private static TeslaVehicleCommand BuildTrunkCommand(string escapedVin, string whichTrunk, string displayName) =>
         new(
@@ -1794,13 +2531,17 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
             new Dictionary<string, object?>(),
             UsesProxy: true);
 
-    private static TeslaVehicleCommand EmptyProxyCommand(string displayName, string escapedVin, string command) =>
+    private static TeslaVehicleCommand EmptyProxyCommand(string displayName, string escapedVin, string command, bool wakesVehicle = true) =>
+        ProxyCommand(displayName, escapedVin, command, new { }, wakesVehicle);
+
+    private static TeslaVehicleCommand ProxyCommand(string displayName, string escapedVin, string command, object payload, bool wakesVehicle = true) =>
         new(
             displayName,
             $"/api/1/vehicles/{escapedVin}/command/{command}",
-            new { },
+            payload,
             new Dictionary<string, object?>(),
-            UsesProxy: true);
+            UsesProxy: true,
+            WakesVehicle: wakesVehicle);
 
     private async Task<TeslaVehicleCommandResult> PostCommandAsync(
         string baseUrl,
@@ -1886,6 +2627,176 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
         return number;
     }
 
+    private static double ParseTemperature(string value, double min, double max, string label)
+    {
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+            !double.TryParse(value, out parsed))
+        {
+            throw new InvalidOperationException($"{label} must be a number from {min:0.#} to {max:0.#}. Received '{value}'.");
+        }
+
+        var temperature = Math.Round(parsed, 1);
+        if (temperature < min || temperature > max)
+        {
+            throw new InvalidOperationException($"{label} must be between {min:0.#} and {max:0.#}. Received '{temperature:0.#}'.");
+        }
+
+        return temperature;
+    }
+
+    private static bool ParseOpenClose(string value)
+    {
+        if (value.Equals("OPEN", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("ON", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("VENT", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (value.Equals("CLOSE", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("CLOSED", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("OFF", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        throw new InvalidOperationException($"Expected OPEN/CLOSE payload. Received '{value}'.");
+    }
+
+    private static string NormalizeCabinOverheatProtection(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant().Replace("_", " ", StringComparison.Ordinal).Replace("-", " ", StringComparison.Ordinal);
+        return normalized switch
+        {
+            "off" => "Off",
+            "no a/c" or "no ac" or "fan only" or "fanonly" => "No A/C",
+            "on" => "On",
+            _ => throw new InvalidOperationException($"Unsupported cabin overheat protection mode '{value}'.")
+        };
+    }
+
+    private static string NormalizeSteeringWheelHeat(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "off" => "Off",
+            "low" => "Low",
+            "high" => "High",
+            "auto" => "Auto",
+            _ => throw new InvalidOperationException($"Unsupported steering wheel heat mode '{value}'.")
+        };
+    }
+
+    private static string NormalizeSeatClimateOption(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant().Replace("_", " ", StringComparison.Ordinal).Replace("-", " ", StringComparison.Ordinal);
+        return normalized switch
+        {
+            "off" => "Off",
+            "low" => "Low",
+            "medium" => "Medium",
+            "high" => "High",
+            "auto" => "Auto",
+            "heat low" => "Heat Low",
+            "heat medium" => "Heat Medium",
+            "heat high" => "Heat High",
+            "cool low" => "Cool Low",
+            "cool medium" => "Cool Medium",
+            "cool high" => "Cool High",
+            _ => throw new InvalidOperationException($"Unsupported seat climate option '{value}'.")
+        };
+    }
+
+    private static bool TryResolveSeatHeatLevel(string option, out int level)
+    {
+        level = option switch
+        {
+            "Low" or "Heat Low" => 1,
+            "Medium" or "Heat Medium" => 2,
+            "High" or "Heat High" => 3,
+            _ => 0
+        };
+        return level > 0;
+    }
+
+    private static bool TryResolveSeatCoolLevel(string option, out int level)
+    {
+        level = option switch
+        {
+            "Cool Low" => 2,
+            "Cool Medium" => 3,
+            "Cool High" => 4,
+            _ => 0
+        };
+        return level > 0;
+    }
+
+    private static TeslaVehicleCommand SeatCommand(
+        string escapedVin,
+        TeslaSeatCommandDefinition seat,
+        string option,
+        IReadOnlyDictionary<string, object?> statePatch,
+        bool wakesVehicle,
+        params TeslaVehicleCommandRequest[] requests) =>
+        new(
+            $"{seat.DisplayName} {option}",
+            $"/api/1/vehicles/{escapedVin}/command/remote_seat_heater_request",
+            new { },
+            statePatch,
+            UsesProxy: true,
+            WakesVehicle: wakesVehicle,
+            Requests: requests);
+
+    private static TeslaVehicleCommandRequest ClimateOnRequest(string escapedVin) =>
+        new(
+            $"/api/1/vehicles/{escapedVin}/command/auto_conditioning_start",
+            new { },
+            UsesProxy: true);
+
+    private static TeslaVehicleCommandRequest AutoSeatRequest(string escapedVin, TeslaSeatCommandDefinition seat, bool enabled)
+    {
+        if (!seat.AutoSeatPosition.HasValue)
+        {
+            throw new InvalidOperationException($"{seat.DisplayName} does not support automatic seat climate.");
+        }
+
+        return new TeslaVehicleCommandRequest(
+            $"/api/1/vehicles/{escapedVin}/command/remote_auto_seat_climate_request",
+            new
+            {
+                auto_seat_position = seat.AutoSeatPosition.Value,
+                seat_position = seat.AutoSeatPosition.Value,
+                auto_climate_on = enabled
+            },
+            UsesProxy: true);
+    }
+
+    private static TeslaVehicleCommandRequest SeatHeaterRequest(string escapedVin, TeslaSeatCommandDefinition seat, int level) =>
+        new(
+            $"/api/1/vehicles/{escapedVin}/command/remote_seat_heater_request",
+            new { seat_position = seat.HeaterSeatPosition, level },
+            UsesProxy: true);
+
+    private static TeslaVehicleCommandRequest SeatCoolerRequest(string escapedVin, TeslaSeatCommandDefinition seat, int level)
+    {
+        if (!seat.CoolerSeatPosition.HasValue)
+        {
+            throw new InvalidOperationException($"{seat.DisplayName} does not support seat cooling.");
+        }
+
+        return new TeslaVehicleCommandRequest(
+            $"/api/1/vehicles/{escapedVin}/command/remote_seat_cooler_request",
+            new { seat_position = seat.CoolerSeatPosition.Value, seat_cooler_level = level },
+            UsesProxy: true);
+    }
+
     private static bool ParseOnOff(string value)
     {
         if (value.Equals("ON", StringComparison.OrdinalIgnoreCase) ||
@@ -1909,6 +2820,9 @@ sealed class TeslaFleetVehicleCommandClient(HttpClient httpClient)
 
         throw new InvalidOperationException($"Expected ON/OFF payload. Received '{value}'.");
     }
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
     private static bool IsAcceptedCommandResponse(string body, List<string> checks)
     {
@@ -2148,7 +3062,7 @@ sealed class TeslaFleetHomeAssistantCommandService(
                     payload,
                     cancellationToken);
                 var checks = token.Checks.Concat(result.Checks).ToList();
-                updated = token.State with
+                updated = ApplyVehicleCommandState(token.State, result) with
                 {
                     LastStatus = result.Succeeded ? "Home Assistant command accepted" : "Home Assistant command failed",
                     LastMessage = result.Summary,
@@ -2189,6 +3103,35 @@ sealed class TeslaFleetHomeAssistantCommandService(
         }
 
         await store.SaveAsync(updated, cancellationToken);
+    }
+
+    private static TeslaFleetState ApplyVehicleCommandState(TeslaFleetState state, TeslaVehicleCommandResult result)
+    {
+        if (!result.Succeeded || !result.PollingEnabled.HasValue || string.IsNullOrWhiteSpace(result.Vin))
+        {
+            return state;
+        }
+
+        var disabledVins = (state.DisabledVehiclePollingVins ?? [])
+            .Where(vin => !string.IsNullOrWhiteSpace(vin))
+            .Select(vin => vin.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (result.PollingEnabled.Value)
+        {
+            disabledVins.RemoveAll(vin => vin.Equals(result.Vin, StringComparison.OrdinalIgnoreCase));
+        }
+        else if (!disabledVins.Contains(result.Vin, StringComparer.OrdinalIgnoreCase))
+        {
+            disabledVins.Add(result.Vin);
+        }
+
+        return state with
+        {
+            DisabledVehiclePollingVins = disabledVins
+                .OrderBy(vin => vin, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        };
     }
 
     private static TeslaFleetSnapshot ApplyEnergyCommandPatch(
@@ -2477,11 +3420,32 @@ sealed record TeslaVehicleCommand(
     string Path,
     object Payload,
     IReadOnlyDictionary<string, object?> StatePatch,
+    bool UsesProxy,
+    bool WakesVehicle = true,
+    bool WakeOnly = false,
+    bool? PollingEnabled = null,
+    IReadOnlyList<TeslaVehicleCommandRequest>? Requests = null);
+
+sealed record TeslaVehicleCommandRequest(
+    string Path,
+    object Payload,
     bool UsesProxy);
+
+sealed record TeslaSeatCommandDefinition(
+    string Id,
+    string DisplayName,
+    int HeaterSeatPosition,
+    int? CoolerSeatPosition,
+    int? AutoSeatPosition,
+    string HeaterPath,
+    string? CoolerPath,
+    string? AutoPath,
+    bool IsFront);
 
 sealed record TeslaVehicleCommandResult(
     bool Succeeded,
     string Summary,
     List<string> Checks,
     string Vin,
-    IReadOnlyDictionary<string, object?> StatePatch);
+    IReadOnlyDictionary<string, object?> StatePatch,
+    bool? PollingEnabled = null);

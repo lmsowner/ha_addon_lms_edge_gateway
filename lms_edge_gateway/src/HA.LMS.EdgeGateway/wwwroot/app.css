@@ -1895,10 +1895,19 @@ textarea {
     line-height: 1.35;
 }
 
+.domain-service-selector,
 .domain-editor,
 .domain-service-list {
     display: grid;
     gap: 0.9rem;
+}
+
+.domain-service-selector {
+    margin: 0.85rem 0 0;
+}
+
+.domain-service-selector .ui-field {
+    max-width: 32rem;
 }
 
 .domain-editor-grid,

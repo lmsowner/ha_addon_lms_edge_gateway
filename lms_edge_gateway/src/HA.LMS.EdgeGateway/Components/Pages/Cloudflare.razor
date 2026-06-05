@@ -169,13 +169,6 @@
     </details>
 
     <section class="edge-card edge-setup-section edge-new-app-card">
-        <div class="table-header">
-            <div>
-                <p class="eyebrow">Setup Relay</p>
-                <h2>Setup Relay</h2>
-                <p class="meta-text">Cloudflare domains loaded from the saved Edge Gateway token.</p>
-            </div>
-        </div>
 
         @if (zonesResult is null)
         {
@@ -210,7 +203,7 @@
                             <option value="@domain.Name">@domain.Name (*.@BuildRelayHostname(domain.Name))</option>
                         }
                     </select>
-                    <span class="ui-field-helper">Only domains that still need this LMS relay namespace are listed.</span>
+                    <span class="ui-field-helper">Already configured entries are hidden.</span>
                 </label>
                 <div class="edge-domain-actions">
                     <LmsButton Label="@(isSettingUpRelay ? "Setting up..." : "Setup Relay")"

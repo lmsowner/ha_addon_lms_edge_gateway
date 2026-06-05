@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.44
+
+- Reworks Domain Services so managed services for the selected template appear before the add/edit form.
+- Replaces the large Domain Services template cards with a compact service dropdown.
+- Tidies the Setup Relay card copy so configured relay entries are clearer.
+
 ## 0.1.43
 
 - Adds a trusted local public route upstream health-test API for companion add-ons.

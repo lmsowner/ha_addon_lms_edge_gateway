@@ -41,17 +41,23 @@
         {
             @if (!IsEditingService)
             {
-                <div class="domain-template-grid">
-                    @foreach (var template in templates)
-                    {
-                        <button class="domain-template-card @(selectedTemplate == template.Kind ? "active" : string.Empty)"
-                                type="button"
-                                @onclick="@(() => SelectTemplate(template))">
-                            <strong>@template.Name</strong>
-                            <span>@template.Description</span>
-                        </button>
-                    }
-                </div>
+                <section class="surface-subcard domain-service-selector">
+                    <label class="ui-field">
+                        <span class="ui-field-label">Service</span>
+                        <select value="@selectedTemplate" @onchange="SelectTemplateFromInput">
+                            @foreach (var template in templates)
+                            {
+                                <option value="@template.Kind">@template.Name</option>
+                            }
+                        </select>
+                        <span class="ui-field-helper">@SelectedTemplateDefinition?.Description</span>
+                    </label>
+                </section>
+            }
+
+            @if (!IsEditingService && SelectedTemplateServices.Count > 0)
+            {
+                @RenderServiceList(SelectedTemplateServices, showEmptyMessage: false)
             }
 
             <section class="surface-subcard domain-editor">
@@ -210,112 +216,10 @@
                 </div>
             </section>
 
-            <section class="surface-subcard domain-service-list">
-                <div class="table-header">
-                    <div>
-                        <p class="eyebrow">Managed Services</p>
-                        <h2>@configuration.Services.Count service@(configuration.Services.Count == 1 ? string.Empty : "s")</h2>
-                        <p class="meta-text">Routes are generated before normal app routes so public .well-known paths bypass LMS auth by default.</p>
-                    </div>
-                </div>
-
-                @if (configuration.Services.Count == 0)
-                {
-                    <p class="meta-text">No .well-known services have been added yet.</p>
-                }
-                else
-                {
-                    <div class="domain-service-cards">
-                        @foreach (var service in configuration.Services.OrderBy(item => item.Domain).ThenBy(item => item.RelativePath))
-                        {
-                            <article class="surface-subcard domain-service-card">
-                                <div class="edge-route-card-header">
-                                    <div class="edge-route-title">
-                                        <h3>@service.DisplayName</h3>
-                                        <LmsStatusPill Text="@(service.Enabled ? "Enabled" : "Disabled")" Tone="@(service.Enabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
-                                        <LmsStatusPill Text="@BuildVerificationLabel(service)" Tone="@BuildVerificationTone(service)" />
-                                        @if (service.RequiresAuth)
-                                        {
-                                            <LmsStatusPill Text="Auth required" Tone="@LmsStatusTone.Warning" />
-                                        }
-                                        else
-                                        {
-                                            <LmsStatusPill Text="Public" Tone="@LmsStatusTone.Ready" />
-                                        }
-                                    </div>
-                                    <div class="edge-route-actions">
-                                        <LmsButton Label="Copy URL" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" />
-                                        <LmsButton Label="Edit"
-                                                   Icon="edit"
-                                                   Disabled="@isServiceActionBusy"
-                                                   OnClick="@(() => EditService(service))" />
-                                        <LmsButton Label="@(IsBusy(service.Id, "verify") ? "Verifying..." : "Verify")"
-                                                   Icon="test"
-                                                   Busy="@IsBusy(service.Id, "verify")"
-                                                   Disabled="@isServiceActionBusy"
-                                                   OnClick="@(() => VerifyAsync(service.Id))" />
-                                        <LmsButton Label="@(IsBusy(service.Id, "publish") ? "Publishing..." : "Rebuild")"
-                                                   Icon="refresh"
-                                                   Busy="@IsBusy(service.Id, "publish")"
-                                                   Disabled="@isServiceActionBusy"
-                                                   OnClick="@(() => PublishAsync(service.Id))" />
-                                        <LmsButton Label="@(service.Enabled ? "Disable" : "Enable")"
-                                                   Icon="@(service.Enabled ? "disable" : "publish")"
-                                                   Danger="@service.Enabled"
-                                                   Primary="@(!service.Enabled)"
-                                                   Disabled="@isServiceActionBusy"
-                                                   OnClick="@(() => ToggleAsync(service.Id, service.Enabled))" />
-                                        <LmsButton Label="Delete"
-                                                   Icon="delete"
-                                                   Danger="true"
-                                                   Disabled="@isServiceActionBusy"
-                                                   OnClick="@(() => DeleteAsync(service.Id))" />
-                                    </div>
-                                </div>
-
-                                <div class="domain-service-facts">
-                                    <div><span>Domain</span><strong>@service.Domain</strong></div>
-                                    <div><span>Path</span><code>@service.RelativePath</code></div>
-                                    <div><span>Content-Type</span><code>@service.ContentType</code></div>
-                                    <div><span>Relay</span><strong>@BuildRelayStatus(service.Domain)</strong></div>
-                                    <div><span>Last verified</span><strong>@FormatDate(service.LastVerifiedUtc)</strong></div>
-                                </div>
-
-                                <div class="domain-preview">
-                                    <span>Public URL</span>
-                                    <a href="@service.PublicUrl" target="_blank" rel="noopener noreferrer">@service.PublicUrl</a>
-                                </div>
-
-                                @if (service.Template.Equals(WellKnownTemplateKind.TeslaFleet.ToString(), StringComparison.OrdinalIgnoreCase))
-                                {
-                                    <div class="domain-tesla-values">
-                                        <strong>Tesla Developer values</strong>
-                                        <div><span>Origin domain</span><code>@service.Domain</code><LmsButton Label="Copy" Icon="copy" OnClick="@(() => CopyAsync(service.Domain))" /></div>
-                                        <div><span>Public key URL</span><code>@service.PublicUrl</code><LmsButton Label="Copy" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" /></div>
-                                        <p class="meta-text">Use the same origin domain in the Tesla Developer app and the Home Assistant Tesla Fleet integration.</p>
-                                    </div>
-                                }
-
-                                <details class="edge-advanced-settings">
-                                    <summary>
-                                        <span>Content preview and diagnostics</span>
-                                        <small>Generated file, public storage path, and last verification result</small>
-                                    </summary>
-                                    <div class="edge-advanced-settings-body">
-                                        <div class="domain-service-facts">
-                                            <div><span>Public file</span><code>@service.PublicFilePath</code></div>
-                                            <div><span>Secret file</span><code>@(string.IsNullOrWhiteSpace(service.SecretFilePath) ? "None" : service.SecretFilePath)</code></div>
-                                            <div><span>Caddy route</span><strong>@(service.Enabled ? "Generated on rebuild" : "Not generated while disabled")</strong></div>
-                                            <div><span>Verification</span><strong>@(string.IsNullOrWhiteSpace(service.LastVerificationMessage) ? "Not verified yet." : service.LastVerificationMessage)</strong></div>
-                                        </div>
-                                        <pre class="domain-content-preview">@TruncateBody(service.Body)</pre>
-                                    </div>
-                                </details>
-                            </article>
-                        }
-                    </div>
-                }
-            </section>
+            @if (IsEditingService || SelectedTemplateServices.Count == 0)
+            {
+                @RenderServiceList(SelectedTemplateServices, showEmptyMessage: true)
+            }
         }
     </section>
 </div>
@@ -359,6 +263,16 @@
             .ToArray() ?? [];
 
     private bool IsEditingService => editingServiceId.HasValue;
+
+    private WellKnownTemplateDefinition? SelectedTemplateDefinition =>
+        templates.FirstOrDefault(template => template.Kind == selectedTemplate);
+
+    private IReadOnlyList<WellKnownService> SelectedTemplateServices =>
+        configuration?.Services
+            .Where(service => ResolveTemplateKind(service) == selectedTemplate)
+            .OrderBy(service => service.Domain, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(service => service.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -416,6 +330,132 @@
                 : $"https://{originDomain}/.well-known/security.txt";
         }
     }
+
+    private void SelectTemplateFromInput(ChangeEventArgs args)
+    {
+        var value = args.Value?.ToString();
+        if (!Enum.TryParse<WellKnownTemplateKind>(value, ignoreCase: true, out var templateKind))
+        {
+            return;
+        }
+
+        var template = templates.FirstOrDefault(template => template.Kind == templateKind);
+        if (template is not null)
+        {
+            SelectTemplate(template);
+        }
+    }
+
+    private RenderFragment RenderServiceList(IReadOnlyList<WellKnownService> services, bool showEmptyMessage) =>
+        @<section class="surface-subcard domain-service-list">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Managed Services</p>
+                    <h2>@BuildManagedServicesTitle(services.Count)</h2>
+                    <p class="meta-text">Routes are generated before normal app routes so public .well-known paths bypass LMS auth by default.</p>
+                </div>
+            </div>
+
+            @if (services.Count == 0)
+            {
+                @if (showEmptyMessage)
+                {
+                    <p class="meta-text">No @SelectedTemplateDefinition?.Name services have been added yet.</p>
+                }
+            }
+            else
+            {
+                <div class="domain-service-cards">
+                    @foreach (var service in services)
+                    {
+                        <article class="surface-subcard domain-service-card">
+                            <div class="edge-route-card-header">
+                                <div class="edge-route-title">
+                                    <h3>@service.DisplayName</h3>
+                                    <LmsStatusPill Text="@(service.Enabled ? "Enabled" : "Disabled")" Tone="@(service.Enabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+                                    <LmsStatusPill Text="@BuildVerificationLabel(service)" Tone="@BuildVerificationTone(service)" />
+                                    @if (service.RequiresAuth)
+                                    {
+                                        <LmsStatusPill Text="Auth required" Tone="@LmsStatusTone.Warning" />
+                                    }
+                                    else
+                                    {
+                                        <LmsStatusPill Text="Public" Tone="@LmsStatusTone.Ready" />
+                                    }
+                                </div>
+                                <div class="edge-route-actions">
+                                    <LmsButton Label="Copy URL" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" />
+                                    <LmsButton Label="Edit"
+                                               Icon="edit"
+                                               Disabled="@isServiceActionBusy"
+                                               OnClick="@(() => EditService(service))" />
+                                    <LmsButton Label="@(IsBusy(service.Id, "verify") ? "Verifying..." : "Verify")"
+                                               Icon="test"
+                                               Busy="@IsBusy(service.Id, "verify")"
+                                               Disabled="@isServiceActionBusy"
+                                               OnClick="@(() => VerifyAsync(service.Id))" />
+                                    <LmsButton Label="@(IsBusy(service.Id, "publish") ? "Publishing..." : "Rebuild")"
+                                               Icon="refresh"
+                                               Busy="@IsBusy(service.Id, "publish")"
+                                               Disabled="@isServiceActionBusy"
+                                               OnClick="@(() => PublishAsync(service.Id))" />
+                                    <LmsButton Label="@(service.Enabled ? "Disable" : "Enable")"
+                                               Icon="@(service.Enabled ? "disable" : "publish")"
+                                               Danger="@service.Enabled"
+                                               Primary="@(!service.Enabled)"
+                                               Disabled="@isServiceActionBusy"
+                                               OnClick="@(() => ToggleAsync(service.Id, service.Enabled))" />
+                                    <LmsButton Label="Delete"
+                                               Icon="delete"
+                                               Danger="true"
+                                               Disabled="@isServiceActionBusy"
+                                               OnClick="@(() => DeleteAsync(service.Id))" />
+                                </div>
+                            </div>
+
+                            <div class="domain-service-facts">
+                                <div><span>Domain</span><strong>@service.Domain</strong></div>
+                                <div><span>Path</span><code>@service.RelativePath</code></div>
+                                <div><span>Content-Type</span><code>@service.ContentType</code></div>
+                                <div><span>Relay</span><strong>@BuildRelayStatus(service.Domain)</strong></div>
+                                <div><span>Last verified</span><strong>@FormatDate(service.LastVerifiedUtc)</strong></div>
+                            </div>
+
+                            <div class="domain-preview">
+                                <span>Public URL</span>
+                                <a href="@service.PublicUrl" target="_blank" rel="noopener noreferrer">@service.PublicUrl</a>
+                            </div>
+
+                            @if (service.Template.Equals(WellKnownTemplateKind.TeslaFleet.ToString(), StringComparison.OrdinalIgnoreCase))
+                            {
+                                <div class="domain-tesla-values">
+                                    <strong>Tesla Developer values</strong>
+                                    <div><span>Origin domain</span><code>@service.Domain</code><LmsButton Label="Copy" Icon="copy" OnClick="@(() => CopyAsync(service.Domain))" /></div>
+                                    <div><span>Public key URL</span><code>@service.PublicUrl</code><LmsButton Label="Copy" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" /></div>
+                                    <p class="meta-text">Use the same origin domain in the Tesla Developer app and the Home Assistant Tesla Fleet integration.</p>
+                                </div>
+                            }
+
+                            <details class="edge-advanced-settings">
+                                <summary>
+                                    <span>Content preview and diagnostics</span>
+                                    <small>Generated file, public storage path, and last verification result</small>
+                                </summary>
+                                <div class="edge-advanced-settings-body">
+                                    <div class="domain-service-facts">
+                                        <div><span>Public file</span><code>@service.PublicFilePath</code></div>
+                                        <div><span>Secret file</span><code>@(string.IsNullOrWhiteSpace(service.SecretFilePath) ? "None" : service.SecretFilePath)</code></div>
+                                        <div><span>Caddy route</span><strong>@(service.Enabled ? "Generated on rebuild" : "Not generated while disabled")</strong></div>
+                                        <div><span>Verification</span><strong>@(string.IsNullOrWhiteSpace(service.LastVerificationMessage) ? "Not verified yet." : service.LastVerificationMessage)</strong></div>
+                                    </div>
+                                    <pre class="domain-content-preview">@TruncateBody(service.Body)</pre>
+                                </div>
+                            </details>
+                        </article>
+                    }
+                </div>
+            }
+        </section>;
 
     private async Task SaveEditorAsync()
     {
@@ -671,6 +711,12 @@
             : selectedTemplate == WellKnownTemplateKind.TeslaFleet
             ? "Generate command-signing keys and publish the Tesla public key at the required app-specific path."
             : "Review the generated path, content type, body, and public URL before publishing.";
+
+    private string BuildManagedServicesTitle(int count)
+    {
+        var templateName = SelectedTemplateDefinition?.Name ?? "Selected service";
+        return $"{templateName}: {count} managed service{(count == 1 ? string.Empty : "s")}";
+    }
 
     private string BuildSaveButtonLabel()
     {
