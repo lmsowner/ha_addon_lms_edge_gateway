@@ -3,6 +3,7 @@
 @using System.Net
 @inject IEdgeGatewayStatusService StatusService
 @inject IEdgeGatewayRelayProvisioningService RelayProvisioningService
+@inject IEdgeGatewaySecurityService SecurityService
 
 <PageTitle>Published Apps | Linux Made Sane - Edge Gateway</PageTitle>
 
@@ -244,16 +245,18 @@
                                     <strong>Email approval gates this route by source IP</strong>
                                     <span>@TemporaryIpApprovalWarningText</span>
                                 </div>
-                                <label class="ui-field">
-                                    <span class="ui-field-label">Approval recipients</span>
-                                    <input @bind="editTemporaryIpApprovalRecipients" placeholder="you@example.com, admin@example.com" />
-                                    <span class="ui-field-helper">Optional. Blank sends to route allowed users, then enabled LMS users.</span>
-                                </label>
-                                <label class="ui-field">
-                                    <span class="ui-field-label">Allowed countries</span>
-                                    <input @bind="editTemporaryIpApprovalAllowedCountryCodes" placeholder="GB, US" />
-                                    <span class="ui-field-helper">Optional Cloudflare country allow-list. Blank allows any country.</span>
-                                </label>
+                                <LmsMultiSelect Label="Approval recipients"
+                                                HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
+                                                Placeholder="Choose LMS users"
+                                                EmptyText="No enabled LMS users match."
+                                                Items="@approvalRecipientOptions"
+                                                @bind-Value="editTemporaryIpApprovalRecipients" />
+                                <LmsMultiSelect Label="Allowed countries"
+                                                HelperText="Optional Cloudflare country allow-list. Blank allows any country."
+                                                Placeholder="Search countries"
+                                                EmptyText="No countries match."
+                                                Items="@CountryOptions"
+                                                @bind-Value="editTemporaryIpApprovalAllowedCountryCodes" />
                             }
                             @if (IsPassThroughAccessPolicy(editAppAccessPolicy))
                             {
@@ -345,9 +348,13 @@
     private bool editAppUsePublicHostHeader;
     private bool editAppStripForwardedFor = true;
     private bool editAppSkipUpstreamTlsVerification;
+    private IReadOnlyList<LmsMultiSelectOption> approvalRecipientOptions = [];
     private readonly HashSet<string> collapsedRouteDomains = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, string> routeTestLabels = [];
     private readonly Dictionary<Guid, LmsStatusTone> routeTestTones = [];
+
+    private static IReadOnlyList<LmsMultiSelectOption> CountryOptions =>
+        TemporaryIpApprovalSelectionOptions.CountryOptions;
 
     private IReadOnlyList<RouteDomainGroup> RouteDomainGroups =>
         status?.Configuration.Applications
@@ -361,6 +368,8 @@
     protected override async Task OnInitializedAsync()
     {
         status = await StatusService.GetStatusAsync();
+        var securityPage = await SecurityService.GetPageAsync();
+        approvalRecipientOptions = TemporaryIpApprovalSelectionOptions.BuildUserOptions(securityPage.Users);
     }
 
     private bool IsRouteDomainExpanded(string domainName) =>

@@ -1,0 +1,153 @@
+@namespace LMS.Shared.Components
+
+<div class="ui-field lms-multi-select-field">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <span class="ui-field-label">@Label</span>
+    }
+    <div class="lms-multi-select @(isOpen ? "open" : string.Empty)">
+        <div class="lms-multi-select-control">
+            @foreach (var selected in SelectedOptions)
+            {
+                <span class="lms-multi-select-chip">
+                    <span>@selected.Label</span>
+                    <button type="button" aria-label="Remove @selected.Label" @onclick="@(() => RemoveValue(selected.Value))">x</button>
+                </span>
+            }
+            <input value="@searchText"
+                   placeholder="@BuildPlaceholder()"
+                   @onfocus="Open"
+                   @oninput="OnSearchChanged" />
+            <button class="lms-multi-select-trigger"
+                    type="button"
+                    aria-label="Toggle @Label"
+                    aria-expanded="@isOpen"
+                    @onclick="ToggleOpen">v</button>
+        </div>
+        @if (isOpen)
+        {
+            <div class="lms-multi-select-options" role="listbox" aria-label="@Label">
+                @if (FilteredOptions.Count == 0)
+                {
+                    <span class="lms-multi-select-empty">@EmptyText</span>
+                }
+                else
+                {
+                    @foreach (var option in FilteredOptions)
+                    {
+                        var selected = IsSelected(option.Value);
+                        <button class="lms-multi-select-option @(selected ? "selected" : string.Empty)"
+                                type="button"
+                                role="option"
+                                aria-selected="@selected"
+                                @onclick="@(() => ToggleValue(option.Value))">
+                            <span>@option.Label</span>
+                            @if (selected)
+                            {
+                                <strong>Selected</strong>
+                            }
+                        </button>
+                    }
+                }
+            </div>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(HelperText))
+    {
+        <span class="ui-field-helper">@HelperText</span>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string HelperText { get; set; } = string.Empty;
+    [Parameter] public string Placeholder { get; set; } = "Search...";
+    [Parameter] public string EmptyText { get; set; } = "No matches.";
+    [Parameter] public IReadOnlyList<LmsMultiSelectOption> Items { get; set; } = [];
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    private bool isOpen;
+    private string searchText = string.Empty;
+
+    private IReadOnlyList<string> SelectedValues =>
+        SplitValues(Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private IReadOnlyList<LmsMultiSelectOption> SelectedOptions =>
+        SelectedValues
+            .Select(value => FindOption(value) ?? new LmsMultiSelectOption(value, value, value))
+            .ToArray();
+
+    private IReadOnlyList<LmsMultiSelectOption> FilteredOptions
+    {
+        get
+        {
+            var query = searchText.Trim();
+            IEnumerable<LmsMultiSelectOption> options = Items
+                .OrderBy(item => item.Label, StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                options = options.Where(item =>
+                    item.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    item.Value.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    item.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return options.Take(80).ToArray();
+        }
+    }
+
+    private void Open() => isOpen = true;
+
+    private void ToggleOpen() => isOpen = !isOpen;
+
+    private void OnSearchChanged(ChangeEventArgs args)
+    {
+        searchText = args.Value?.ToString() ?? string.Empty;
+        isOpen = true;
+    }
+
+    private async Task ToggleValue(string value)
+    {
+        var selected = SelectedValues.ToList();
+        var existingIndex = selected.FindIndex(item => item.Equals(value, StringComparison.OrdinalIgnoreCase));
+        if (existingIndex >= 0)
+        {
+            selected.RemoveAt(existingIndex);
+        }
+        else
+        {
+            selected.Add(value);
+        }
+
+        searchText = string.Empty;
+        await ValueChanged.InvokeAsync(JoinValues(selected));
+    }
+
+    private async Task RemoveValue(string value)
+    {
+        var selected = SelectedValues
+            .Where(item => !item.Equals(value, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        await ValueChanged.InvokeAsync(JoinValues(selected));
+    }
+
+    private bool IsSelected(string value) =>
+        SelectedValues.Any(item => item.Equals(value, StringComparison.OrdinalIgnoreCase));
+
+    private LmsMultiSelectOption? FindOption(string value) =>
+        Items.FirstOrDefault(item => item.Value.Equals(value, StringComparison.OrdinalIgnoreCase));
+
+    private string BuildPlaceholder() =>
+        SelectedValues.Count == 0 ? Placeholder : string.Empty;
+
+    private static IReadOnlyList<string> SplitValues(string? value) =>
+        (value ?? string.Empty)
+            .Split([',', '\r', '\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string JoinValues(IEnumerable<string> values) =>
+        string.Join(", ", values.Where(value => !string.IsNullOrWhiteSpace(value)));
+}

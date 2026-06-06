@@ -1384,6 +1384,165 @@ textarea {
     align-self: end;
 }
 
+.edge-route-main-grid > .ui-field > .lms-multi-select,
+.edge-form-grid-target > .ui-field > .lms-multi-select {
+    align-self: end;
+}
+
+.lms-multi-select {
+    min-width: 0;
+    position: relative;
+}
+
+.lms-multi-select-control {
+    align-items: center;
+    background: var(--field-background);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-button);
+    box-shadow: var(--shadow-control);
+    display: flex;
+    gap: 0.36rem;
+    min-height: 2.25rem;
+    min-width: 0;
+    padding: 0.18rem 0.22rem 0.18rem 0.42rem;
+    transition:
+        border-color 140ms ease,
+        box-shadow 140ms ease,
+        background 140ms ease;
+}
+
+.lms-multi-select.open .lms-multi-select-control,
+.lms-multi-select-control:focus-within {
+    background: var(--control-background-hover);
+    border-color: var(--color-line-strong);
+    box-shadow: var(--shadow-focus);
+}
+
+.lms-multi-select-chip {
+    align-items: center;
+    background: rgba(var(--color-accent-rgb), 0.12);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.24);
+    border-radius: var(--radius-pill);
+    color: var(--color-text);
+    display: inline-flex;
+    flex: 0 1 auto;
+    font-size: 0.73rem;
+    font-weight: 800;
+    gap: 0.28rem;
+    line-height: 1.2;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.2rem 0.26rem 0.2rem 0.48rem;
+}
+
+.lms-multi-select-chip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lms-multi-select-chip button,
+.lms-multi-select-trigger {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-pill);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    flex: 0 0 auto;
+    justify-content: center;
+}
+
+.lms-multi-select-chip button {
+    height: 1.08rem;
+    width: 1.08rem;
+}
+
+.lms-multi-select-trigger {
+    height: 1.84rem;
+    margin-left: auto;
+    width: 1.84rem;
+}
+
+.lms-multi-select-chip button:hover,
+.lms-multi-select-trigger:hover {
+    background: var(--color-neutral-soft);
+    color: var(--color-text);
+}
+
+.lms-multi-select-control input {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    color: var(--color-text);
+    flex: 1 1 7rem;
+    min-width: 5rem;
+    outline: 0;
+    padding: 0.38rem 0.12rem;
+}
+
+.lms-multi-select-control input::placeholder {
+    color: var(--color-text-muted);
+}
+
+.lms-multi-select-options {
+    background: var(--surface-elevated);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    display: grid;
+    gap: 0.12rem;
+    left: 0;
+    margin-top: 0.28rem;
+    max-height: min(18rem, 48vh);
+    min-width: min(22rem, 92vw);
+    overflow: auto;
+    padding: 0.32rem;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 40;
+}
+
+.lms-multi-select-option {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    cursor: pointer;
+    display: flex;
+    font-size: 0.82rem;
+    gap: 0.7rem;
+    justify-content: space-between;
+    line-height: 1.25;
+    min-height: 2.1rem;
+    padding: 0.5rem 0.58rem;
+    text-align: left;
+    width: 100%;
+}
+
+.lms-multi-select-option:hover,
+.lms-multi-select-option.selected {
+    background: rgba(var(--color-accent-rgb), 0.12);
+}
+
+.lms-multi-select-option strong {
+    color: var(--color-accent);
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.lms-multi-select-empty {
+    color: var(--color-text-muted);
+    font-size: 0.78rem;
+    padding: 0.55rem 0.62rem;
+}
+
 .edge-form-grid-two {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }

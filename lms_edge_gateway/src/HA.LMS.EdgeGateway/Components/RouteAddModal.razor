@@ -4,6 +4,7 @@
 @using System.Text
 @inject IEdgeGatewayRelayProvisioningService RelayProvisioningService
 @inject ILocalHttpServiceDiscoveryService HttpServiceDiscovery
+@inject IEdgeGatewaySecurityService SecurityService
 
 @if (Relay is not null)
 {
@@ -60,16 +61,18 @@
                             <span>@TemporaryIpApprovalWarningText</span>
                         </div>
                         <div class="edge-form-grid edge-route-main-grid">
-                            <label class="ui-field">
-                                <span class="ui-field-label">Approval recipients</span>
-                                <input @bind="addTemporaryIpApprovalRecipients" placeholder="you@example.com, admin@example.com" />
-                                <span class="ui-field-helper">Optional. Blank sends to route allowed users, then enabled LMS users.</span>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Allowed countries</span>
-                                <input @bind="addTemporaryIpApprovalAllowedCountryCodes" placeholder="GB, US" />
-                                <span class="ui-field-helper">Optional Cloudflare country allow-list. Blank allows any country.</span>
-                            </label>
+                            <LmsMultiSelect Label="Approval recipients"
+                                            HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
+                                            Placeholder="Choose LMS users"
+                                            EmptyText="No enabled LMS users match."
+                                            Items="@approvalRecipientOptions"
+                                            @bind-Value="addTemporaryIpApprovalRecipients" />
+                            <LmsMultiSelect Label="Allowed countries"
+                                            HelperText="Optional Cloudflare country allow-list. Blank allows any country."
+                                            Placeholder="Search countries"
+                                            EmptyText="No countries match."
+                                            Items="@CountryOptions"
+                                            @bind-Value="addTemporaryIpApprovalAllowedCountryCodes" />
                         </div>
                     }
 
@@ -281,6 +284,7 @@
     private string routeSaveMessage = string.Empty;
     private bool routeSaveIsError;
     private IReadOnlyList<LocalHttpServiceEndpoint> httpServiceSuggestions = [];
+    private IReadOnlyList<LmsMultiSelectOption> approvalRecipientOptions = [];
     private string? httpServiceDiscoveryMessage;
     private string httpServiceDiscoveryStatus = string.Empty;
     private int httpServiceScanFoundCount;
@@ -288,6 +292,15 @@
     private int httpServiceScanTotalCount;
     private CancellationTokenSource? httpServiceScanCancellation;
     private CancellationTokenSource? httpServiceValidationCancellation;
+
+    private static IReadOnlyList<LmsMultiSelectOption> CountryOptions =>
+        TemporaryIpApprovalSelectionOptions.CountryOptions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var page = await SecurityService.GetPageAsync();
+        approvalRecipientOptions = TemporaryIpApprovalSelectionOptions.BuildUserOptions(page.Users);
+    }
 
     protected override void OnParametersSet()
     {

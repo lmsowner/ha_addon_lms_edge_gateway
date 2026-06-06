@@ -50,13 +50,36 @@ public sealed class TemporaryIpApprovalTests
             TemporaryIpApprovalRecipients = "approver@example.com, other@example.com"
         };
         var emailDelivery = new RecordingEmailDeliveryService();
-        var service = CreateService(route, new InMemoryTemporaryIpApprovalStore(), emailDelivery);
+        var service = CreateService(
+            route,
+            new InMemoryTemporaryIpApprovalStore(),
+            emailDelivery,
+            "owner@example.com",
+            "approver@example.com",
+            "other@example.com");
 
         var result = await service.EvaluateAsync(route, Context(countryCode: "GB"));
 
         Assert.False(result.IsAllowed);
         Assert.True(result.EmailSucceeded);
         Assert.Equal(["approver@example.com", "other@example.com"], emailDelivery.Messages.Select(message => message.ToEmail).Order());
+    }
+
+    [Fact]
+    public async Task Temporary_ip_approval_ignores_explicit_recipients_that_are_not_configured_users()
+    {
+        var route = Route() with
+        {
+            TemporaryIpApprovalRecipients = "owner@example.com, stranger@example.com"
+        };
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, new InMemoryTemporaryIpApprovalStore(), emailDelivery);
+
+        var result = await service.EvaluateAsync(route, Context(countryCode: "GB"));
+
+        Assert.False(result.IsAllowed);
+        Assert.True(result.EmailSucceeded);
+        Assert.Equal(["owner@example.com"], emailDelivery.Messages.Select(message => message.ToEmail));
     }
 
     [Fact]
@@ -122,11 +145,12 @@ public sealed class TemporaryIpApprovalTests
     private static EdgeGatewayTemporaryIpApprovalService CreateService(
         PublishedApplicationDefinition route,
         InMemoryTemporaryIpApprovalStore approvalStore,
-        RecordingEmailDeliveryService emailDelivery) =>
+        RecordingEmailDeliveryService emailDelivery,
+        params string[] configuredUserEmails) =>
         new(
             approvalStore,
             new InMemoryConfigurationStore(Configuration(route)),
-            new InMemorySecurityStore(SecurityConfiguration("owner@example.com")),
+            new InMemorySecurityStore(SecurityConfiguration(configuredUserEmails)),
             emailDelivery,
             Options.Create(new EdgeGatewayCoreOptions
             {
@@ -145,14 +169,16 @@ public sealed class TemporaryIpApprovalTests
             new CloudflareTunnelState("tunnel", "account", "tunnel-id", true, DateTimeOffset.UtcNow, "account-id"),
             DateTimeOffset.UtcNow);
 
-    private static EdgeGatewaySecurityConfiguration SecurityConfiguration(string email)
+    private static EdgeGatewaySecurityConfiguration SecurityConfiguration(params string[] emails)
     {
         var now = DateTimeOffset.UtcNow;
+        var configuredEmails = emails.Length == 0
+            ? ["owner@example.com"]
+            : emails;
         return EdgeGatewaySecurityConfiguration.Empty with
         {
-            Users =
-            [
-                new EdgeGatewaySecurityUser(
+            Users = configuredEmails
+                .Select(email => new EdgeGatewaySecurityUser(
                     Guid.NewGuid(),
                     email,
                     email,
@@ -162,8 +188,8 @@ public sealed class TemporaryIpApprovalTests
                     now,
                     now,
                     null,
-                    now)
-            ]
+                    now))
+                .ToArray()
         };
     }
 

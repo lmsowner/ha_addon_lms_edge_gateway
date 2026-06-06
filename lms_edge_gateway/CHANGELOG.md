@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.50
+
+- Replaces temporary IP approval free-text recipient and country fields with reusable searchable multi-select controls.
+- Limits temporary IP approval recipients to enabled configured LMS users.
+- Shows countries by name and code so Cloudflare country allow-lists are easier to configure.
+
 ## 0.1.49
 
 - Adds per-route Email approve IP recipients so approval emails can go to explicit service owners.

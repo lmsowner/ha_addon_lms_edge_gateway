@@ -306,8 +306,10 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             .Select(user => user.Email)
             .Where(IsValidEmail)
             .ToArray();
+        var configuredUserSet = configuredUsers.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var explicitRecipients = SplitRouteList(route.TemporaryIpApprovalRecipients)
             .Where(IsValidEmail)
+            .Where(configuredUserSet.Contains)
             .ToArray();
         if (!string.IsNullOrWhiteSpace(route.TemporaryIpApprovalRecipients))
         {
@@ -319,6 +321,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
 
         var routeUsers = SplitRouteList(route.AllowedUsers)
             .Where(IsValidEmail)
+            .Where(configuredUserSet.Contains)
             .ToArray();
 
         var recipients = routeUsers.Length > 0
