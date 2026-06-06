@@ -1,5 +1,5 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
-ARG BUILD_VERSION=0.2.38
+ARG BUILD_VERSION=0.2.39
 ARG BUILD_ARCH=amd64
 
 FROM golang:1.23-alpine AS vehicle-command
@@ -32,7 +32,7 @@ RUN \
       /p:UseAppHost=true
 
 FROM ${BUILD_FROM}
-ARG BUILD_VERSION=0.2.38
+ARG BUILD_VERSION=0.2.39
 ARG BUILD_ARCH=amd64
 
 LABEL \
@@ -47,6 +47,7 @@ ENV \
   ASPNETCORE_ENVIRONMENT=Production \
   ASPNETCORE_URLS=http://0.0.0.0:5055 \
   DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+  TeslaFleetHelper__AddonVersion=${BUILD_VERSION} \
   TeslaFleetHelper__DataRoot=/data/lms-tesla-fleet-helper \
   TeslaFleetHelper__OptionsJsonPath=/data/options.json
 

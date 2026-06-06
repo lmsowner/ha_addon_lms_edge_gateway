@@ -7,7 +7,7 @@
             <img class="lms-product-logo" src="images/lms-logo-192.png" alt="" />
             <span class="lms-product-copy">
                 <strong>Linux Made Sane - Edge Gateway</strong>
-                <small>Home Assistant Add-on</small>
+                <small>Home Assistant Add-on <span class="lms-product-version">v@ProductVersion</span></small>
             </span>
         </a>
         <div class="lms-product-actions">
@@ -40,6 +40,7 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<NavigationItem> Items { get; set; } = [];
     [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string ProductVersion { get; set; } = "0.1.47";
 
     private static string BuildHref(string href)
     {

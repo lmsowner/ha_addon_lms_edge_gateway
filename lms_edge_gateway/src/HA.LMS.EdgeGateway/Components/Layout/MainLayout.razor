@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject IConfiguration Configuration
 @inject ICloudflareApiTokenStore ApiTokenStore
 @inject IEdgeGatewayStatusService StatusService
 
@@ -19,7 +20,7 @@ else if (!tokenState.HasToken)
 }
 else
 {
-    <LmsShell Items="@Items">
+    <LmsShell Items="@Items" ProductVersion="@ProductVersion">
         @Body
     </LmsShell>
 }
@@ -33,6 +34,7 @@ else
 @code {
     private CloudflareApiTokenState? tokenState;
     private EdgeGatewayRuntimeStatus? status;
+    private const string FallbackProductVersion = "0.1.47";
 
     protected override async Task OnInitializedAsync()
     {
@@ -50,4 +52,9 @@ else
         new("Diagnostics", "/diagnostics", string.Empty, "Route checks and access log"),
         new("About", "/about", string.Empty, "Linux Made Sane product details")
     ];
+
+    private string ProductVersion =>
+        string.IsNullOrWhiteSpace(Configuration["EdgeGateway:AddonVersion"])
+            ? FallbackProductVersion
+            : Configuration["EdgeGateway:AddonVersion"]!.Trim();
 }

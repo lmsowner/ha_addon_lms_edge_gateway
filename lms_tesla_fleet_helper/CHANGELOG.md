@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.39
+
+- Shows the installed Tesla Fleet Helper add-on version discreetly in the header.
+
 ## 0.2.38
 
 - Restores compact single-line Cars and Powerwalls tabs.

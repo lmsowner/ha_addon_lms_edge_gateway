@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.47
+
+- Shows the installed Edge Gateway add-on version discreetly in the product header.
+
 ## 0.1.46
 
 - Makes the Edge Gateway product header a taller square-edged banner so it aligns more naturally with the Home Assistant sidebar title.

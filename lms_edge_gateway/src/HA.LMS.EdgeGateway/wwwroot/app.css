@@ -296,6 +296,11 @@ textarea {
     line-height: 1.15;
 }
 
+.lms-product-version {
+    opacity: 0.72;
+    font-weight: 800;
+}
+
 .lms-product-actions {
     align-items: center;
     display: inline-flex;

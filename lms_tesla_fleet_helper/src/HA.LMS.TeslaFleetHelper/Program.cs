@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 const string ProductName = "LMS Tesla Fleet Helper";
+const string ProductVersionFallback = "0.2.39";
 const string TeslaPublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-key.pem";
 const string TeslaPublicKeyContentType = "application/x-pem-file";
 const string TeslaAuthorizeEndpoint = "https://auth.tesla.com/oauth2/v3/authorize";
@@ -16,6 +17,7 @@ const string EnergyDeviceDataScope = "energy_device_data";
 const string EnergyCommandsScope = "energy_cmds";
 
 var builder = WebApplication.CreateBuilder(args);
+var productVersion = ResolveProductVersion(builder.Configuration);
 
 builder.WebHost.UseUrls(
     Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
@@ -75,7 +77,7 @@ builder.Services.AddHttpClient<TeslaFleetVehicleCommandClient>(client =>
 
 var app = builder.Build();
 
-app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = ProductName }));
+app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = ProductName, version = productVersion }));
 
 app.MapGet("/", async (
     TeslaFleetStore store,
@@ -84,7 +86,7 @@ app.MapGet("/", async (
 {
     var state = ApplyCompanionDefaults(await store.LoadAsync(cancellationToken));
     var companion = await companionResolver.ResolveAsync(cancellationToken);
-    return Results.Content(RenderPage(state, companion), "text/html; charset=utf-8");
+    return Results.Content(RenderPage(state, companion, productVersion), "text/html; charset=utf-8");
 });
 
 app.MapGet("/api/home-assistant/live", async (
@@ -1464,7 +1466,7 @@ static TeslaFleetState ApplyDirectVehicleCommandState(TeslaFleetState state, Tes
     };
 }
 
-static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? companion = null)
+static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? companion = null, string productVersion = ProductVersionFallback)
 {
     companion ??= EdgeGatewayCompanionStatus.Unknown();
     var hasKey = !string.IsNullOrWhiteSpace(state.PublicKeyPem) &&
@@ -1639,10 +1641,11 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 18px; }
     .header-actions { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 10px; }
     h1, h2, h3, p { margin-top: 0; }
-    h1 { font-size: 28px; margin-bottom: 8px; }
+    h1 { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px; font-size: 28px; margin-bottom: 8px; }
     h2 { font-size: 18px; margin-bottom: 10px; }
     h3 { font-size: 15px; margin-bottom: 8px; }
     .meta { color: var(--muted); line-height: 1.5; max-width: 820px; }
+    .product-version { color: var(--muted); font-size: 12px; font-weight: 850; opacity: .72; }
     .grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; align-items: start; }
     .cards {
       align-items: center;
@@ -2274,7 +2277,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
   <main>
     <header>
       <div>
-        <h1>{{ProductName}}</h1>
+        <h1><span>{{ProductName}}</span><span class="product-version">v{{H(productVersion)}}</span></h1>
         <p class="meta">Generate Tesla Fleet keys, publish the public key through LMS Edge Gateway, run Tesla OAuth through this helper, and keep Tesla-specific bridge state out of Edge Gateway.</p>
       </div>
       <div class="header-actions">
@@ -2822,6 +2825,14 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
 }
 
 static string H(string? value) => HtmlEncoder.Default.Encode(value ?? string.Empty);
+
+static string ResolveProductVersion(IConfiguration configuration)
+{
+    var configured = configuration["TeslaFleetHelper:AddonVersion"];
+    return string.IsNullOrWhiteSpace(configured)
+        ? ProductVersionFallback
+        : configured.Trim();
+}
 
 static TeslaFleetState ApplyCompanionDefaults(TeslaFleetState state) =>
     state with
