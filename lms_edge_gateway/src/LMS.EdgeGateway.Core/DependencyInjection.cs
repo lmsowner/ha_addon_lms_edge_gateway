@@ -9,6 +9,7 @@ public static class DependencyInjection
         services.AddSingleton<IProcessStatusProbe, ProcessStatusProbe>();
         services.AddSingleton<IEdgeGatewayConfigurationStore, JsonEdgeGatewayConfigurationStore>();
         services.AddSingleton<IEdgeGatewaySecurityStore, JsonEdgeGatewaySecurityStore>();
+        services.AddSingleton<IEdgeGatewayTemporaryIpApprovalStore, JsonEdgeGatewayTemporaryIpApprovalStore>();
         services.AddSingleton<IEdgeGatewaySecretProtector, EdgeGatewaySecretProtector>();
         services.AddSingleton<ICloudflareApiTokenStore, JsonCloudflareApiTokenStore>();
         services.AddSingleton<IWellKnownServiceStore, JsonWellKnownServiceStore>();
@@ -29,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IEdgeGatewayRelayProvisioningService, EdgeGatewayRelayProvisioningService>();
         services.AddScoped<IEdgeGatewayStatusService, EdgeGatewayStatusService>();
         services.AddScoped<IEdgeGatewayRouteAuthService, EdgeGatewayRouteAuthService>();
+        services.AddScoped<IEdgeGatewayTemporaryIpApprovalService, EdgeGatewayTemporaryIpApprovalService>();
         services.AddScoped<ILocalHttpServiceDiscoveryService, LocalHttpServiceDiscoveryService>();
         services.AddScoped<IEmailApiProvider, ResendEmailProvider>();
         services.AddScoped<IEmailApiProvider, BrevoEmailProvider>();

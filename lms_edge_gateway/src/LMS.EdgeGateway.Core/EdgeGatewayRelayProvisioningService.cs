@@ -2044,7 +2044,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 builder.AppendLine();
             }
 
-            if (!IsBlockedAccessPolicy(route.AccessPolicy) && allowedSourceRanges.Count > 0)
+            if (!IsBlockedAccessPolicy(route.AccessPolicy) &&
+                !IsTemporaryIpApprovalAccessPolicy(route.AccessPolicy) &&
+                allowedSourceRanges.Count > 0)
             {
                 var deniedMatcherName = $"{matcherName}_source_denied";
                 builder.AppendLine($"        @{deniedMatcherName} {{");
@@ -3144,19 +3146,16 @@ public sealed class EdgeGatewayRelayProvisioningService(
     }
 
     private static bool IsBlockedAccessPolicy(string? accessPolicy) =>
-        (accessPolicy ?? string.Empty).Contains("block", StringComparison.OrdinalIgnoreCase);
+        EdgeGatewayAccessPolicies.IsBlocked(accessPolicy);
 
     private static bool RequiresLmsAuthentication(string? accessPolicy) =>
-        !IsBlockedAccessPolicy(accessPolicy) && !IsPassThroughAccessPolicy(accessPolicy);
+        EdgeGatewayAccessPolicies.RequiresLmsAuthentication(accessPolicy);
 
-    private static bool IsPassThroughAccessPolicy(string? accessPolicy)
-    {
-        var value = (accessPolicy ?? string.Empty).Trim();
-        return value.Equals("Pass Through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Pass-through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("PassThrough", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Public", StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool IsPassThroughAccessPolicy(string? accessPolicy) =>
+        EdgeGatewayAccessPolicies.IsPassThrough(accessPolicy);
+
+    private static bool IsTemporaryIpApprovalAccessPolicy(string? accessPolicy) =>
+        EdgeGatewayAccessPolicies.IsTemporaryIpApproval(accessPolicy);
 
     private string BuildForwardAuthUpstream() =>
         $"127.0.0.1:{Math.Clamp(options.Value.LmsForwardAuthPort, 1, 65535)}";

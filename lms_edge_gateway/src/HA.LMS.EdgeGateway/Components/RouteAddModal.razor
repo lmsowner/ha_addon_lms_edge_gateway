@@ -47,10 +47,19 @@
                             <span class="ui-field-label">Auth mode</span>
                             <select @bind="addAppAccessPolicy">
                                 <option value="MFA/Passkey">MFA/Passkey</option>
+                                <option value="@EdgeGatewayAccessPolicies.TemporaryIpApproval">Email approve IP</option>
                                 <option value="Pass Through">Pass through</option>
                             </select>
                         </label>
                     </div>
+
+                    @if (IsTemporaryIpApprovalAccessPolicy(addAppAccessPolicy))
+                    {
+                        <div class="callout ready edge-pass-through-warning" role="status">
+                            <strong>Email approval gates this route by source IP</strong>
+                            <span>@TemporaryIpApprovalWarningText</span>
+                        </div>
+                    }
 
                     @if (IsPassThroughAccessPolicy(addAppAccessPolicy))
                     {
@@ -838,8 +847,10 @@
 
     private string BuildAddAppPublishDetail()
     {
-        var auth = addAppAccessPolicy.Contains("through", StringComparison.OrdinalIgnoreCase)
+        var auth = IsPassThroughAccessPolicy(addAppAccessPolicy)
             ? "Caddy will proxy this straight to the backend."
+            : IsTemporaryIpApprovalAccessPolicy(addAppAccessPolicy)
+            ? "Edge Gateway will deny by default, email an approval link, then temporarily allow only the requesting source IP."
             : $"Policy: {BuildAddAppAccessLabel()}.";
         var path = NormalizeRoutePathPrefix(addAppTargetPathPrefix);
         var routing = string.IsNullOrWhiteSpace(path)
@@ -854,19 +865,21 @@
     private LmsStatusTone GetAddAppAccessTone() =>
         IsPassThroughAccessPolicy(addAppAccessPolicy)
                 ? LmsStatusTone.Warning
+                : IsTemporaryIpApprovalAccessPolicy(addAppAccessPolicy)
+                ? LmsStatusTone.Ready
                 : LmsStatusTone.Ready;
 
     private const string PassThroughWarningText =
         "Internet traffic for this hostname is passed straight to the destination service. LMS MFA and passkeys are not required on this route, so use pass-through only when the destination is public by design or has the authentication and authorization you require.";
 
+    private const string TemporaryIpApprovalWarningText =
+        "The first request is denied and an approval email is sent. Approval only allows the app from that exact source IP, then expires after 15 minutes without traffic or after 2 hours at most. Repeated emails for the same app/IP are throttled.";
+
     private static bool IsPassThroughAccessPolicy(string? accessPolicy)
-    {
-        var value = (accessPolicy ?? string.Empty).Trim();
-        return value.Equals("Pass Through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Pass-through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("PassThrough", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Public", StringComparison.OrdinalIgnoreCase);
-    }
+        => EdgeGatewayAccessPolicies.IsPassThrough(accessPolicy);
+
+    private static bool IsTemporaryIpApprovalAccessPolicy(string? accessPolicy)
+        => EdgeGatewayAccessPolicies.IsTemporaryIpApproval(accessPolicy);
 
     private string BuildAddAppPreviewExternalUrl()
     {

@@ -17,4 +17,9 @@ public sealed class EdgeGatewayCoreOptions
     public bool EnableExpandedLanDiscovery { get; set; }
     public IReadOnlyList<string> DiscoveryCidrs { get; set; } = [];
     public IReadOnlyList<int> DiscoveryPorts { get; set; } = [];
+    public int TemporaryIpApprovalIdleTimeoutMinutes { get; set; } = 15;
+    public int TemporaryIpApprovalMaxLifetimeMinutes { get; set; } = 120;
+    public int TemporaryIpApprovalTokenLifetimeMinutes { get; set; } = 30;
+    public int TemporaryIpApprovalEmailCooldownMinutes { get; set; } = 60;
+    public int TemporaryIpApprovalMaxEmailsPerDay { get; set; } = 10;
 }

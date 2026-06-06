@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.48
+
+- Adds an Email approve IP access mode for published apps, intended for clients such as Plex that cannot complete browser MFA.
+- Sends a throttled approval email for the requesting source IP and only allows that exact app/IP after approval.
+- Tracks temporary approvals with idle expiry, maximum lifetime, Cloudflare source IP, and Cloudflare country code where available.
+
 ## 0.1.47
 
 - Shows the installed Edge Gateway add-on version discreetly in the product header.

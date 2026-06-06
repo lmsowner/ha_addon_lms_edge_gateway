@@ -146,6 +146,13 @@
                                                     <span>@PassThroughWarningText</span>
                                                 </div>
                                             }
+                                            else if (route.IsEnabled && IsTemporaryIpApprovalAccessPolicy(route.AccessPolicy))
+                                            {
+                                                <div class="callout ready edge-pass-through-warning" role="status">
+                                                    <strong>Email approve IP is enabled</strong>
+                                                    <span>@TemporaryIpApprovalWarningText</span>
+                                                </div>
+                                            }
                                         </article>
                                     }
                                 </div>
@@ -226,9 +233,17 @@
                                 <span class="ui-field-label">Access policy</span>
                                 <select @bind="editAppAccessPolicy">
                                     <option value="MFA/Passkey">MFA/Passkey</option>
+                                    <option value="@EdgeGatewayAccessPolicies.TemporaryIpApproval">Email approve IP</option>
                                     <option value="Pass Through">Pass through</option>
                                 </select>
                             </label>
+                            @if (IsTemporaryIpApprovalAccessPolicy(editAppAccessPolicy))
+                            {
+                                <div class="callout ready edge-pass-through-warning" role="status">
+                                    <strong>Email approval gates this route by source IP</strong>
+                                    <span>@TemporaryIpApprovalWarningText</span>
+                                </div>
+                            }
                             @if (IsPassThroughAccessPolicy(editAppAccessPolicy))
                             {
                                 <div class="callout warning edge-pass-through-warning" role="alert">
@@ -629,22 +644,24 @@
             ? LmsStatusTone.Critical
             : IsPassThroughAccessPolicy(route.AccessPolicy)
             ? LmsStatusTone.Warning
+            : IsTemporaryIpApprovalAccessPolicy(route.AccessPolicy)
+            ? LmsStatusTone.Ready
             : LmsStatusTone.Ready;
 
     private const string PassThroughWarningText =
         "Internet traffic for this hostname is passed straight to the destination service. LMS MFA and passkeys are not required on this route, so use pass-through only when the destination is public by design or has the authentication and authorization you require.";
 
+    private const string TemporaryIpApprovalWarningText =
+        "The first request is denied and an approval email is sent. Approval only allows this app from the exact source IP, then expires after 15 minutes without traffic or after 2 hours at most. Repeated emails for the same app/IP are throttled.";
+
     private static bool IsBlockedAccessPolicy(string? accessPolicy) =>
-        (accessPolicy ?? string.Empty).Contains("block", StringComparison.OrdinalIgnoreCase);
+        EdgeGatewayAccessPolicies.IsBlocked(accessPolicy);
 
     private static bool IsPassThroughAccessPolicy(string? accessPolicy)
-    {
-        var value = (accessPolicy ?? string.Empty).Trim();
-        return value.Equals("Pass Through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Pass-through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("PassThrough", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Public", StringComparison.OrdinalIgnoreCase);
-    }
+        => EdgeGatewayAccessPolicies.IsPassThrough(accessPolicy);
+
+    private static bool IsTemporaryIpApprovalAccessPolicy(string? accessPolicy)
+        => EdgeGatewayAccessPolicies.IsTemporaryIpApproval(accessPolicy);
 
     private static string BuildExternalRouteUrl(PublishedApplicationDefinition route)
     {

@@ -61,6 +61,42 @@ public sealed class EdgeGatewayRouteAuthTests
     }
 
     [Fact]
+    public async Task Temporary_ip_approval_route_uses_approval_service()
+    {
+        var approvalService = new RecordingTemporaryIpApprovalService(
+            new TemporaryIpApprovalEvaluationResult(false, "Approval email sent."));
+        var service = new EdgeGatewayRouteAuthService(
+            new InMemoryConfigurationStore(Configuration(Route(EdgeGatewayAccessPolicies.TemporaryIpApproval))),
+            approvalService);
+
+        var result = await service.EvaluateAuthAsync(Context(
+            new ClaimsPrincipal(new ClaimsIdentity()),
+            connectingIp: "198.51.100.44",
+            countryCode: "GB"));
+
+        Assert.Equal(403, result.StatusCode);
+        Assert.Equal("Approval email sent.", result.Reason);
+        Assert.NotNull(approvalService.LastContext);
+        Assert.Equal("198.51.100.44", approvalService.LastContext.SourceIp);
+        Assert.Equal("GB", approvalService.LastContext.CountryCode);
+    }
+
+    [Fact]
+    public async Task Temporary_ip_approval_allows_when_service_has_active_grant()
+    {
+        var approvalService = new RecordingTemporaryIpApprovalService(
+            new TemporaryIpApprovalEvaluationResult(true, "Temporary IP approval allowed."));
+        var service = new EdgeGatewayRouteAuthService(
+            new InMemoryConfigurationStore(Configuration(Route(EdgeGatewayAccessPolicies.TemporaryIpApproval))),
+            approvalService);
+
+        var result = await service.EvaluateAuthAsync(Context(new ClaimsPrincipal(new ClaimsIdentity())));
+
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal("temporary-ip:203.0.113.10", result.UserName);
+    }
+
+    [Fact]
     public async Task Safe_return_target_must_match_enabled_route()
     {
         var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
@@ -133,6 +169,33 @@ public sealed class EdgeGatewayRouteAuthTests
         Assert.DoesNotContain("forward_auth", caddyfile, StringComparison.Ordinal);
         Assert.DoesNotContain("127.0.0.1:5299", caddyfile, StringComparison.Ordinal);
         Assert.Contains("reverse_proxy http://192.168.1.20:8123", caddyfile, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generated_caddyfile_for_temporary_ip_approval_route_calls_lms_forward_auth()
+    {
+        var service = new EdgeGatewayRelayProvisioningService(
+            Options.Create(new EdgeGatewayCoreOptions
+            {
+                CaddyLocalServiceUrl = "http://localhost:18080",
+                LmsForwardAuthPort = 5299
+            }),
+            null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            null!);
+        var configuration = Configuration(Route(EdgeGatewayAccessPolicies.TemporaryIpApproval));
+        var method = typeof(EdgeGatewayRelayProvisioningService).GetMethod(
+            "GenerateCaddyfile",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        var caddyfile = Assert.IsType<string>(method!.Invoke(service, [configuration]));
+
+        Assert.Contains("forward_auth 127.0.0.1:5299", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("uri /edge-auth/check", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("reverse_proxy 127.0.0.1:5299", caddyfile, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -263,7 +326,10 @@ public sealed class EdgeGatewayRouteAuthTests
         Assert.Contains("tls_insecure_skip_verify", caddyfile, StringComparison.Ordinal);
     }
 
-    private static EdgeGatewayAuthCheckContext Context(ClaimsPrincipal principal) =>
+    private static EdgeGatewayAuthCheckContext Context(
+        ClaimsPrincipal principal,
+        string connectingIp = "",
+        string countryCode = "") =>
         new(
             "hassio.example.com",
             "https",
@@ -271,7 +337,10 @@ public sealed class EdgeGatewayRouteAuthTests
             "203.0.113.10",
             "127.0.0.1:5000",
             IPAddress.Loopback,
-            principal);
+            principal,
+            connectingIp,
+            countryCode,
+            "Plex/1.0");
 
     private static ClaimsPrincipal Principal(params Claim[] claims) =>
         new(new ClaimsIdentity(
@@ -312,5 +381,25 @@ public sealed class EdgeGatewayRouteAuthTests
             current = configuration;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingTemporaryIpApprovalService(
+        TemporaryIpApprovalEvaluationResult result) : IEdgeGatewayTemporaryIpApprovalService
+    {
+        public TemporaryIpApprovalCheckContext? LastContext { get; private set; }
+
+        public Task<TemporaryIpApprovalEvaluationResult> EvaluateAsync(
+            PublishedApplicationDefinition route,
+            TemporaryIpApprovalCheckContext context,
+            CancellationToken cancellationToken = default)
+        {
+            LastContext = context;
+            return Task.FromResult(result);
+        }
+
+        public Task<TemporaryIpApprovalCompletionResult> ApproveAsync(
+            string token,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new TemporaryIpApprovalCompletionResult(false, "Not implemented", "Not implemented."));
     }
 }

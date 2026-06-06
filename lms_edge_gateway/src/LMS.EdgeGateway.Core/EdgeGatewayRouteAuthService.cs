@@ -15,7 +15,9 @@ public interface IEdgeGatewayRouteAuthService
     Task<bool> IsSafeReturnTargetAsync(string targetUrl, CancellationToken cancellationToken = default);
 }
 
-public sealed class EdgeGatewayRouteAuthService(IEdgeGatewayConfigurationStore configurationStore) : IEdgeGatewayRouteAuthService
+public sealed class EdgeGatewayRouteAuthService(
+    IEdgeGatewayConfigurationStore configurationStore,
+    IEdgeGatewayTemporaryIpApprovalService? temporaryIpApprovalService = null) : IEdgeGatewayRouteAuthService
 {
     private const int StatusOk = 200;
     private const int StatusFound = 302;
@@ -28,7 +30,7 @@ public sealed class EdgeGatewayRouteAuthService(IEdgeGatewayConfigurationStore c
     {
         var requestedHost = NormalizeForwardedHost(context.ForwardedHost, context.Host);
         var requestedPath = string.IsNullOrWhiteSpace(context.ForwardedUri) ? "/" : context.ForwardedUri.Trim();
-        var sourceIp = ResolveSourceIp(context.ForwardedFor, context.RemoteIpAddress);
+        var sourceIp = ResolveSourceIp(context.ConnectingIp, context.ForwardedFor, context.RemoteIpAddress);
         var userEmail = FindFirstValue(context.User, ClaimTypes.Email) ??
                         FindFirstValue(context.User, ClaimTypes.Name) ??
                         string.Empty;
@@ -48,12 +50,12 @@ public sealed class EdgeGatewayRouteAuthService(IEdgeGatewayConfigurationStore c
                 "Not Found.");
         }
 
-        if (IsBlockedAccessPolicy(route.AccessPolicy))
+        if (EdgeGatewayAccessPolicies.IsBlocked(route.AccessPolicy))
         {
             return new EdgeGatewayAuthCheckResult(StatusForbidden, "Route is blocked.");
         }
 
-        if (IsPassThroughAccessPolicy(route.AccessPolicy))
+        if (EdgeGatewayAccessPolicies.IsPassThrough(route.AccessPolicy))
         {
             return Allow(context.User, userEmail, "Pass-through route.");
         }
@@ -70,6 +72,35 @@ public sealed class EdgeGatewayRouteAuthService(IEdgeGatewayConfigurationStore c
             return new EdgeGatewayAuthCheckResult(
                 StatusForbidden,
                 "Source IP did not match the route allow-list.");
+        }
+
+        if (EdgeGatewayAccessPolicies.IsTemporaryIpApproval(route.AccessPolicy))
+        {
+            if (temporaryIpApprovalService is null)
+            {
+                return new EdgeGatewayAuthCheckResult(
+                    StatusForbidden,
+                    "Temporary IP approval service is not available.");
+            }
+
+            var requestedUrl = BuildRequestedUrl(requestedHost, requestedPath);
+            var result = await temporaryIpApprovalService.EvaluateAsync(
+                route,
+                new TemporaryIpApprovalCheckContext(
+                    requestedHost,
+                    requestedPath,
+                    requestedUrl,
+                    sourceIp,
+                    context.CountryCode,
+                    context.UserAgent),
+                cancellationToken);
+
+            return result.IsAllowed
+                ? new EdgeGatewayAuthCheckResult(
+                    StatusOk,
+                    result.Reason,
+                    UserName: $"temporary-ip:{sourceIp}")
+                : new EdgeGatewayAuthCheckResult(StatusForbidden, result.Reason);
         }
 
         if (context.User.Identity?.IsAuthenticated != true ||
@@ -373,18 +404,6 @@ public sealed class EdgeGatewayRouteAuthService(IEdgeGatewayConfigurationStore c
         user.HasClaim("amr", "passkey") ||
         user.HasClaim("amr", "webauthn");
 
-    private static bool IsBlockedAccessPolicy(string? accessPolicy) =>
-        (accessPolicy ?? string.Empty).Contains("block", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsPassThroughAccessPolicy(string? accessPolicy)
-    {
-        var value = (accessPolicy ?? string.Empty).Trim();
-        return value.Equals("Pass Through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Pass-through", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("PassThrough", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("Public", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static bool IsEdgeAuthenticationPath(string? path)
     {
         var normalized = ExtractPathOnly(path);
@@ -422,8 +441,14 @@ public sealed class EdgeGatewayRouteAuthService(IEdgeGatewayConfigurationStore c
         return path.Replace("//", "/", StringComparison.Ordinal);
     }
 
-    private static string ResolveSourceIp(string forwardedFor, IPAddress? remoteIpAddress)
+    private static string ResolveSourceIp(string connectingIp, string forwardedFor, IPAddress? remoteIpAddress)
     {
+        var cloudflareConnectingIp = (connectingIp ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(cloudflareConnectingIp))
+        {
+            return cloudflareConnectingIp;
+        }
+
         var firstForwarded = (forwardedFor ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault();
@@ -459,7 +484,10 @@ public sealed record EdgeGatewayAuthCheckContext(
     string ForwardedFor,
     string Host,
     IPAddress? RemoteIpAddress,
-    ClaimsPrincipal User);
+    ClaimsPrincipal User,
+    string ConnectingIp = "",
+    string CountryCode = "",
+    string UserAgent = "");
 
 public sealed record EdgeGatewayAuthCheckResult(
     int StatusCode,

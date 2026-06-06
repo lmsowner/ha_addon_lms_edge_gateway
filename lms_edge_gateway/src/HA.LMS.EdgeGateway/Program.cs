@@ -536,7 +536,10 @@ app.MapGet("/edge-auth/check", async Task (
             context.Request.Headers["X-Forwarded-For"].ToString(),
             context.Request.Headers.Host.ToString(),
             context.Connection.RemoteIpAddress,
-            context.User),
+            context.User,
+            context.Request.Headers["CF-Connecting-IP"].ToString(),
+            context.Request.Headers["CF-IPCountry"].ToString(),
+            context.Request.Headers.UserAgent.ToString()),
         context.RequestAborted);
 
     context.Response.StatusCode = result.StatusCode;
@@ -565,7 +568,21 @@ app.MapGet("/edge-auth/check", async Task (
             context.Response.Headers["X-LMS-Groups"] = result.Groups;
         }
     }
+    else if (result.StatusCode != StatusCodes.Status302Found)
+    {
+        context.Response.ContentType = "text/plain; charset=utf-8";
+        await context.Response.WriteAsync(result.Reason, context.RequestAborted);
+    }
 }).DisableAntiforgery();
+
+app.MapGet("/edge-auth/approve-ip", async Task<IResult> (
+    string? token,
+    IEdgeGatewayTemporaryIpApprovalService temporaryIpApprovalService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await temporaryIpApprovalService.ApproveAsync(token ?? string.Empty, cancellationToken);
+    return Results.Content(RenderTemporaryIpApprovalPage(result), "text/html; charset=utf-8");
+}).AllowAnonymous().DisableAntiforgery();
 
 app.MapGet("/edge-auth/return", async (
     string? target,
@@ -1007,6 +1024,70 @@ static IResult BuildPasskeyOptionsResponse(PasskeyOptionsResult result)
         "application/json",
         Encoding.UTF8);
 }
+
+static string RenderTemporaryIpApprovalPage(TemporaryIpApprovalCompletionResult result)
+{
+    var title = WebUtility.HtmlEncode(result.Title);
+    var message = WebUtility.HtmlEncode(result.Message);
+    var sourceIp = WebUtility.HtmlEncode(result.SourceIp);
+    var routeName = WebUtility.HtmlEncode(result.RouteName);
+    var publicHostname = WebUtility.HtmlEncode(result.PublicHostname);
+    var country = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(result.CountryCode) ? "Unknown" : result.CountryCode);
+    var approvedUrl = WebUtility.HtmlEncode(result.ApprovedUrl);
+    var toneColor = result.Success ? "#0f7b57" : "#b45309";
+    var details = result.Success
+        ? $$"""
+            <div class="detail"><span>App</span><strong>{{routeName}}</strong></div>
+            <div class="detail"><span>Host</span><strong>{{publicHostname}}</strong></div>
+            <div class="detail"><span>Approved IP</span><strong>{{sourceIp}}</strong></div>
+            <div class="detail"><span>Country</span><strong>{{country}}</strong></div>
+            <div class="detail"><span>Idle expiry</span><strong>{{WebUtility.HtmlEncode(FormatApprovalTime(result.IdleExpiresAtUtc))}}</strong></div>
+            <div class="detail"><span>Maximum expiry</span><strong>{{WebUtility.HtmlEncode(FormatApprovalTime(result.ExpiresAtUtc))}}</strong></div>
+            <a class="button" href="{{approvedUrl}}">Open app</a>
+            """
+        : string.Empty;
+
+    return $$"""
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>{{title}} | LMS Edge Gateway</title>
+          <style>
+            :root { color-scheme: light dark; }
+            body { align-items: center; background: #eef3f8; color: #142033; display: flex; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; justify-content: center; margin: 0; min-height: 100vh; padding: 20px; }
+            main { background: #fff; border: 1px solid #dce7f3; border-radius: 18px; box-shadow: 0 18px 60px rgba(17, 34, 58, .14); max-width: 560px; padding: 28px; width: 100%; }
+            h1 { color: {{toneColor}}; font-size: 26px; margin: 0 0 10px; }
+            p { color: #607089; font-size: 15px; line-height: 1.5; margin: 0 0 18px; }
+            .detail { background: #f7f9fc; border: 1px solid #e3edf7; border-radius: 12px; margin-top: 10px; padding: 12px 14px; }
+            .detail span { color: #607089; display: block; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+            .detail strong { display: block; font-size: 15px; margin-top: 4px; overflow-wrap: anywhere; }
+            .button { background: #0f7b57; border-radius: 12px; color: #fff; display: inline-block; font-weight: 900; margin-top: 22px; padding: 13px 18px; text-decoration: none; }
+            @media (prefers-color-scheme: dark) {
+              body { background: #0b1118; color: #edf4ff; }
+              main { background: #121b26; border-color: #26384d; box-shadow: none; }
+              p { color: #9fb0c5; }
+              .detail { background: #182433; border-color: #2a3d52; }
+              .detail span { color: #9fb0c5; }
+            }
+          </style>
+        </head>
+        <body>
+          <main>
+            <h1>{{title}}</h1>
+            <p>{{message}}</p>
+            {{details}}
+          </main>
+        </body>
+        </html>
+        """;
+}
+
+static string FormatApprovalTime(DateTimeOffset? value) =>
+    value is null
+        ? "Unknown"
+        : $"{value.Value.ToLocalTime():dd MMM yyyy HH:mm}";
 
 static async Task<(string StateId, string CredentialJson, string? Error)> ReadPasskeyCeremonyRequestAsync(
     HttpContext context)
