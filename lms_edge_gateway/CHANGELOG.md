@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.46
+
+- Makes the Edge Gateway product header a taller square-edged banner so it aligns more naturally with the Home Assistant sidebar title.
+- Adds a small horizontal inset around the main tab control and removes rounded bottom corners from the tab content panel.
+
 ## 0.1.45
 
 - Tightens the Domain Services template selector cards so they are shorter and fit more columns on desktop.

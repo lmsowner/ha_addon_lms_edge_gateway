@@ -229,7 +229,7 @@ textarea {
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 100vh;
     min-width: 0;
-    padding: 0.12rem 0;
+    padding: 0;
 }
 
 .page-shell {
@@ -243,15 +243,15 @@ textarea {
     align-items: center;
     background: var(--surface-glass);
     border: 1px solid var(--color-line);
-    border-radius: var(--radius-lg);
+    border-radius: 0;
     box-shadow: var(--shadow-card);
     display: flex;
     gap: 0.75rem;
     justify-content: space-between;
-    min-height: 3.25rem;
+    min-height: 3.48rem;
     min-width: 0;
-    margin: 0 0.12rem;
-    padding: 0.38rem 0.62rem;
+    margin: 0;
+    padding: 0.46rem 0.75rem;
 }
 
 .lms-product-brand {
@@ -488,6 +488,7 @@ textarea {
     display: grid;
     gap: 0;
     grid-template-rows: auto minmax(0, 1fr);
+    margin-inline: 0.18rem;
     min-height: 0;
     min-width: 0;
 }
@@ -587,7 +588,7 @@ textarea {
 .page-tab-panel {
     background: var(--surface-glass);
     border: 1px solid var(--color-line);
-    border-radius: 0 1rem 1rem 1rem;
+    border-radius: 0;
     box-shadow: var(--shadow-card);
     margin-top: -1px;
     min-height: 0;
@@ -3677,7 +3678,7 @@ textarea {
     }
 
     .page-tab-panel {
-        border-radius: 0 0.84rem 0.84rem 0.84rem;
+        border-radius: 0;
         padding: 0.75rem;
     }
 
