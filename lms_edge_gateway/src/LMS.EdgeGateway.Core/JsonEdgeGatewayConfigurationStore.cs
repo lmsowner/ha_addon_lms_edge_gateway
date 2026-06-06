@@ -50,12 +50,36 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
 
         return configuration with
         {
-            Applications = configuration.Applications ?? [],
+            Applications = NormalizeApplications(configuration.Applications),
             PublicProxyRoutes = NormalizePublicProxyRoutes(configuration.PublicProxyRoutes),
             RelayZones = NormalizeRelayZones(configuration.RelayZones),
             CloudflareTunnel = NormalizeTunnel(configuration.CloudflareTunnel)
         };
     }
+
+    private static IReadOnlyList<PublishedApplicationDefinition> NormalizeApplications(
+        IReadOnlyList<PublishedApplicationDefinition>? applications) =>
+        applications?
+            .Where(application => application.Id != Guid.Empty &&
+                                  !string.IsNullOrWhiteSpace(application.PublicHostname) &&
+                                  !string.IsNullOrWhiteSpace(application.UpstreamUrl))
+            .Select(application => application with
+            {
+                Name = application.Name?.Trim() ?? string.Empty,
+                PublicHostname = application.PublicHostname?.Trim().TrimEnd('.').ToLowerInvariant() ?? string.Empty,
+                UpstreamUrl = application.UpstreamUrl?.Trim() ?? string.Empty,
+                AccessPolicy = string.IsNullOrWhiteSpace(application.AccessPolicy)
+                    ? EdgeGatewayAccessPolicies.MfaPasskey
+                    : application.AccessPolicy.Trim(),
+                TargetPathPrefix = application.TargetPathPrefix?.Trim() ?? string.Empty,
+                AllowKnownIps = application.AllowKnownIps?.Trim() ?? string.Empty,
+                AllowedUsers = application.AllowedUsers?.Trim() ?? string.Empty,
+                AllowedGroups = application.AllowedGroups?.Trim() ?? string.Empty,
+                Notes = application.Notes?.Trim() ?? string.Empty,
+                TemporaryIpApprovalRecipients = application.TemporaryIpApprovalRecipients?.Trim() ?? string.Empty,
+                TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeList(application.TemporaryIpApprovalAllowedCountryCodes)
+            })
+            .ToArray() ?? [];
 
     private static CloudflareTunnelState NormalizeTunnel(CloudflareTunnelState? tunnel) =>
         tunnel is null
@@ -101,4 +125,14 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 !string.IsNullOrWhiteSpace(route.PathPrefix) &&
                 !string.IsNullOrWhiteSpace(route.UpstreamUrl))
             .ToArray() ?? [];
+
+    private static string NormalizeCountryCodeList(string? value) =>
+        string.Join(
+            ", ",
+            (value ?? string.Empty)
+            .Split([',', '\r', '\n', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(country => country.ToUpperInvariant())
+            .Where(country => country.Length == 2 && country.All(char.IsLetter))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(country => country, StringComparer.OrdinalIgnoreCase));
 }

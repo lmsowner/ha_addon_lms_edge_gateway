@@ -32,7 +32,9 @@ public sealed record PublishedApplicationDefinition(
     string Notes = "",
     bool? UsePublicHostHeader = null,
     bool? StripForwardedFor = null,
-    bool? SkipUpstreamTlsVerification = null);
+    bool? SkipUpstreamTlsVerification = null,
+    string TemporaryIpApprovalRecipients = "",
+    string TemporaryIpApprovalAllowedCountryCodes = "");
 
 public sealed record PublicProxyRouteDefinition(
     Guid Id,

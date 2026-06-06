@@ -14,20 +14,7 @@ public sealed class TemporaryIpApprovalTests
         var route = Route();
         var approvalStore = new InMemoryTemporaryIpApprovalStore();
         var emailDelivery = new RecordingEmailDeliveryService();
-        var service = new EdgeGatewayTemporaryIpApprovalService(
-            approvalStore,
-            new InMemoryConfigurationStore(Configuration(route)),
-            new InMemorySecurityStore(SecurityConfiguration("owner@example.com")),
-            emailDelivery,
-            Options.Create(new EdgeGatewayCoreOptions
-            {
-                TemporaryIpApprovalIdleTimeoutMinutes = 15,
-                TemporaryIpApprovalMaxLifetimeMinutes = 120,
-                TemporaryIpApprovalTokenLifetimeMinutes = 30,
-                TemporaryIpApprovalEmailCooldownMinutes = 60,
-                TemporaryIpApprovalMaxEmailsPerDay = 10
-            }),
-            NullLogger<EdgeGatewayTemporaryIpApprovalService>.Instance);
+        var service = CreateService(route, approvalStore, emailDelivery);
         var context = new TemporaryIpApprovalCheckContext(
             "plex.example.com",
             "/",
@@ -55,6 +42,58 @@ public sealed class TemporaryIpApprovalTests
         Assert.Equal(2, emailDelivery.Messages.Count);
     }
 
+    [Fact]
+    public async Task Temporary_ip_approval_uses_explicit_route_recipients()
+    {
+        var route = Route() with
+        {
+            TemporaryIpApprovalRecipients = "approver@example.com, other@example.com"
+        };
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, new InMemoryTemporaryIpApprovalStore(), emailDelivery);
+
+        var result = await service.EvaluateAsync(route, Context(countryCode: "GB"));
+
+        Assert.False(result.IsAllowed);
+        Assert.True(result.EmailSucceeded);
+        Assert.Equal(["approver@example.com", "other@example.com"], emailDelivery.Messages.Select(message => message.ToEmail).Order());
+    }
+
+    [Fact]
+    public async Task Temporary_ip_approval_blocks_country_before_sending_email()
+    {
+        var route = Route() with
+        {
+            TemporaryIpApprovalAllowedCountryCodes = "GB, IE"
+        };
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, new InMemoryTemporaryIpApprovalStore(), emailDelivery);
+
+        var result = await service.EvaluateAsync(route, Context(countryCode: "US"));
+
+        Assert.False(result.IsAllowed);
+        Assert.False(result.EmailAttempted);
+        Assert.Contains("does not allow requests from US", result.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(emailDelivery.Messages);
+    }
+
+    [Fact]
+    public async Task Temporary_ip_approval_allows_configured_country()
+    {
+        var route = Route() with
+        {
+            TemporaryIpApprovalAllowedCountryCodes = "GB, IE"
+        };
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, new InMemoryTemporaryIpApprovalStore(), emailDelivery);
+
+        var result = await service.EvaluateAsync(route, Context(countryCode: "GB"));
+
+        Assert.False(result.IsAllowed);
+        Assert.True(result.EmailSucceeded);
+        Assert.Single(emailDelivery.Messages);
+    }
+
     private static string ExtractApprovalToken(string body)
     {
         var match = Regex.Match(body, @"token=([^\s]+)", RegexOptions.CultureInvariant);
@@ -70,6 +109,34 @@ public sealed class TemporaryIpApprovalTests
             "http://192.168.1.50:32400",
             EdgeGatewayAccessPolicies.TemporaryIpApproval,
             true);
+
+    private static TemporaryIpApprovalCheckContext Context(string countryCode) =>
+        new(
+            "plex.example.com",
+            "/",
+            "https://plex.example.com/",
+            "198.51.100.44",
+            countryCode,
+            "Plex/1.0");
+
+    private static EdgeGatewayTemporaryIpApprovalService CreateService(
+        PublishedApplicationDefinition route,
+        InMemoryTemporaryIpApprovalStore approvalStore,
+        RecordingEmailDeliveryService emailDelivery) =>
+        new(
+            approvalStore,
+            new InMemoryConfigurationStore(Configuration(route)),
+            new InMemorySecurityStore(SecurityConfiguration("owner@example.com")),
+            emailDelivery,
+            Options.Create(new EdgeGatewayCoreOptions
+            {
+                TemporaryIpApprovalIdleTimeoutMinutes = 15,
+                TemporaryIpApprovalMaxLifetimeMinutes = 120,
+                TemporaryIpApprovalTokenLifetimeMinutes = 30,
+                TemporaryIpApprovalEmailCooldownMinutes = 60,
+                TemporaryIpApprovalMaxEmailsPerDay = 10
+            }),
+            NullLogger<EdgeGatewayTemporaryIpApprovalService>.Instance);
 
     private static EdgeGatewayConfiguration Configuration(PublishedApplicationDefinition route) =>
         new(

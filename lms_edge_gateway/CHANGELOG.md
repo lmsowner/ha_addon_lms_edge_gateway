@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.49
+
+- Adds per-route Email approve IP recipients so approval emails can go to explicit service owners.
+- Adds per-route Cloudflare country-code allow-lists for temporary IP approval requests.
+- Shows the configured approval recipients and countries on Email approve IP route cards.
+
 ## 0.1.48
 
 - Adds an Email approve IP access mode for published apps, intended for clients such as Plex that cannot complete browser MFA.

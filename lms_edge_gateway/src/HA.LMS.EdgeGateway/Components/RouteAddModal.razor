@@ -59,6 +59,18 @@
                             <strong>Email approval gates this route by source IP</strong>
                             <span>@TemporaryIpApprovalWarningText</span>
                         </div>
+                        <div class="edge-form-grid edge-route-main-grid">
+                            <label class="ui-field">
+                                <span class="ui-field-label">Approval recipients</span>
+                                <input @bind="addTemporaryIpApprovalRecipients" placeholder="you@example.com, admin@example.com" />
+                                <span class="ui-field-helper">Optional. Blank sends to route allowed users, then enabled LMS users.</span>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Allowed countries</span>
+                                <input @bind="addTemporaryIpApprovalAllowedCountryCodes" placeholder="GB, US" />
+                                <span class="ui-field-helper">Optional Cloudflare country allow-list. Blank allows any country.</span>
+                            </label>
+                        </div>
                     }
 
                     @if (IsPassThroughAccessPolicy(addAppAccessPolicy))
@@ -257,6 +269,8 @@
     private string addAppAllowedUsers = string.Empty;
     private string addAppAllowedGroups = string.Empty;
     private string addAppNotes = string.Empty;
+    private string addTemporaryIpApprovalRecipients = string.Empty;
+    private string addTemporaryIpApprovalAllowedCountryCodes = string.Empty;
     private bool addAppEnabled = true;
     private bool addAppAllowLanOnly;
     private bool addAppUsePublicHostHeader = true;
@@ -298,6 +312,8 @@
         addAppAllowedUsers = string.Empty;
         addAppAllowedGroups = string.Empty;
         addAppNotes = string.Empty;
+        addTemporaryIpApprovalRecipients = string.Empty;
+        addTemporaryIpApprovalAllowedCountryCodes = string.Empty;
         addAppEnabled = true;
         addAppAllowLanOnly = false;
         addAppUsePublicHostHeader = true;
@@ -347,7 +363,9 @@
                 notes: addAppNotes,
                 usePublicHostHeader: addAppUsePublicHostHeader,
                 stripForwardedFor: addAppStripForwardedFor,
-                skipUpstreamTlsVerification: addAppSkipUpstreamTlsVerification);
+                skipUpstreamTlsVerification: addAppSkipUpstreamTlsVerification,
+                temporaryIpApprovalRecipients: addTemporaryIpApprovalRecipients,
+                temporaryIpApprovalAllowedCountryCodes: addTemporaryIpApprovalAllowedCountryCodes);
 
             if (!result.Success)
             {

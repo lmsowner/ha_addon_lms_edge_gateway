@@ -27,6 +27,12 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             return new TemporaryIpApprovalEvaluationResult(false, "Temporary IP approval could not resolve the source IP.");
         }
 
+        var countryValidation = ValidateAllowedCountry(route, context.CountryCode);
+        if (!countryValidation.Allowed)
+        {
+            return new TemporaryIpApprovalEvaluationResult(false, countryValidation.Message);
+        }
+
         var now = DateTimeOffset.UtcNow;
         await sync.WaitAsync(cancellationToken);
         try
@@ -300,6 +306,17 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             .Select(user => user.Email)
             .Where(IsValidEmail)
             .ToArray();
+        var explicitRecipients = SplitRouteList(route.TemporaryIpApprovalRecipients)
+            .Where(IsValidEmail)
+            .ToArray();
+        if (!string.IsNullOrWhiteSpace(route.TemporaryIpApprovalRecipients))
+        {
+            return explicitRecipients
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(email => email, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
         var routeUsers = SplitRouteList(route.AllowedUsers)
             .Where(IsValidEmail)
             .ToArray();
@@ -311,6 +328,31 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(email => email, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static CountryValidationResult ValidateAllowedCountry(
+        PublishedApplicationDefinition route,
+        string countryCode)
+    {
+        var allowedCountries = SplitCountryCodes(route.TemporaryIpApprovalAllowedCountryCodes).ToArray();
+        if (allowedCountries.Length == 0)
+        {
+            return new CountryValidationResult(true, string.Empty);
+        }
+
+        var normalized = NormalizeCountryCode(countryCode);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return new CountryValidationResult(
+                false,
+                $"Temporary IP approval only allows countries {string.Join(", ", allowedCountries)}, but Cloudflare did not provide a country code.");
+        }
+
+        return allowedCountries.Contains(normalized, StringComparer.OrdinalIgnoreCase)
+            ? new CountryValidationResult(true, string.Empty)
+            : new CountryValidationResult(
+                false,
+                $"Temporary IP approval does not allow requests from {normalized}. Allowed countries: {string.Join(", ", allowedCountries)}.");
     }
 
     private async Task<ApprovalEmailResult> SendApprovalEmailsAsync(
@@ -523,5 +565,15 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
         (value ?? string.Empty)
             .Split([',', '\r', '\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+    private static IEnumerable<string> SplitCountryCodes(string? value) =>
+        (value ?? string.Empty)
+            .Split([',', '\r', '\n', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeCountryCode)
+            .Where(country => country.Length == 2 && country.All(char.IsLetter))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(country => country, StringComparer.OrdinalIgnoreCase);
+
     private sealed record ApprovalEmailResult(bool Success, string Message);
+
+    private sealed record CountryValidationResult(bool Allowed, string Message);
 }

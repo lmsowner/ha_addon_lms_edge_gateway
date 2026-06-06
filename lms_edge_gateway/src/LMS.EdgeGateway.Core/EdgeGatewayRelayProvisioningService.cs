@@ -818,6 +818,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool? usePublicHostHeader = null,
         bool? stripForwardedFor = null,
         bool? skipUpstreamTlsVerification = null,
+        string temporaryIpApprovalRecipients = "",
+        string temporaryIpApprovalAllowedCountryCodes = "",
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -879,7 +881,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 NormalizeRouteTextBlock(notes),
                 usePublicHostHeader,
                 stripForwardedFor,
-                skipUpstreamTlsVerification);
+                skipUpstreamTlsVerification,
+                NormalizeRouteTextBlock(temporaryIpApprovalRecipients),
+                NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes));
             AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
@@ -950,6 +954,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool? usePublicHostHeader = null,
         bool? stripForwardedFor = null,
         bool? skipUpstreamTlsVerification = null,
+        string temporaryIpApprovalRecipients = "",
+        string temporaryIpApprovalAllowedCountryCodes = "",
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -1001,7 +1007,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 Notes = NormalizeRouteTextBlock(notes),
                 UsePublicHostHeader = usePublicHostHeader,
                 StripForwardedFor = stripForwardedFor,
-                SkipUpstreamTlsVerification = skipUpstreamTlsVerification
+                SkipUpstreamTlsVerification = skipUpstreamTlsVerification,
+                TemporaryIpApprovalRecipients = NormalizeRouteTextBlock(temporaryIpApprovalRecipients),
+                TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes)
             };
             AddHomeAssistantUpstreamWarnings(updated, warnings);
 
@@ -3111,6 +3119,16 @@ public sealed class EdgeGatewayRelayProvisioningService(
 
     private static string NormalizeRouteTextBlock(string? value) =>
         (value ?? string.Empty).Trim();
+
+    private static string NormalizeCountryCodeTextBlock(string? value) =>
+        string.Join(
+            ", ",
+            (value ?? string.Empty)
+            .Split([',', '\r', '\n', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(country => country.ToUpperInvariant())
+            .Where(country => country.Length == 2 && country.All(char.IsLetter))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(country => country, StringComparer.OrdinalIgnoreCase));
 
     private static IReadOnlyList<string> BuildAllowedSourceRanges(PublishedApplicationDefinition route)
     {

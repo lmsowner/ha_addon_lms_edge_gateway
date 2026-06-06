@@ -151,6 +151,7 @@
                                                 <div class="callout ready edge-pass-through-warning" role="status">
                                                     <strong>Email approve IP is enabled</strong>
                                                     <span>@TemporaryIpApprovalWarningText</span>
+                                                    <span>@BuildTemporaryIpApprovalSummary(route)</span>
                                                 </div>
                                             }
                                         </article>
@@ -243,6 +244,16 @@
                                     <strong>Email approval gates this route by source IP</strong>
                                     <span>@TemporaryIpApprovalWarningText</span>
                                 </div>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Approval recipients</span>
+                                    <input @bind="editTemporaryIpApprovalRecipients" placeholder="you@example.com, admin@example.com" />
+                                    <span class="ui-field-helper">Optional. Blank sends to route allowed users, then enabled LMS users.</span>
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Allowed countries</span>
+                                    <input @bind="editTemporaryIpApprovalAllowedCountryCodes" placeholder="GB, US" />
+                                    <span class="ui-field-helper">Optional Cloudflare country allow-list. Blank allows any country.</span>
+                                </label>
                             }
                             @if (IsPassThroughAccessPolicy(editAppAccessPolicy))
                             {
@@ -328,6 +339,8 @@
     private string editAppAllowedUsers = string.Empty;
     private string editAppAllowedGroups = string.Empty;
     private string editAppNotes = string.Empty;
+    private string editTemporaryIpApprovalRecipients = string.Empty;
+    private string editTemporaryIpApprovalAllowedCountryCodes = string.Empty;
     private bool editAppAllowLanOnly;
     private bool editAppUsePublicHostHeader;
     private bool editAppStripForwardedFor = true;
@@ -541,6 +554,8 @@
         editAppAllowedGroups = route.AllowedGroups;
         editAppAllowLanOnly = route.AllowLanOnly;
         editAppNotes = route.Notes;
+        editTemporaryIpApprovalRecipients = route.TemporaryIpApprovalRecipients;
+        editTemporaryIpApprovalAllowedCountryCodes = route.TemporaryIpApprovalAllowedCountryCodes;
         editAppUsePublicHostHeader = ShouldUsePublicHostHeaderInEditor(route);
         editAppStripForwardedFor = route.StripForwardedFor ?? true;
         editAppSkipUpstreamTlsVerification = route.SkipUpstreamTlsVerification ?? IsHttpsUrl(route.UpstreamUrl);
@@ -610,7 +625,9 @@
                 notes: editAppNotes,
                 usePublicHostHeader: editAppUsePublicHostHeader,
                 stripForwardedFor: editAppStripForwardedFor,
-                skipUpstreamTlsVerification: editAppSkipUpstreamTlsVerification);
+                skipUpstreamTlsVerification: editAppSkipUpstreamTlsVerification,
+                temporaryIpApprovalRecipients: editTemporaryIpApprovalRecipients,
+                temporaryIpApprovalAllowedCountryCodes: editTemporaryIpApprovalAllowedCountryCodes);
             routeActionMessage = result.Summary;
             routeActionIsError = !result.Success;
             routeActionSteps = result.Steps;
@@ -662,6 +679,17 @@
 
     private static bool IsTemporaryIpApprovalAccessPolicy(string? accessPolicy)
         => EdgeGatewayAccessPolicies.IsTemporaryIpApproval(accessPolicy);
+
+    private static string BuildTemporaryIpApprovalSummary(PublishedApplicationDefinition route)
+    {
+        var recipients = string.IsNullOrWhiteSpace(route.TemporaryIpApprovalRecipients)
+            ? "Recipients: route allowed users or enabled LMS users."
+            : $"Recipients: {route.TemporaryIpApprovalRecipients}.";
+        var countries = string.IsNullOrWhiteSpace(route.TemporaryIpApprovalAllowedCountryCodes)
+            ? "Countries: any."
+            : $"Countries: {route.TemporaryIpApprovalAllowedCountryCodes}.";
+        return $"{recipients} {countries}";
+    }
 
     private static string BuildExternalRouteUrl(PublishedApplicationDefinition route)
     {
