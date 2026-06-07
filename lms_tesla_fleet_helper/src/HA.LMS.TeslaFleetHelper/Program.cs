@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 const string ProductName = "LMS Tesla Fleet Helper";
-const string ProductVersionFallback = "0.2.40";
+const string ProductVersionFallback = "0.2.41";
 const string TeslaPublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-key.pem";
 const string TeslaPublicKeyContentType = "application/x-pem-file";
 const string TeslaAuthorizeEndpoint = "https://auth.tesla.com/oauth2/v3/authorize";
@@ -1556,6 +1556,14 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
             <p style="margin:8px 0 0">This setup needs Tesla Energy read and command scopes. Start Tesla OAuth again so live Powerwall/Gateway data can be read and writable Home Assistant controls can send commands.</p>
           </div>
         """;
+    var setupGuidePanel = RenderSetupGuide(
+        originDomain,
+        publicKeyUrl,
+        oauthStartUrl,
+        oauthRedirectUri,
+        virtualKeyUrl,
+        state.FleetApiAudience,
+        state.TeslaScopes);
 
     return $$"""
 <!doctype html>
@@ -1863,6 +1871,19 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
     }
     .callout strong { color: var(--text); }
     .callout.warn { border-color: var(--warning-border); }
+    .guide-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-top: 12px; }
+    .guide-section {
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+    .guide-section:first-of-type { border-top: 0; padding-top: 0; }
+    .guide-section h3 { font-size: 16px; margin-bottom: 7px; }
+    .guide-section p { color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+    .guide-list { margin-top: 8px; }
+    .guide-list li { margin-bottom: 6px; }
+    .guide-link-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .guide-link-row a { color: var(--accent-2); font-size: 13px; font-weight: 750; }
+    .guide-facts { margin-top: 10px; }
     ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); line-height: 1.55; }
     .split-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .diagnostic-filter-bar {
@@ -2310,6 +2331,7 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
       <div class="tab-control-bar">
         <div class="tab-list" role="tablist" aria-label="Tesla Fleet Helper sections">
           <button class="tab-trigger active" type="button" role="tab" aria-selected="true" data-helper-tab="setup"><span class="tab-trigger-title">Setup & Publish</span></button>
+          <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="guide"><span class="tab-trigger-title">Setup Guide</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="cars"><span class="tab-trigger-title">Cars</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="powerwalls"><span class="tab-trigger-title">Powerwalls</span></button>
           <button class="tab-trigger" type="button" role="tab" aria-selected="false" data-helper-tab="diagnostics"><span class="tab-trigger-title">Diagnostics</span></button>
@@ -2434,6 +2456,8 @@ static string RenderPage(TeslaFleetState state, EdgeGatewayCompanionStatus? comp
         </div>
       </div>
     </section>
+
+    {{setupGuidePanel}}
 
     <section class="card tab-panel" data-helper-tab-panel="cars">
       <div class="section-header">
@@ -2852,6 +2876,147 @@ static string RenderCompanionChecks(EdgeGatewayCompanionStatus companion)
     }
 
     return string.Concat(companion.Checks.Select(check => $"<li>{H(check)}</li>"));
+}
+
+static string RenderSetupGuide(
+    string originDomain,
+    string publicKeyUrl,
+    string oauthStartUrl,
+    string oauthRedirectUri,
+    string virtualKeyUrl,
+    string fleetApiAudience,
+    string teslaScopes)
+{
+    var origin = string.IsNullOrWhiteSpace(originDomain) ? "tesla.example.com" : originDomain.Trim();
+    var allowedOrigin = $"https://{origin}";
+    var effectiveScopes = string.IsNullOrWhiteSpace(teslaScopes) ? DefaultTeslaScopes : NormalizeScopes(teslaScopes);
+    return $"""
+    <section class="card tab-panel" data-helper-tab-panel="guide">
+      <h2>Full Setup Guide</h2>
+      <p class="meta">Use this flow when setting up Tesla Fleet from scratch. Edge Gateway provides the public HTTPS domain, Caddy routes and Cloudflare tunnel. Tesla Fleet Helper owns the Tesla key, Partner Account registration, OAuth, virtual key install, and Home Assistant MQTT bridge.</p>
+      <div class="guide-link-row">
+        <a href="https://developer.tesla.com/dashboard" target="_blank" rel="noopener noreferrer">Tesla Developer Dashboard</a>
+        <a href="https://developer.tesla.com/docs/fleet-api/getting-started/what-is-fleet-api" target="_blank" rel="noopener noreferrer">Fleet API onboarding</a>
+        <a href="https://developer.tesla.com/docs/fleet-api/endpoints/partner-endpoints" target="_blank" rel="noopener noreferrer">Partner endpoints</a>
+        <a href="https://developer.tesla.com/docs/fleet-api/authentication/third-party-tokens" target="_blank" rel="noopener noreferrer">OAuth tokens</a>
+        <a href="https://developer.tesla.com/docs/fleet-api/virtual-keys/overview" target="_blank" rel="noopener noreferrer">Virtual keys</a>
+      </div>
+
+      <div class="guide-grid">
+        <div class="callout">
+          <strong>Current values to use</strong>
+          <div class="fact-grid guide-facts">
+            <div><span>Origin domain</span><code>{H(origin)}</code></div>
+            <div><span>Allowed Origin(s)</span><code>{H(allowedOrigin)}</code></div>
+            <div><span>Allowed Redirect URI(s)</span><code>{H(oauthRedirectUri)}</code></div>
+            <div><span>Public key URL</span><code>{H(publicKeyUrl)}</code></div>
+            <div><span>OAuth start URL</span><code>{H(oauthStartUrl)}</code></div>
+            <div><span>Virtual key URL</span><code>{H(virtualKeyUrl)}</code></div>
+            <div><span>Fleet API base URL</span><code>{H(fleetApiAudience)}</code></div>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>Target result</strong>
+          <ul class="guide-list">
+            <li>The origin domain is a public HTTPS host managed by LMS Edge Gateway and Cloudflare.</li>
+            <li>The Tesla public key is reachable at the Tesla-required .well-known path.</li>
+            <li>The Tesla Developer app uses the exact redirect URI shown here.</li>
+            <li>Tesla OAuth is connected and the refresh token is stored locally in this add-on.</li>
+            <li>The virtual key is installed once per vehicle so signed commands can work.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="guide-section">
+        <h3>1. Prepare LMS Edge Gateway</h3>
+        <p>Install and start LMS Edge Gateway on the same Home Assistant host. Complete the Cloudflare setup first so the tunnel is healthy and the external relay domain is available.</p>
+        <ul class="guide-list">
+          <li>Create or confirm an external relay host for the Tesla origin domain, for example tesla.example.com.</li>
+          <li>Use the real host you want Tesla to know about. Do not use a Home Assistant local address, a Docker address, or 127.0.0.1.</li>
+          <li>The origin domain must be covered by your Cloudflare-managed zone and route through the Edge Gateway tunnel.</li>
+          <li>In Edge Gateway Domain Services, the Tesla public asset should appear after this helper publishes it. It is public by design and must bypass LMS authentication.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>2. Configure the Tesla domain service</h3>
+        <p>In this helper, enter the origin domain on Setup & Publish, save settings, then use Publish + register. The helper will publish the Tesla public key and OAuth routes through the generic Edge Gateway public asset APIs.</p>
+        <ul class="guide-list">
+          <li>Public key asset: /.well-known/appspecific/com.tesla.3p.public-key.pem</li>
+          <li>Public OAuth start route: /oauth/start</li>
+          <li>Public OAuth callback route: /redirect</li>
+          <li>The private key stays inside the Tesla Helper data folder and is never published by Edge Gateway.</li>
+          <li>Use Verify public URL and Check Tesla public key before starting OAuth.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>3. Create the Tesla Developer app</h3>
+        <p>Open the Tesla Developer Dashboard and create or edit your Fleet API application. Copy the generated client ID and client secret into Setup & Publish.</p>
+        <ul class="guide-list">
+          <li>Grant types: enable authorization-code and client-credentials.</li>
+          <li>Allowed Origin(s): {H(allowedOrigin)}</li>
+          <li>Allowed Redirect URI(s): {H(oauthRedirectUri)}</li>
+          <li>Scopes for full helper support: {H(effectiveScopes)}</li>
+          <li>Use the same origin domain everywhere. A redirect mismatch normally means the Tesla app is configured with a different scheme, host, or path.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>4. Publish and register with Tesla</h3>
+        <p>Press Publish + register after the Tesla client ID and secret are saved. This performs the Edge Gateway publish step and then calls Tesla Partner Account registration for the selected Fleet API region.</p>
+        <ul class="guide-list">
+          <li>If there is no key yet, the helper generates an EC P-256 key pair first.</li>
+          <li>Edge Gateway serves only the public key over HTTPS.</li>
+          <li>Tesla registration checks that the public key can be fetched from the origin domain.</li>
+          <li>For EU accounts, the helper can switch to the EU Fleet API base URL once the token region is known.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>5. Connect OAuth</h3>
+        <p>Use Start Tesla OAuth from Setup & Publish. Tesla redirects back to this helper through Edge Gateway using the redirect URI above. OAuth is separate from virtual-key installation.</p>
+        <ul class="guide-list">
+          <li>Use the same Tesla account that owns or has access to the vehicles and energy sites you want in Home Assistant.</li>
+          <li>The offline_access scope lets this helper refresh tokens without asking you to log in every few hours.</li>
+          <li>If scopes change later, run OAuth again so Tesla grants the new permissions.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>6. Install the virtual key</h3>
+        <p>Use Install virtual key only after the public key is verified, the Partner Account is registered, and OAuth has completed. This opens the Tesla mobile app with the developer domain.</p>
+        <ul class="guide-list">
+          <li>Install URL: {H(virtualKeyUrl)}</li>
+          <li>Install once per vehicle, or after rotating the helper key.</li>
+          <li>OAuth reconnects do not require reinstalling the virtual key.</li>
+          <li>If the Tesla app cannot grant access, confirm the mobile app is logged into the same Tesla account used for OAuth.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>7. Enable Home Assistant</h3>
+        <p>Enable Home Assistant MQTT publishing after OAuth and virtual-key setup. Use the Cars and Powerwalls tabs for live helper controls, and Home Assistant MQTT discovery for normal dashboards and automations.</p>
+        <ul class="guide-list">
+          <li>Powerwall data is designed to refresh frequently because it changes in near real time.</li>
+          <li>Vehicle detail refreshes are slower and do not wake sleeping cars during normal background polling.</li>
+          <li>Wake and command actions may wake the selected vehicle because Tesla requires live command delivery.</li>
+          <li>If Home Assistant entities do not update after a mapping change, use Reset HA discovery + republish in Diagnostics.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>Troubleshooting</h3>
+        <ul class="guide-list">
+          <li>HTTP 530 or tunnel errors usually mean Cloudflare or Edge Gateway is not routing the origin domain to the helper yet.</li>
+          <li>OAuth redirect_uri errors mean the Tesla Developer app does not exactly match the redirect URI shown in Current values.</li>
+          <li>Virtual-key install errors usually mean OAuth has not been granted for the same Tesla account, Partner registration has not completed, or the public key is not reachable.</li>
+          <li>Vehicle commands require both OAuth command scopes and the virtual key on the target vehicle.</li>
+          <li>Energy controls require energy_device_data and energy_cmds scopes.</li>
+        </ul>
+      </div>
+    </section>
+""";
 }
 
 static string BuildStatusClass(string? status)

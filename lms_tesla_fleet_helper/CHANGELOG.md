@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.41
+
+- Adds a full Setup Guide tab covering Edge Gateway domain service setup, Tesla Developer app values, public-key publishing, Partner Account registration, OAuth, virtual-key install, and Home Assistant MQTT setup.
+
 ## 0.2.40
 
 - Hardens Tesla vehicle command proxy supervision so failed or detached process starts do not throw repeated `No process is associated with this object` warnings.
