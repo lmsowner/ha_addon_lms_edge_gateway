@@ -39,6 +39,7 @@ public interface IEdgeGatewayRelayProvisioningService
         bool? skipUpstreamTlsVerification = null,
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
+        bool temporaryIpApprovalUseNotFoundResponse = false,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> UpdateApplicationAsync(
@@ -60,6 +61,7 @@ public interface IEdgeGatewayRelayProvisioningService
         bool? skipUpstreamTlsVerification = null,
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
+        bool temporaryIpApprovalUseNotFoundResponse = false,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> PublishApplicationAsync(

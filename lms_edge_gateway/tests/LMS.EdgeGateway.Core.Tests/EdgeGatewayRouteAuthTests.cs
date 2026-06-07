@@ -82,6 +82,26 @@ public sealed class EdgeGatewayRouteAuthTests
     }
 
     [Fact]
+    public async Task Temporary_ip_approval_route_can_hide_denial_with_not_found()
+    {
+        var approvalService = new RecordingTemporaryIpApprovalService(
+            new TemporaryIpApprovalEvaluationResult(false, "Approval email sent."));
+        var route = Route(EdgeGatewayAccessPolicies.TemporaryIpApproval) with
+        {
+            TemporaryIpApprovalUseNotFoundResponse = true
+        };
+        var service = new EdgeGatewayRouteAuthService(
+            new InMemoryConfigurationStore(Configuration(route)),
+            approvalService);
+
+        var result = await service.EvaluateAuthAsync(Context(new ClaimsPrincipal(new ClaimsIdentity())));
+
+        Assert.Equal(404, result.StatusCode);
+        Assert.Equal("Not Found.", result.Reason);
+        Assert.NotNull(approvalService.LastContext);
+    }
+
+    [Fact]
     public async Task Temporary_ip_approval_allows_when_service_has_active_grant()
     {
         var approvalService = new RecordingTemporaryIpApprovalService(

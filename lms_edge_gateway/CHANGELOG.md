@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.51
+
+- Adds a per-route Email approve IP option to return 404 to unapproved clients instead of showing the approval status message.
+- Keeps the approval email flow active while allowing stealthier denied responses for routes such as Plex.
+
 ## 0.1.50
 
 - Replaces temporary IP approval free-text recipient and country fields with reusable searchable multi-select controls.

@@ -95,11 +95,16 @@ public sealed class EdgeGatewayRouteAuthService(
                     context.UserAgent),
                 cancellationToken);
 
-            return result.IsAllowed
-                ? new EdgeGatewayAuthCheckResult(
+            if (result.IsAllowed)
+            {
+                return new EdgeGatewayAuthCheckResult(
                     StatusOk,
                     result.Reason,
-                    UserName: $"temporary-ip:{sourceIp}")
+                    UserName: $"temporary-ip:{sourceIp}");
+            }
+
+            return route.TemporaryIpApprovalUseNotFoundResponse
+                ? new EdgeGatewayAuthCheckResult(StatusNotFound, "Not Found.")
                 : new EdgeGatewayAuthCheckResult(StatusForbidden, result.Reason);
         }
 

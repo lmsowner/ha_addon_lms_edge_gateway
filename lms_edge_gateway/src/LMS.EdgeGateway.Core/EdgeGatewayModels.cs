@@ -34,7 +34,8 @@ public sealed record PublishedApplicationDefinition(
     bool? StripForwardedFor = null,
     bool? SkipUpstreamTlsVerification = null,
     string TemporaryIpApprovalRecipients = "",
-    string TemporaryIpApprovalAllowedCountryCodes = "");
+    string TemporaryIpApprovalAllowedCountryCodes = "",
+    bool TemporaryIpApprovalUseNotFoundResponse = false);
 
 public sealed record PublicProxyRouteDefinition(
     Guid Id,

@@ -245,18 +245,28 @@
                                     <strong>Email approval gates this route by source IP</strong>
                                     <span>@TemporaryIpApprovalWarningText</span>
                                 </div>
-                                <LmsMultiSelect Label="Approval recipients"
-                                                HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
-                                                Placeholder="Choose LMS users"
-                                                EmptyText="No enabled LMS users match."
-                                                Items="@approvalRecipientOptions"
-                                                @bind-Value="editTemporaryIpApprovalRecipients" />
-                                <LmsMultiSelect Label="Allowed countries"
-                                                HelperText="Optional Cloudflare country allow-list. Blank allows any country."
-                                                Placeholder="Search countries"
-                                                EmptyText="No countries match."
-                                                Items="@CountryOptions"
-                                                @bind-Value="editTemporaryIpApprovalAllowedCountryCodes" />
+                                <div class="edge-form-grid edge-route-main-grid">
+                                    <LmsMultiSelect Label="Approval recipients"
+                                                    HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
+                                                    Placeholder="Choose LMS users"
+                                                    EmptyText="No enabled LMS users match."
+                                                    Items="@approvalRecipientOptions"
+                                                    @bind-Value="editTemporaryIpApprovalRecipients" />
+                                    <LmsMultiSelect Label="Allowed countries"
+                                                    HelperText="Optional Cloudflare country allow-list. Blank allows any country."
+                                                    Placeholder="Search countries"
+                                                    EmptyText="No countries match."
+                                                    Items="@CountryOptions"
+                                                    @bind-Value="editTemporaryIpApprovalAllowedCountryCodes" />
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Denied response</span>
+                                        <span class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="editTemporaryIpApprovalUseNotFoundResponse" />
+                                            <span>Return 404</span>
+                                        </span>
+                                        <span class="ui-field-helper">Still sends the approval email, but unapproved clients see Not Found.</span>
+                                    </label>
+                                </div>
                             }
                             @if (IsPassThroughAccessPolicy(editAppAccessPolicy))
                             {
@@ -344,6 +354,7 @@
     private string editAppNotes = string.Empty;
     private string editTemporaryIpApprovalRecipients = string.Empty;
     private string editTemporaryIpApprovalAllowedCountryCodes = string.Empty;
+    private bool editTemporaryIpApprovalUseNotFoundResponse;
     private bool editAppAllowLanOnly;
     private bool editAppUsePublicHostHeader;
     private bool editAppStripForwardedFor = true;
@@ -565,6 +576,7 @@
         editAppNotes = route.Notes;
         editTemporaryIpApprovalRecipients = route.TemporaryIpApprovalRecipients;
         editTemporaryIpApprovalAllowedCountryCodes = route.TemporaryIpApprovalAllowedCountryCodes;
+        editTemporaryIpApprovalUseNotFoundResponse = route.TemporaryIpApprovalUseNotFoundResponse;
         editAppUsePublicHostHeader = ShouldUsePublicHostHeaderInEditor(route);
         editAppStripForwardedFor = route.StripForwardedFor ?? true;
         editAppSkipUpstreamTlsVerification = route.SkipUpstreamTlsVerification ?? IsHttpsUrl(route.UpstreamUrl);
@@ -636,7 +648,8 @@
                 stripForwardedFor: editAppStripForwardedFor,
                 skipUpstreamTlsVerification: editAppSkipUpstreamTlsVerification,
                 temporaryIpApprovalRecipients: editTemporaryIpApprovalRecipients,
-                temporaryIpApprovalAllowedCountryCodes: editTemporaryIpApprovalAllowedCountryCodes);
+                temporaryIpApprovalAllowedCountryCodes: editTemporaryIpApprovalAllowedCountryCodes,
+                temporaryIpApprovalUseNotFoundResponse: editTemporaryIpApprovalUseNotFoundResponse);
             routeActionMessage = result.Summary;
             routeActionIsError = !result.Success;
             routeActionSteps = result.Steps;
@@ -697,7 +710,10 @@
         var countries = string.IsNullOrWhiteSpace(route.TemporaryIpApprovalAllowedCountryCodes)
             ? "Countries: any."
             : $"Countries: {route.TemporaryIpApprovalAllowedCountryCodes}.";
-        return $"{recipients} {countries}";
+        var response = route.TemporaryIpApprovalUseNotFoundResponse
+            ? "Denied response: 404."
+            : "Denied response: approval message.";
+        return $"{recipients} {countries} {response}";
     }
 
     private static string BuildExternalRouteUrl(PublishedApplicationDefinition route)

@@ -1385,7 +1385,9 @@ textarea {
 }
 
 .edge-route-main-grid > .ui-field > .lms-multi-select,
-.edge-form-grid-target > .ui-field > .lms-multi-select {
+.edge-form-grid-target > .ui-field > .lms-multi-select,
+.edge-route-main-grid > .ui-field > .edge-checkbox-field,
+.edge-form-grid-target > .ui-field > .edge-checkbox-field {
     align-self: end;
 }
 

@@ -77,7 +77,8 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 AllowedGroups = application.AllowedGroups?.Trim() ?? string.Empty,
                 Notes = application.Notes?.Trim() ?? string.Empty,
                 TemporaryIpApprovalRecipients = application.TemporaryIpApprovalRecipients?.Trim() ?? string.Empty,
-                TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeList(application.TemporaryIpApprovalAllowedCountryCodes)
+                TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeList(application.TemporaryIpApprovalAllowedCountryCodes),
+                TemporaryIpApprovalUseNotFoundResponse = application.TemporaryIpApprovalUseNotFoundResponse
             })
             .ToArray() ?? [];
 

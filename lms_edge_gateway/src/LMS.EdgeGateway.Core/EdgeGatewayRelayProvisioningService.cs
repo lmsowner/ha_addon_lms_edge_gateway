@@ -820,6 +820,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool? skipUpstreamTlsVerification = null,
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
+        bool temporaryIpApprovalUseNotFoundResponse = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -883,7 +884,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 stripForwardedFor,
                 skipUpstreamTlsVerification,
                 NormalizeRouteTextBlock(temporaryIpApprovalRecipients),
-                NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes));
+                NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes),
+                temporaryIpApprovalUseNotFoundResponse);
             AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
@@ -956,6 +958,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool? skipUpstreamTlsVerification = null,
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
+        bool temporaryIpApprovalUseNotFoundResponse = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -1009,7 +1012,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 StripForwardedFor = stripForwardedFor,
                 SkipUpstreamTlsVerification = skipUpstreamTlsVerification,
                 TemporaryIpApprovalRecipients = NormalizeRouteTextBlock(temporaryIpApprovalRecipients),
-                TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes)
+                TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes),
+                TemporaryIpApprovalUseNotFoundResponse = temporaryIpApprovalUseNotFoundResponse
             };
             AddHomeAssistantUpstreamWarnings(updated, warnings);
 
