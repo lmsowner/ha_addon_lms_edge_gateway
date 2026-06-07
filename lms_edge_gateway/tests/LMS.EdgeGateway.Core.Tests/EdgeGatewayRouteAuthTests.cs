@@ -297,8 +297,8 @@ public sealed class EdgeGatewayRouteAuthTests
             null!);
         var configuration = Configuration(Route("Pass Through") with
         {
-            PublicHostname = "hassio.gosmore.net",
-            UpstreamUrl = "https://hassio.kiernanfamily.co.uk:443",
+            PublicHostname = "hassio.linuxmadesane.com",
+            UpstreamUrl = "https://ha-origin.linuxmadesane.com:443",
             UsePublicHostHeader = true
         });
         var method = typeof(EdgeGatewayRelayProvisioningService).GetMethod(
@@ -307,7 +307,7 @@ public sealed class EdgeGatewayRouteAuthTests
 
         var caddyfile = Assert.IsType<string>(method!.Invoke(service, [configuration]));
 
-        Assert.Contains("reverse_proxy https://hassio.kiernanfamily.co.uk:443", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("reverse_proxy https://ha-origin.linuxmadesane.com:443", caddyfile, StringComparison.Ordinal);
         Assert.Contains("header_up Host {upstream_hostport}", caddyfile, StringComparison.Ordinal);
         Assert.DoesNotContain("header_up Host {host}", caddyfile, StringComparison.Ordinal);
     }
