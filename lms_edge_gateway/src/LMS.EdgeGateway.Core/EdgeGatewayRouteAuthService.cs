@@ -104,7 +104,7 @@ public sealed class EdgeGatewayRouteAuthService(
             }
 
             return route.TemporaryIpApprovalUseNotFoundResponse
-                ? new EdgeGatewayAuthCheckResult(StatusNotFound, "Not Found.")
+                ? new EdgeGatewayAuthCheckResult(StatusNotFound, string.Empty, SuppressResponseBody: true)
                 : new EdgeGatewayAuthCheckResult(StatusForbidden, result.Reason);
         }
 
@@ -500,4 +500,5 @@ public sealed record EdgeGatewayAuthCheckResult(
     string? RedirectLocation = null,
     string? UserName = null,
     string? UserEmail = null,
-    string? Groups = null);
+    string? Groups = null,
+    bool SuppressResponseBody = false);

@@ -568,6 +568,10 @@ app.MapGet("/edge-auth/check", async Task (
             context.Response.Headers["X-LMS-Groups"] = result.Groups;
         }
     }
+    else if (result.SuppressResponseBody)
+    {
+        context.Response.ContentLength = 0;
+    }
     else if (result.StatusCode != StatusCodes.Status302Found)
     {
         context.Response.ContentType = "text/plain; charset=utf-8";

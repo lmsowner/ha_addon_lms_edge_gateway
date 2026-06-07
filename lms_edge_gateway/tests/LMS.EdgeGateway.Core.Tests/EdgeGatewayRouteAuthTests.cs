@@ -97,7 +97,8 @@ public sealed class EdgeGatewayRouteAuthTests
         var result = await service.EvaluateAuthAsync(Context(new ClaimsPrincipal(new ClaimsIdentity())));
 
         Assert.Equal(404, result.StatusCode);
-        Assert.Equal("Not Found.", result.Reason);
+        Assert.True(result.SuppressResponseBody);
+        Assert.Empty(result.Reason);
         Assert.NotNull(approvalService.LastContext);
     }
 

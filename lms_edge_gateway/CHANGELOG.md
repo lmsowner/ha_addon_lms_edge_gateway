@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.53
+
+- Makes Email approve IP stealth denial return an empty HTTP 404 response instead of a response body that says Not Found.
+
 ## 0.1.52
 
 - Gives Email approve IP settings a wider dedicated layout so selected recipients and countries are readable.
