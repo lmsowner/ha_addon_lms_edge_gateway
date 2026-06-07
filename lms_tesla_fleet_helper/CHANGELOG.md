@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.40
+
+- Hardens Tesla vehicle command proxy supervision so failed or detached process starts do not throw repeated `No process is associated with this object` warnings.
+- Disposes exited proxy processes before restarting and avoids storing the process handle until startup has succeeded.
+
 ## 0.2.39
 
 - Shows the installed Tesla Fleet Helper add-on version discreetly in the header.

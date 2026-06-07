@@ -1135,8 +1135,9 @@ sealed class TeslaFleetVehicleCommandProxyService(
                     continue;
                 }
 
-                if (proxyProcess is null || proxyProcess.HasExited)
+                if (!IsProcessRunning(proxyProcess))
                 {
+                    await StopProxyAsync(stoppingToken);
                     EnsureProxyTlsFiles();
                     StartProxy(state.PrivateKeyPath);
                 }
@@ -1188,36 +1189,47 @@ sealed class TeslaFleetVehicleCommandProxyService(
         startInfo.ArgumentList.Add(store.VehicleCommandProxyCachePath);
         startInfo.Environment["TESLA_CACHE_FILE"] = store.VehicleCommandProxyCachePath;
 
-        proxyProcess = new Process
+        var process = new Process
         {
             StartInfo = startInfo,
             EnableRaisingEvents = true
         };
-        proxyProcess.OutputDataReceived += (_, args) =>
+        process.OutputDataReceived += (_, args) =>
         {
             if (!string.IsNullOrWhiteSpace(args.Data))
             {
                 logger.LogInformation("tesla-http-proxy: {Message}", args.Data);
             }
         };
-        proxyProcess.ErrorDataReceived += (_, args) =>
+        process.ErrorDataReceived += (_, args) =>
         {
             if (!string.IsNullOrWhiteSpace(args.Data))
             {
                 logger.LogInformation("tesla-http-proxy: {Message}", args.Data);
             }
         };
-        proxyProcess.Exited += (_, _) =>
-            logger.LogWarning("Tesla vehicle command proxy exited with code {ExitCode}.", proxyProcess?.ExitCode);
+        process.Exited += (sender, _) =>
+            logger.LogWarning("Tesla vehicle command proxy exited with code {ExitCode}.", TryGetExitCode(sender as Process));
 
-        if (!proxyProcess.Start())
+        try
         {
-            throw new InvalidOperationException("Tesla vehicle command proxy did not start.");
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("Tesla vehicle command proxy did not start.");
+            }
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            proxyProcess = process;
+            logger.LogInformation("Started Tesla vehicle command proxy on https://{Host}:{Port}.", ProxyHost, ProxyPort);
         }
-
-        proxyProcess.BeginOutputReadLine();
-        proxyProcess.BeginErrorReadLine();
-        logger.LogInformation("Started Tesla vehicle command proxy on https://{Host}:{Port}.", ProxyHost, ProxyPort);
+        catch
+        {
+            StopStartedProcess(process);
+            process.Dispose();
+            proxyProcess = null;
+            throw;
+        }
     }
 
     private void EnsureProxyTlsFiles()
@@ -1251,17 +1263,19 @@ sealed class TeslaFleetVehicleCommandProxyService(
 
     private async Task StopProxyAsync(CancellationToken cancellationToken)
     {
-        if (proxyProcess is null)
+        var process = proxyProcess;
+        proxyProcess = null;
+        if (process is null)
         {
             return;
         }
 
         try
         {
-            if (!proxyProcess.HasExited)
+            if (IsProcessRunning(process))
             {
-                proxyProcess.Kill(entireProcessTree: true);
-                await proxyProcess.WaitForExitAsync(cancellationToken);
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(cancellationToken);
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -1270,8 +1284,55 @@ sealed class TeslaFleetVehicleCommandProxyService(
         }
         finally
         {
-            proxyProcess.Dispose();
-            proxyProcess = null;
+            process.Dispose();
+        }
+    }
+
+    private static bool IsProcessRunning(Process? process)
+    {
+        if (process is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return !process.HasExited;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    private static int? TryGetExitCode(Process? process)
+    {
+        if (process is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return process.ExitCode;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+        {
+            return null;
+        }
+    }
+
+    private static void StopStartedProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
         }
     }
 

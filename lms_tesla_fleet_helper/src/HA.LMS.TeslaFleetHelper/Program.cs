@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 const string ProductName = "LMS Tesla Fleet Helper";
-const string ProductVersionFallback = "0.2.39";
+const string ProductVersionFallback = "0.2.40";
 const string TeslaPublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-key.pem";
 const string TeslaPublicKeyContentType = "application/x-pem-file";
 const string TeslaAuthorizeEndpoint = "https://auth.tesla.com/oauth2/v3/authorize";
