@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.52
+
+- Gives Email approve IP settings a wider dedicated layout so selected recipients and countries are readable.
+- Adds per-route idle cut-off and maximum expiry settings for temporary IP approvals.
+- Uses route-specific approval lifetimes in approval emails and grants.
+
 ## 0.1.51
 
 - Adds a per-route Email approve IP option to return 404 to unapproved clients instead of showing the approval status message.

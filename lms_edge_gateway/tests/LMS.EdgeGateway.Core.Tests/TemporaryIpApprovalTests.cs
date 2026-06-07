@@ -117,6 +117,31 @@ public sealed class TemporaryIpApprovalTests
         Assert.Single(emailDelivery.Messages);
     }
 
+    [Fact]
+    public async Task Temporary_ip_approval_uses_route_specific_grant_lifetimes()
+    {
+        var route = Route() with
+        {
+            TemporaryIpApprovalIdleTimeoutMinutes = 45,
+            TemporaryIpApprovalMaxLifetimeMinutes = 360
+        };
+        var approvalStore = new InMemoryTemporaryIpApprovalStore();
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, approvalStore, emailDelivery);
+        var beforeApproval = DateTimeOffset.UtcNow;
+
+        var result = await service.EvaluateAsync(route, Context(countryCode: "GB"));
+        var token = ExtractApprovalToken(emailDelivery.Messages.Single().PlainTextBody);
+        var approval = await service.ApproveAsync(token);
+
+        Assert.False(result.IsAllowed);
+        Assert.True(approval.Success);
+        Assert.Contains("45 minutes without traffic", emailDelivery.Messages.Single().PlainTextBody, StringComparison.Ordinal);
+        Assert.Contains("360 minutes at most", emailDelivery.Messages.Single().PlainTextBody, StringComparison.Ordinal);
+        Assert.InRange((approval.IdleExpiresAtUtc!.Value - beforeApproval).TotalMinutes, 44, 46);
+        Assert.InRange((approval.ExpiresAtUtc!.Value - beforeApproval).TotalMinutes, 359, 361);
+    }
+
     private static string ExtractApprovalToken(string body)
     {
         var match = Regex.Match(body, @"token=([^\s]+)", RegexOptions.CultureInvariant);

@@ -60,7 +60,7 @@
                             <strong>Email approval gates this route by source IP</strong>
                             <span>@TemporaryIpApprovalWarningText</span>
                         </div>
-                        <div class="edge-form-grid edge-route-main-grid">
+                        <div class="edge-form-grid edge-temporary-approval-grid">
                             <LmsMultiSelect Label="Approval recipients"
                                             HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
                                             Placeholder="Choose LMS users"
@@ -80,6 +80,16 @@
                                     <span>Return 404</span>
                                 </span>
                                 <span class="ui-field-helper">Still sends the approval email, but unapproved clients see Not Found.</span>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Idle cut-off</span>
+                                <input type="number" min="1" max="1440" @bind="addTemporaryIpApprovalIdleTimeoutMinutes" placeholder="15" />
+                                <span class="ui-field-helper">Minutes without traffic. Blank uses the default.</span>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Maximum expiry</span>
+                                <input type="number" min="1" max="10080" @bind="addTemporaryIpApprovalMaxLifetimeMinutes" placeholder="120" />
+                                <span class="ui-field-helper">Absolute approval lifetime in minutes. Blank uses the default.</span>
                             </label>
                         </div>
                     }
@@ -283,6 +293,8 @@
     private string addTemporaryIpApprovalRecipients = string.Empty;
     private string addTemporaryIpApprovalAllowedCountryCodes = string.Empty;
     private bool addTemporaryIpApprovalUseNotFoundResponse;
+    private int? addTemporaryIpApprovalIdleTimeoutMinutes;
+    private int? addTemporaryIpApprovalMaxLifetimeMinutes;
     private bool addAppEnabled = true;
     private bool addAppAllowLanOnly;
     private bool addAppUsePublicHostHeader = true;
@@ -337,6 +349,8 @@
         addTemporaryIpApprovalRecipients = string.Empty;
         addTemporaryIpApprovalAllowedCountryCodes = string.Empty;
         addTemporaryIpApprovalUseNotFoundResponse = false;
+        addTemporaryIpApprovalIdleTimeoutMinutes = null;
+        addTemporaryIpApprovalMaxLifetimeMinutes = null;
         addAppEnabled = true;
         addAppAllowLanOnly = false;
         addAppUsePublicHostHeader = true;
@@ -389,7 +403,9 @@
                 skipUpstreamTlsVerification: addAppSkipUpstreamTlsVerification,
                 temporaryIpApprovalRecipients: addTemporaryIpApprovalRecipients,
                 temporaryIpApprovalAllowedCountryCodes: addTemporaryIpApprovalAllowedCountryCodes,
-                temporaryIpApprovalUseNotFoundResponse: addTemporaryIpApprovalUseNotFoundResponse);
+                temporaryIpApprovalUseNotFoundResponse: addTemporaryIpApprovalUseNotFoundResponse,
+                temporaryIpApprovalIdleTimeoutMinutes: addTemporaryIpApprovalIdleTimeoutMinutes,
+                temporaryIpApprovalMaxLifetimeMinutes: addTemporaryIpApprovalMaxLifetimeMinutes);
 
             if (!result.Success)
             {
@@ -915,7 +931,7 @@
         "Internet traffic for this hostname is passed straight to the destination service. LMS MFA and passkeys are not required on this route, so use pass-through only when the destination is public by design or has the authentication and authorization you require.";
 
     private const string TemporaryIpApprovalWarningText =
-        "The first request is denied and an approval email is sent. Approval only allows the app from that exact source IP, then expires after 15 minutes without traffic or after 2 hours at most. Repeated emails for the same app/IP are throttled.";
+        "The first request is denied and an approval email is sent. Approval only allows the app from that exact source IP, then expires on the configured idle cut-off or maximum lifetime. Repeated emails for the same app/IP are throttled.";
 
     private static bool IsPassThroughAccessPolicy(string? accessPolicy)
         => EdgeGatewayAccessPolicies.IsPassThrough(accessPolicy);

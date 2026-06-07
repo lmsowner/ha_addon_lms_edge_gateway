@@ -40,6 +40,8 @@ public interface IEdgeGatewayRelayProvisioningService
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
         bool temporaryIpApprovalUseNotFoundResponse = false,
+        int? temporaryIpApprovalIdleTimeoutMinutes = null,
+        int? temporaryIpApprovalMaxLifetimeMinutes = null,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> UpdateApplicationAsync(
@@ -62,6 +64,8 @@ public interface IEdgeGatewayRelayProvisioningService
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
         bool temporaryIpApprovalUseNotFoundResponse = false,
+        int? temporaryIpApprovalIdleTimeoutMinutes = null,
+        int? temporaryIpApprovalMaxLifetimeMinutes = null,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> PublishApplicationAsync(

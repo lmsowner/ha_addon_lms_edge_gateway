@@ -245,7 +245,7 @@
                                     <strong>Email approval gates this route by source IP</strong>
                                     <span>@TemporaryIpApprovalWarningText</span>
                                 </div>
-                                <div class="edge-form-grid edge-route-main-grid">
+                                <div class="edge-form-grid edge-temporary-approval-grid">
                                     <LmsMultiSelect Label="Approval recipients"
                                                     HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
                                                     Placeholder="Choose LMS users"
@@ -266,6 +266,16 @@
                                         </span>
                                         <span class="ui-field-helper">Still sends the approval email, but unapproved clients see Not Found.</span>
                                     </label>
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Idle cut-off</span>
+                                        <input type="number" min="1" max="1440" @bind="editTemporaryIpApprovalIdleTimeoutMinutes" placeholder="15" />
+                                        <span class="ui-field-helper">Minutes without traffic. Blank uses the default.</span>
+                                    </label>
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Maximum expiry</span>
+                                        <input type="number" min="1" max="10080" @bind="editTemporaryIpApprovalMaxLifetimeMinutes" placeholder="120" />
+                                        <span class="ui-field-helper">Absolute approval lifetime in minutes. Blank uses the default.</span>
+                                    </label>
                                 </div>
                             }
                             @if (IsPassThroughAccessPolicy(editAppAccessPolicy))
@@ -275,7 +285,7 @@
                                     <span>@PassThroughWarningText</span>
                                 </div>
                             }
-                            <div class="edge-readonly-field">
+                            <div class="edge-readonly-field edge-route-preview-field">
                                 <span class="ui-field-label">Route</span>
                                 <strong>@editingRoute.PublicHostname</strong>
                                 <span><code>@BuildEditRoutePreview()</code></span>
@@ -355,6 +365,8 @@
     private string editTemporaryIpApprovalRecipients = string.Empty;
     private string editTemporaryIpApprovalAllowedCountryCodes = string.Empty;
     private bool editTemporaryIpApprovalUseNotFoundResponse;
+    private int? editTemporaryIpApprovalIdleTimeoutMinutes;
+    private int? editTemporaryIpApprovalMaxLifetimeMinutes;
     private bool editAppAllowLanOnly;
     private bool editAppUsePublicHostHeader;
     private bool editAppStripForwardedFor = true;
@@ -577,6 +589,8 @@
         editTemporaryIpApprovalRecipients = route.TemporaryIpApprovalRecipients;
         editTemporaryIpApprovalAllowedCountryCodes = route.TemporaryIpApprovalAllowedCountryCodes;
         editTemporaryIpApprovalUseNotFoundResponse = route.TemporaryIpApprovalUseNotFoundResponse;
+        editTemporaryIpApprovalIdleTimeoutMinutes = route.TemporaryIpApprovalIdleTimeoutMinutes;
+        editTemporaryIpApprovalMaxLifetimeMinutes = route.TemporaryIpApprovalMaxLifetimeMinutes;
         editAppUsePublicHostHeader = ShouldUsePublicHostHeaderInEditor(route);
         editAppStripForwardedFor = route.StripForwardedFor ?? true;
         editAppSkipUpstreamTlsVerification = route.SkipUpstreamTlsVerification ?? IsHttpsUrl(route.UpstreamUrl);
@@ -649,7 +663,9 @@
                 skipUpstreamTlsVerification: editAppSkipUpstreamTlsVerification,
                 temporaryIpApprovalRecipients: editTemporaryIpApprovalRecipients,
                 temporaryIpApprovalAllowedCountryCodes: editTemporaryIpApprovalAllowedCountryCodes,
-                temporaryIpApprovalUseNotFoundResponse: editTemporaryIpApprovalUseNotFoundResponse);
+                temporaryIpApprovalUseNotFoundResponse: editTemporaryIpApprovalUseNotFoundResponse,
+                temporaryIpApprovalIdleTimeoutMinutes: editTemporaryIpApprovalIdleTimeoutMinutes,
+                temporaryIpApprovalMaxLifetimeMinutes: editTemporaryIpApprovalMaxLifetimeMinutes);
             routeActionMessage = result.Summary;
             routeActionIsError = !result.Success;
             routeActionSteps = result.Steps;
@@ -691,7 +707,7 @@
         "Internet traffic for this hostname is passed straight to the destination service. LMS MFA and passkeys are not required on this route, so use pass-through only when the destination is public by design or has the authentication and authorization you require.";
 
     private const string TemporaryIpApprovalWarningText =
-        "The first request is denied and an approval email is sent. Approval only allows this app from the exact source IP, then expires after 15 minutes without traffic or after 2 hours at most. Repeated emails for the same app/IP are throttled.";
+        "The first request is denied and an approval email is sent. Approval only allows this app from the exact source IP, then expires on the configured idle cut-off or maximum lifetime. Repeated emails for the same app/IP are throttled.";
 
     private static bool IsBlockedAccessPolicy(string? accessPolicy) =>
         EdgeGatewayAccessPolicies.IsBlocked(accessPolicy);
@@ -713,7 +729,13 @@
         var response = route.TemporaryIpApprovalUseNotFoundResponse
             ? "Denied response: 404."
             : "Denied response: approval message.";
-        return $"{recipients} {countries} {response}";
+        var idleCutOff = route.TemporaryIpApprovalIdleTimeoutMinutes is null
+            ? "Idle cut-off: default."
+            : $"Idle cut-off: {route.TemporaryIpApprovalIdleTimeoutMinutes} min.";
+        var maxLifetime = route.TemporaryIpApprovalMaxLifetimeMinutes is null
+            ? "Maximum expiry: default."
+            : $"Maximum expiry: {route.TemporaryIpApprovalMaxLifetimeMinutes} min.";
+        return $"{recipients} {countries} {response} {idleCutOff} {maxLifetime}";
     }
 
     private static string BuildExternalRouteUrl(PublishedApplicationDefinition route)

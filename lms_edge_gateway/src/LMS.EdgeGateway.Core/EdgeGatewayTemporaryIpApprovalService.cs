@@ -42,7 +42,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             var activeGrant = grants.FirstOrDefault(grant => IsSameRouteAndIp(grant, route.Id, context.SourceIp));
             if (activeGrant is not null)
             {
-                var touchedGrant = TouchGrantIfNeeded(activeGrant, context, now);
+                var touchedGrant = TouchGrantIfNeeded(activeGrant, route, context, now);
                 if (!ReferenceEquals(touchedGrant, activeGrant))
                 {
                     grants[grants.FindIndex(grant => grant.Id == activeGrant.Id)] = touchedGrant;
@@ -179,8 +179,8 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
                 request.UserAgent,
                 now,
                 now,
-                now.Add(GetIdleTimeout()),
-                now.Add(GetMaxLifetime()));
+                now.Add(GetIdleTimeout(route)),
+                now.Add(GetMaxLifetime(route)));
 
             var grants = state.Grants
                 .Where(candidate => !IsSameRouteAndIp(candidate, request.RouteId, request.SourceIp))
@@ -265,6 +265,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
 
     private TemporaryIpApprovalGrant TouchGrantIfNeeded(
         TemporaryIpApprovalGrant grant,
+        PublishedApplicationDefinition route,
         TemporaryIpApprovalCheckContext context,
         DateTimeOffset now)
     {
@@ -278,7 +279,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             CountryCode = string.IsNullOrWhiteSpace(context.CountryCode) ? grant.CountryCode : NormalizeCountryCode(context.CountryCode),
             UserAgent = string.IsNullOrWhiteSpace(context.UserAgent) ? grant.UserAgent : context.UserAgent,
             LastSeenUtc = now,
-            IdleExpiresAtUtc = now.Add(GetIdleTimeout())
+            IdleExpiresAtUtc = now.Add(GetIdleTimeout(route))
         };
     }
 
@@ -414,7 +415,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
         Approve this IP:
         {approvalUrl}
 
-        Approval is limited to this app and source IP. It expires after {GetIdleTimeout().TotalMinutes:0} minutes without traffic, or after {GetMaxLifetime().TotalMinutes:0} minutes at most.
+        Approval is limited to this app and source IP. It expires after {GetIdleTimeout(route).TotalMinutes:0} minutes without traffic, or after {GetMaxLifetime(route).TotalMinutes:0} minutes at most.
         """;
 
     private string BuildApprovalEmailHtml(
@@ -456,7 +457,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
                               </td>
                             </tr>
                           </table>
-                          <p style="color:#607089;font-size:13px;line-height:1.5;margin:0;">Approval is limited to this app and source IP. It expires after {{GetIdleTimeout().TotalMinutes:0}} minutes without traffic, or after {{GetMaxLifetime().TotalMinutes:0}} minutes at most.</p>
+                          <p style="color:#607089;font-size:13px;line-height:1.5;margin:0;">Approval is limited to this app and source IP. It expires after {{GetIdleTimeout(route).TotalMinutes:0}} minutes without traffic, or after {{GetMaxLifetime(route).TotalMinutes:0}} minutes at most.</p>
                         </td>
                       </tr>
                     </table>
@@ -480,11 +481,17 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
           </table>
         """;
 
-    private TimeSpan GetIdleTimeout() =>
-        TimeSpan.FromMinutes(Math.Clamp(options.Value.TemporaryIpApprovalIdleTimeoutMinutes, 1, 1440));
+    private TimeSpan GetIdleTimeout(PublishedApplicationDefinition route) =>
+        TimeSpan.FromMinutes(Math.Clamp(
+            route.TemporaryIpApprovalIdleTimeoutMinutes ?? options.Value.TemporaryIpApprovalIdleTimeoutMinutes,
+            1,
+            1440));
 
-    private TimeSpan GetMaxLifetime() =>
-        TimeSpan.FromMinutes(Math.Clamp(options.Value.TemporaryIpApprovalMaxLifetimeMinutes, 1, 10080));
+    private TimeSpan GetMaxLifetime(PublishedApplicationDefinition route) =>
+        TimeSpan.FromMinutes(Math.Clamp(
+            route.TemporaryIpApprovalMaxLifetimeMinutes ?? options.Value.TemporaryIpApprovalMaxLifetimeMinutes,
+            1,
+            10080));
 
     private TimeSpan GetTokenLifetime() =>
         TimeSpan.FromMinutes(Math.Clamp(options.Value.TemporaryIpApprovalTokenLifetimeMinutes, 5, 1440));

@@ -78,7 +78,9 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 Notes = application.Notes?.Trim() ?? string.Empty,
                 TemporaryIpApprovalRecipients = application.TemporaryIpApprovalRecipients?.Trim() ?? string.Empty,
                 TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeList(application.TemporaryIpApprovalAllowedCountryCodes),
-                TemporaryIpApprovalUseNotFoundResponse = application.TemporaryIpApprovalUseNotFoundResponse
+                TemporaryIpApprovalUseNotFoundResponse = application.TemporaryIpApprovalUseNotFoundResponse,
+                TemporaryIpApprovalIdleTimeoutMinutes = NormalizeOptionalMinutes(application.TemporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
+                TemporaryIpApprovalMaxLifetimeMinutes = NormalizeOptionalMinutes(application.TemporaryIpApprovalMaxLifetimeMinutes, 1, 10080)
             })
             .ToArray() ?? [];
 
@@ -92,6 +94,9 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 TunnelId = tunnel.TunnelId ?? string.Empty,
                 AccountId = tunnel.AccountId ?? string.Empty
             };
+
+    private static int? NormalizeOptionalMinutes(int? value, int min, int max) =>
+        value is null ? null : Math.Clamp(value.Value, min, max);
 
     private static IReadOnlyList<EdgeGatewayRelayZone> NormalizeRelayZones(
         IReadOnlyList<EdgeGatewayRelayZone>? relayZones) =>

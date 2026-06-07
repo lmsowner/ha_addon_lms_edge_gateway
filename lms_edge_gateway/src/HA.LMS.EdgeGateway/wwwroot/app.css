@@ -1356,12 +1356,22 @@ textarea {
     grid-template-columns: minmax(11rem, 1fr) minmax(16rem, 1.35fr) minmax(10rem, 0.85fr);
 }
 
+.edge-temporary-approval-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.edge-token-guide-grid > .edge-temporary-approval-grid,
+.edge-token-guide-grid > .edge-route-preview-field {
+    grid-column: 1 / -1;
+}
+
 .edge-form-grid-target {
     grid-template-columns: minmax(11rem, 0.92fr) minmax(6.6rem, 0.42fr) minmax(12rem, 1fr) minmax(5.4rem, 0.34fr) auto;
 }
 
 .edge-route-main-grid > .ui-field,
-.edge-form-grid-target > .ui-field {
+.edge-form-grid-target > .ui-field,
+.edge-temporary-approval-grid > .ui-field {
     gap: var(--edge-route-field-gap);
     grid-template-rows:
         minmax(var(--edge-route-field-label-row), auto)
@@ -1372,23 +1382,37 @@ textarea {
 
 .edge-route-main-grid > .ui-field > .ui-field-label,
 .edge-form-grid-target > .ui-field > .ui-field-label,
+.edge-temporary-approval-grid > .ui-field > .ui-field-label,
 .edge-route-main-grid > .ui-field > .ui-field-helper,
-.edge-form-grid-target > .ui-field > .ui-field-helper {
+.edge-form-grid-target > .ui-field > .ui-field-helper,
+.edge-temporary-approval-grid > .ui-field > .ui-field-helper {
     align-self: start;
 }
 
 .edge-route-main-grid > .ui-field > input,
 .edge-form-grid-target > .ui-field > input,
+.edge-temporary-approval-grid > .ui-field > input,
 .edge-route-main-grid > .ui-field > select,
-.edge-form-grid-target > .ui-field > select {
+.edge-form-grid-target > .ui-field > select,
+.edge-temporary-approval-grid > .ui-field > select {
     align-self: end;
 }
 
 .edge-route-main-grid > .ui-field > .lms-multi-select,
 .edge-form-grid-target > .ui-field > .lms-multi-select,
 .edge-route-main-grid > .ui-field > .edge-checkbox-field,
-.edge-form-grid-target > .ui-field > .edge-checkbox-field {
+.edge-form-grid-target > .ui-field > .edge-checkbox-field,
+.edge-temporary-approval-grid > .ui-field > .lms-multi-select,
+.edge-temporary-approval-grid > .ui-field > .edge-checkbox-field {
     align-self: end;
+}
+
+.edge-temporary-approval-grid > .lms-multi-select-field {
+    grid-column: span 2;
+}
+
+.edge-temporary-approval-grid > .ui-field:nth-child(3) {
+    grid-column: span 2;
 }
 
 .lms-multi-select {
@@ -3873,6 +3897,7 @@ textarea {
     .edge-domain-picker-grid,
     .edge-relay-settings-form-line,
     .edge-route-main-grid,
+    .edge-temporary-approval-grid,
     .edge-form-grid-target,
     .edge-form-grid-two,
     .domain-template-grid,
@@ -3914,10 +3939,19 @@ textarea {
     }
 
     .edge-route-main-grid > .ui-field,
+    .edge-temporary-approval-grid > .ui-field,
     .edge-form-grid-target > .ui-field,
     .domain-editor-grid > .ui-field {
         grid-template-rows: none;
         height: auto;
+    }
+
+    .edge-temporary-approval-grid > .lms-multi-select-field {
+        grid-column: auto;
+    }
+
+    .edge-temporary-approval-grid > .ui-field:nth-child(3) {
+        grid-column: auto;
     }
 
     .domain-editor-grid > .ui-field > input,

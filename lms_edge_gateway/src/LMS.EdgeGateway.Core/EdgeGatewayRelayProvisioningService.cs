@@ -821,6 +821,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
         bool temporaryIpApprovalUseNotFoundResponse = false,
+        int? temporaryIpApprovalIdleTimeoutMinutes = null,
+        int? temporaryIpApprovalMaxLifetimeMinutes = null,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -885,7 +887,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 skipUpstreamTlsVerification,
                 NormalizeRouteTextBlock(temporaryIpApprovalRecipients),
                 NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes),
-                temporaryIpApprovalUseNotFoundResponse);
+                temporaryIpApprovalUseNotFoundResponse,
+                NormalizeOptionalMinutes(temporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
+                NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080));
             AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
@@ -959,6 +963,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
         string temporaryIpApprovalRecipients = "",
         string temporaryIpApprovalAllowedCountryCodes = "",
         bool temporaryIpApprovalUseNotFoundResponse = false,
+        int? temporaryIpApprovalIdleTimeoutMinutes = null,
+        int? temporaryIpApprovalMaxLifetimeMinutes = null,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -1013,7 +1019,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 SkipUpstreamTlsVerification = skipUpstreamTlsVerification,
                 TemporaryIpApprovalRecipients = NormalizeRouteTextBlock(temporaryIpApprovalRecipients),
                 TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes),
-                TemporaryIpApprovalUseNotFoundResponse = temporaryIpApprovalUseNotFoundResponse
+                TemporaryIpApprovalUseNotFoundResponse = temporaryIpApprovalUseNotFoundResponse,
+                TemporaryIpApprovalIdleTimeoutMinutes = NormalizeOptionalMinutes(temporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
+                TemporaryIpApprovalMaxLifetimeMinutes = NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080)
             };
             AddHomeAssistantUpstreamWarnings(updated, warnings);
 
@@ -3133,6 +3141,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
             .Where(country => country.Length == 2 && country.All(char.IsLetter))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(country => country, StringComparer.OrdinalIgnoreCase));
+
+    private static int? NormalizeOptionalMinutes(int? value, int min, int max) =>
+        value is null ? null : Math.Clamp(value.Value, min, max);
 
     private static IReadOnlyList<string> BuildAllowedSourceRanges(PublishedApplicationDefinition route)
     {
