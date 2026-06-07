@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.54
+
+- Updates documentation to explain Email approve IP authentication, including the deny-first flow, approval email, source-IP grant, throttling, country filtering, expiry settings, and optional empty 404 response.
+- Adds repository README coverage of MFA/Passkey, Email approve IP, and Pass Through route policies.
+
 ## 0.1.53
 
 - Makes Email approve IP stealth denial return an empty HTTP 404 response instead of a response body that says Not Found.

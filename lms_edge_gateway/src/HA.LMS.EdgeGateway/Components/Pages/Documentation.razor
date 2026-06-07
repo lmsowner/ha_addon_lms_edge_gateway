@@ -186,7 +186,7 @@
                     <div><strong>Public host</strong><span>The external hostname users will open, for example <code>plex.example.com</code>.</span></div>
                     <div><strong>Target scheme/host/port</strong><span>The internal service, for example <code>http://192.168.15.40:32400</code>.</span></div>
                     <div><strong>Path prefix</strong><span>Optional. Caddy strips this before proxying when you publish under a path.</span></div>
-                    <div><strong>Access policy</strong><span>MFA/Passkey or Pass Through. Disable the route when it should not be reachable.</span></div>
+                    <div><strong>Access policy</strong><span>MFA/Passkey, Email approve IP, or Pass Through. Disable the route when it should not be reachable.</span></div>
                 </div>
             </div>
         </div>
@@ -272,6 +272,10 @@
                 <span>Best default for browser-first apps. Users authenticate with LMS, satisfy MFA, then Caddy forwards the request.</span>
             </article>
             <article>
+                <strong>Email approve IP</strong>
+                <span>Useful for clients that cannot complete browser MFA. Edge Gateway denies the first request, emails an approval link, then temporarily allows only that app from the exact source IP.</span>
+            </article>
+            <article>
                 <strong>Pass Through</strong>
                 <span>Use only when the upstream app is public by design, has its own authentication, or native clients cannot handle the LMS browser flow. Internet traffic is proxied straight to the destination service.</span>
             </article>
@@ -283,6 +287,44 @@
                 <strong>Disabled routes</strong>
                 <span>Turn a route off when you want to keep the configuration but stop external access.</span>
             </article>
+        </div>
+
+        <div class="docs-two-column">
+            <div>
+                <h3>Email approve IP flow</h3>
+                <p class="meta-text">
+                    Email approve IP is designed for apps such as Plex or other native clients where a browser redirect to LMS MFA
+                    would break the client. It is still deny-first: the first external request is blocked, an email is sent to
+                    configured LMS users, and access only opens after a user deliberately approves that specific source IP.
+                </p>
+                <ol class="numbered-list">
+                    <li>A client requests the published hostname, for example <code>plex.example.com</code>.</li>
+                    <li>Caddy asks LMS forward-auth to check the route. Because the source IP is not approved yet, the request is denied.</li>
+                    <li>Edge Gateway sends a throttled approval email with the app name, requested URL, source IP, approximate Cloudflare country, and user agent.</li>
+                    <li>The recipient clicks the approval link from email. The link creates a temporary grant for that route and exact source IP only.</li>
+                    <li>The client retries from the same public IP. Edge Gateway allows it until the idle cut-off or maximum expiry is reached.</li>
+                </ol>
+                <p class="meta-text">
+                    Approval grants are not reusable across apps, hostnames, or source IPs. If the client's public IP changes, the
+                    new IP has to be approved separately. Repeated emails for the same app/IP are throttled so media clients cannot
+                    flood the mailbox while waiting for approval.
+                </p>
+            </div>
+            <div>
+                <h3>Email approve IP settings</h3>
+                <div class="docs-definition-list compact">
+                    <div><strong>Approval recipients</strong><span>Select enabled LMS users. Blank falls back to route allowed users, then enabled LMS users.</span></div>
+                    <div><strong>Allowed countries</strong><span>Optional Cloudflare country allow-list. Requests outside the selected countries are denied before email is sent.</span></div>
+                    <div><strong>Denied response</strong><span>Show the normal approval-status response while testing, or return an empty HTTP 404 for a quieter public-facing route.</span></div>
+                    <div><strong>Idle cut-off</strong><span>How long the approved IP remains open after the last seen request. Blank uses the add-on default.</span></div>
+                    <div><strong>Maximum expiry</strong><span>Absolute lifetime for the approval grant even if traffic continues. Blank uses the add-on default.</span></div>
+                </div>
+                <p class="callout ready">
+                    Email approve IP is not the same as pass-through. Pass-through sends traffic straight to the upstream service.
+                    Email approve IP keeps Edge Gateway in front, denies by default, requires explicit email approval, and then opens
+                    a temporary route for one source IP.
+                </p>
+            </div>
         </div>
 
         <div class="docs-two-column">
@@ -351,7 +393,7 @@
             </article>
             <article>
                 <strong>Plex or Jellyfin for family access</strong>
-                <span>Publish the media UI without opening router ports. Pass-through often fits because Plex/Jellyfin already have their own account model.</span>
+                <span>Publish the media UI without opening router ports. Email approve IP can fit native media clients because it avoids browser MFA while still requiring deliberate approval for each source IP. Pass-through can also fit when the upstream app's own auth is strong enough.</span>
             </article>
             <article>
                 <strong>Admin tools such as routers, NAS, Proxmox, or ESXi</strong>
