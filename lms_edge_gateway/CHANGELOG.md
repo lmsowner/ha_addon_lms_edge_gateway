@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.55
+
+- Adds the login and passkey setup screenshot to the Documentation authentication section.
+
 ## 0.1.54
 
 - Updates documentation to explain Email approve IP authentication, including the deny-first flow, approval email, source-IP grant, throttling, country filtering, expiry settings, and optional empty 404 response.
