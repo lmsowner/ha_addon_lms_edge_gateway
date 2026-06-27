@@ -409,6 +409,15 @@ public sealed class EdgeGatewayRouteAuthTests
     {
         public TemporaryIpApprovalCheckContext? LastContext { get; private set; }
 
+        public Task<IReadOnlyList<TrustedIpAddressViewModel>> ListTrustedIpAddressesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<TrustedIpAddressViewModel>>([]);
+
+        public Task<bool> RevokeTrustedIpAddressAsync(
+            Guid grantId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
         public Task<TemporaryIpApprovalEvaluationResult> EvaluateAsync(
             PublishedApplicationDefinition route,
             TemporaryIpApprovalCheckContext context,

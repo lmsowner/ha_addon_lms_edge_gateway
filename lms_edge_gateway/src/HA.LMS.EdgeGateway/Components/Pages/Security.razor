@@ -191,6 +191,64 @@
                             </div>
                         }
                     </section>
+
+                    <section class="surface-subcard security-create-panel">
+                        <div class="security-section-heading">
+                            <div>
+                                <h3>Trusted IP addresses</h3>
+                                <p class="meta-text">Active source IP approvals created through email approval routes.</p>
+                            </div>
+                            <span class="security-status-pill neutral">@(page.TrustedIpAddresses.Count) trusted</span>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(trustedIpMessage))
+                        {
+                            <p class="callout @(trustedIpMessageIsError ? "warning" : "ready")">@trustedIpMessage</p>
+                        }
+
+                        @if (page.TrustedIpAddresses.Count == 0)
+                        {
+                            <div class="empty-state">
+                                <strong>No trusted IP addresses</strong>
+                                <span>Email-approved route access will appear here after approval.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="security-trusted-ip-list">
+                                @foreach (var trustedIp in page.TrustedIpAddresses)
+                                {
+                                    <article class="security-trusted-ip-row">
+                                        <div class="security-trusted-ip-main">
+                                            <strong>@trustedIp.SourceIp</strong>
+                                            <span>@FormatCountryCode(trustedIp.CountryCode)</span>
+                                        </div>
+                                        <div class="security-trusted-ip-route">
+                                            <strong>@trustedIp.RouteName</strong>
+                                            <span>@BuildTrustedIpAppUrl(trustedIp)</span>
+                                        </div>
+                                        <div class="security-trusted-ip-meta">
+                                            <span class="meta-text">Approved @FormatTimestamp(trustedIp.ApprovedUtc, "Unknown")</span>
+                                            <span class="meta-text">Last seen @FormatTimestamp(trustedIp.LastSeenUtc, "Never")</span>
+                                            <span class="meta-text">Idle expires @FormatTimestamp(trustedIp.IdleExpiresAtUtc, "Unknown")</span>
+                                            <span class="meta-text">Max expires @FormatTimestamp(trustedIp.ExpiresAtUtc, "Unknown")</span>
+                                            @if (!string.IsNullOrWhiteSpace(trustedIp.UserAgent))
+                                            {
+                                                <span class="meta-text security-trusted-ip-agent">@trustedIp.UserAgent</span>
+                                            }
+                                        </div>
+                                        <div class="security-user-actions">
+                                            <LmsButton Label="@(IsRevokingTrustedIp(trustedIp.Id) ? "Revoking..." : "Revoke")"
+                                                       Icon="delete"
+                                                       Danger="true"
+                                                       Disabled="@IsRevokingAnyTrustedIp"
+                                                       OnClick="@(() => RevokeTrustedIpAsync(trustedIp))" />
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+                    </section>
                 </div>
             }
             else
@@ -437,7 +495,7 @@
 }
 
 @code {
-    private SecuritySettingsPageViewModel page = new([], BuildDefaultMessagingViewModel(), EdgeGatewayLoginDesignSettings.Default);
+    private SecuritySettingsPageViewModel page = new([], BuildDefaultMessagingViewModel(), EdgeGatewayLoginDesignSettings.Default, []);
     private SecurityUserEditor userEditor = new();
     private SecurityMessagingSettingsEditor messagingEditor = new();
     private SecurityUserProvisioningViewModel? provisioningResult;
@@ -452,6 +510,9 @@
     private string? messagingMessage;
     private bool messagingMessageIsError;
     private string messagingTestRecipient = string.Empty;
+    private string? trustedIpMessage;
+    private bool trustedIpMessageIsError;
+    private Guid? revokingTrustedIpId;
 
     private const string UsersTab = "users";
     private const string MessagingTab = "messaging";
@@ -487,6 +548,8 @@
 
     private bool CanToggleMessagingEnabledForSelectedProvider =>
         IsSelectedMessagingProviderVerified;
+
+    private bool IsRevokingAnyTrustedIp => revokingTrustedIpId.HasValue;
 
     private string MessagingEnabledHelperText
     {
@@ -653,6 +716,32 @@
         }
     }
 
+    private async Task RevokeTrustedIpAsync(TrustedIpAddressViewModel trustedIp)
+    {
+        trustedIpMessage = null;
+        trustedIpMessageIsError = false;
+        revokingTrustedIpId = trustedIp.Id;
+
+        try
+        {
+            var revoked = await SecurityService.RevokeTrustedIpAddressAsync(trustedIp.Id);
+            trustedIpMessage = revoked
+                ? $"Revoked trusted access for {trustedIp.SourceIp} on {trustedIp.RouteName}."
+                : "That trusted IP address was not found or had already expired.";
+            trustedIpMessageIsError = !revoked;
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            trustedIpMessage = exception.Message;
+            trustedIpMessageIsError = true;
+        }
+        finally
+        {
+            revokingTrustedIpId = null;
+        }
+    }
+
     private async Task SaveMessagingAsync()
     {
         isSavingMessaging = true;
@@ -720,6 +809,45 @@
 
     private static string FormatTimestamp(DateTimeOffset? value, string fallback) =>
         value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? fallback;
+
+    private static string FormatTimestamp(DateTimeOffset value, string fallback) =>
+        value == default ? fallback : value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private bool IsRevokingTrustedIp(Guid trustedIpId) =>
+        revokingTrustedIpId == trustedIpId;
+
+    private static string FormatCountryCode(string? countryCode)
+    {
+        var normalized = (countryCode ?? string.Empty).Trim().ToUpperInvariant();
+        return normalized.Length == 2 ? normalized : "Unknown country";
+    }
+
+    private static string BuildTrustedIpAppUrl(TrustedIpAddressViewModel trustedIp)
+    {
+        var hostname = (trustedIp.PublicHostname ?? string.Empty).Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(hostname))
+        {
+            return "Unknown app";
+        }
+
+        var path = NormalizeTrustedIpPathPrefix(trustedIp.TargetPathPrefix);
+        return string.IsNullOrWhiteSpace(path)
+            ? $"https://{hostname}"
+            : $"https://{hostname}{path}";
+    }
+
+    private static string NormalizeTrustedIpPathPrefix(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized == "/")
+        {
+            return string.Empty;
+        }
+
+        return normalized.StartsWith("/", StringComparison.Ordinal)
+            ? normalized.TrimEnd('/')
+            : $"/{normalized.TrimEnd('/')}";
+    }
 
     private static string FormatSessionLifetimeMinutes(int minutes)
     {

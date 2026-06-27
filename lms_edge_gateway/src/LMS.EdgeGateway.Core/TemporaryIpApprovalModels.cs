@@ -41,6 +41,20 @@ public sealed record TemporaryIpApprovalGrant(
     DateTimeOffset IdleExpiresAtUtc,
     DateTimeOffset ExpiresAtUtc);
 
+public sealed record TrustedIpAddressViewModel(
+    Guid Id,
+    Guid RouteId,
+    string RouteName,
+    string PublicHostname,
+    string TargetPathPrefix,
+    string SourceIp,
+    string CountryCode,
+    string UserAgent,
+    DateTimeOffset ApprovedUtc,
+    DateTimeOffset LastSeenUtc,
+    DateTimeOffset IdleExpiresAtUtc,
+    DateTimeOffset ExpiresAtUtc);
+
 public sealed record TemporaryIpApprovalCheckContext(
     string RequestedHost,
     string RequestedPath,

@@ -175,7 +175,8 @@ public sealed record SecurityMessagingSettingsViewModel(
 public sealed record SecuritySettingsPageViewModel(
     IReadOnlyList<SecurityUserViewModel> Users,
     SecurityMessagingSettingsViewModel Messaging,
-    EdgeGatewayLoginDesignSettings LoginDesign);
+    EdgeGatewayLoginDesignSettings LoginDesign,
+    IReadOnlyList<TrustedIpAddressViewModel> TrustedIpAddresses);
 
 public sealed class SecurityUserEditor
 {

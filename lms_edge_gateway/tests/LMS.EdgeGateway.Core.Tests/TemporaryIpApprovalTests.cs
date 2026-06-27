@@ -142,6 +142,54 @@ public sealed class TemporaryIpApprovalTests
         Assert.InRange((approval.ExpiresAtUtc!.Value - beforeApproval).TotalMinutes, 359, 361);
     }
 
+    [Fact]
+    public async Task Temporary_ip_approval_lists_trusted_ip_addresses()
+    {
+        var route = Route();
+        var approvalStore = new InMemoryTemporaryIpApprovalStore();
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, approvalStore, emailDelivery);
+        var context = Context(countryCode: "GB");
+
+        await service.EvaluateAsync(route, context);
+        var token = ExtractApprovalToken(emailDelivery.Messages.Single().PlainTextBody);
+        await service.ApproveAsync(token);
+
+        var trustedIps = await service.ListTrustedIpAddressesAsync();
+        var trustedIp = Assert.Single(trustedIps);
+        Assert.Equal(route.Id, trustedIp.RouteId);
+        Assert.Equal(route.Name, trustedIp.RouteName);
+        Assert.Equal(route.PublicHostname, trustedIp.PublicHostname);
+        Assert.Equal(context.SourceIp, trustedIp.SourceIp);
+        Assert.Equal(context.CountryCode, trustedIp.CountryCode);
+        Assert.Equal(context.UserAgent, trustedIp.UserAgent);
+    }
+
+    [Fact]
+    public async Task Temporary_ip_approval_revokes_trusted_ip_address()
+    {
+        var route = Route();
+        var approvalStore = new InMemoryTemporaryIpApprovalStore();
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, approvalStore, emailDelivery);
+        var context = Context(countryCode: "GB");
+
+        await service.EvaluateAsync(route, context);
+        var token = ExtractApprovalToken(emailDelivery.Messages.Single().PlainTextBody);
+        await service.ApproveAsync(token);
+        var trustedIp = Assert.Single(await service.ListTrustedIpAddressesAsync());
+
+        var revoked = await service.RevokeTrustedIpAddressAsync(trustedIp.Id);
+        var trustedIpsAfterRevoke = await service.ListTrustedIpAddressesAsync();
+        var nextRequest = await service.EvaluateAsync(route, context);
+
+        Assert.True(revoked);
+        Assert.Empty(trustedIpsAfterRevoke);
+        Assert.False(nextRequest.IsAllowed);
+        Assert.True(nextRequest.EmailAttempted);
+        Assert.Equal(2, emailDelivery.Messages.Count);
+    }
+
     private static string ExtractApprovalToken(string body)
     {
         var match = Regex.Match(body, @"token=([^\s]+)", RegexOptions.CultureInvariant);

@@ -3067,6 +3067,60 @@ textarea {
     padding: 0.34rem 0.56rem;
 }
 
+.security-trusted-ip-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.security-trusted-ip-row {
+    align-items: center;
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: minmax(9rem, 0.7fr) minmax(12rem, 0.9fr) minmax(18rem, 1.4fr) auto;
+    padding: 0.68rem 0.75rem;
+}
+
+.security-trusted-ip-main,
+.security-trusted-ip-route,
+.security-trusted-ip-meta {
+    min-width: 0;
+}
+
+.security-trusted-ip-main,
+.security-trusted-ip-route {
+    display: grid;
+    gap: 0.1rem;
+}
+
+.security-trusted-ip-main strong,
+.security-trusted-ip-route strong,
+.security-trusted-ip-main span,
+.security-trusted-ip-route span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.security-trusted-ip-main span,
+.security-trusted-ip-route span {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+.security-trusted-ip-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.28rem 0.5rem;
+}
+
+.security-trusted-ip-agent {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
 .security-help-grid {
     display: grid;
     gap: 0.65rem;
@@ -3932,6 +3986,7 @@ textarea {
     .security-test-grid,
     .security-provisioning-panel,
     .security-user-row,
+    .security-trusted-ip-row,
     .security-help-grid,
     .auth-login-shell,
     .setup-reference {

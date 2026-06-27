@@ -198,6 +198,7 @@ public sealed class EmailProviderTests
         });
         var service = new EdgeGatewaySecurityService(
             store,
+            NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, handler),
             NullLogger<EdgeGatewaySecurityService>.Instance);
@@ -248,6 +249,7 @@ public sealed class EmailProviderTests
         });
         var service = new EdgeGatewaySecurityService(
             store,
+            NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
             NullLogger<EdgeGatewaySecurityService>.Instance);
@@ -281,6 +283,7 @@ public sealed class EmailProviderTests
         });
         var service = new EdgeGatewaySecurityService(
             store,
+            NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
             NullLogger<EdgeGatewaySecurityService>.Instance);
@@ -311,6 +314,7 @@ public sealed class EmailProviderTests
         var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty);
         var service = new EdgeGatewaySecurityService(
             store,
+            NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, handler),
             NullLogger<EdgeGatewaySecurityService>.Instance);
@@ -361,6 +365,7 @@ public sealed class EmailProviderTests
         });
         var service = new EdgeGatewaySecurityService(
             store,
+            NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, handler),
             NullLogger<EdgeGatewaySecurityService>.Instance);
@@ -471,6 +476,7 @@ public sealed class EmailProviderTests
         });
         var service = new EdgeGatewaySecurityService(
             store,
+            NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, handler),
             NullLogger<EdgeGatewaySecurityService>.Instance);
@@ -516,6 +522,7 @@ public sealed class EmailProviderTests
         var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty);
         return new EdgeGatewaySecurityService(
             store,
+            NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
             NullLogger<EdgeGatewaySecurityService>.Instance);
@@ -616,6 +623,31 @@ public sealed class EmailProviderTests
     {
         public string Protect(string secret) => secret;
         public string Unprotect(string protectedSecret) => protectedSecret;
+    }
+
+    private sealed class NoopTemporaryIpApprovalService : IEdgeGatewayTemporaryIpApprovalService
+    {
+        public static NoopTemporaryIpApprovalService Instance { get; } = new();
+
+        public Task<IReadOnlyList<TrustedIpAddressViewModel>> ListTrustedIpAddressesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<TrustedIpAddressViewModel>>([]);
+
+        public Task<bool> RevokeTrustedIpAddressAsync(
+            Guid grantId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
+        public Task<TemporaryIpApprovalEvaluationResult> EvaluateAsync(
+            PublishedApplicationDefinition route,
+            TemporaryIpApprovalCheckContext context,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new TemporaryIpApprovalEvaluationResult(false, "Not implemented."));
+
+        public Task<TemporaryIpApprovalCompletionResult> ApproveAsync(
+            string token,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new TemporaryIpApprovalCompletionResult(false, "Not implemented", "Not implemented."));
     }
 
     private sealed class InMemorySecurityStore(EdgeGatewaySecurityConfiguration configuration) : IEdgeGatewaySecurityStore

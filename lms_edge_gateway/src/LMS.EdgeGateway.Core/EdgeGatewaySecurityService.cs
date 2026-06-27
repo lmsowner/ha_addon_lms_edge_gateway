@@ -8,6 +8,7 @@ namespace LMS.EdgeGateway.Core;
 
 public sealed class EdgeGatewaySecurityService(
     IEdgeGatewaySecurityStore securityStore,
+    IEdgeGatewayTemporaryIpApprovalService temporaryIpApprovalService,
     IEdgeGatewaySecretProtector secretProtector,
     IEdgeGatewayEmailDeliveryService emailDeliveryService,
     ILogger<EdgeGatewaySecurityService> logger) : IEdgeGatewaySecurityService
@@ -25,7 +26,8 @@ public sealed class EdgeGatewaySecurityService(
                 .Select(user => MapUser(user, passkeyCounts.TryGetValue(user.Id, out var count) ? count : 0))
                 .ToArray(),
             MapMessaging(configuration.Messaging),
-            configuration.LoginDesign);
+            configuration.LoginDesign,
+            await temporaryIpApprovalService.ListTrustedIpAddressesAsync(cancellationToken));
     }
 
     public async Task<SecurityMessagingSettingsEditor> GetMessagingEditorAsync(CancellationToken cancellationToken = default)
@@ -326,6 +328,11 @@ public sealed class EdgeGatewaySecurityService(
             UpdatedAtUtc = DateTimeOffset.UtcNow
         }, cancellationToken);
     }
+
+    public Task<bool> RevokeTrustedIpAddressAsync(
+        Guid trustedIpId,
+        CancellationToken cancellationToken = default) =>
+        temporaryIpApprovalService.RevokeTrustedIpAddressAsync(trustedIpId, cancellationToken);
 
     public async Task<SecurityAuthenticationResult> ValidateOtpAsync(
         string email,

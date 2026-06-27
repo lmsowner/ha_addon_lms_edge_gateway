@@ -17,6 +17,76 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
 {
     private readonly SemaphoreSlim sync = new(1, 1);
 
+    public async Task<IReadOnlyList<TrustedIpAddressViewModel>> ListTrustedIpAddressesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await sync.WaitAsync(cancellationToken);
+        try
+        {
+            var state = await approvalStore.LoadAsync(cancellationToken);
+            var cleaned = CleanExpired(state, now);
+            if (cleaned.Requests.Count != state.Requests.Count ||
+                cleaned.Grants.Count != state.Grants.Count)
+            {
+                await approvalStore.SaveAsync(cleaned, cancellationToken);
+            }
+
+            return cleaned.Grants
+                .OrderBy(grant => grant.PublicHostname, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(grant => grant.TargetPathPrefix, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(grant => grant.SourceIp, StringComparer.OrdinalIgnoreCase)
+                .Select(MapTrustedIpAddress)
+                .ToArray();
+        }
+        finally
+        {
+            sync.Release();
+        }
+    }
+
+    public async Task<bool> RevokeTrustedIpAddressAsync(
+        Guid grantId,
+        CancellationToken cancellationToken = default)
+    {
+        if (grantId == Guid.Empty)
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await sync.WaitAsync(cancellationToken);
+        try
+        {
+            var state = CleanExpired(await approvalStore.LoadAsync(cancellationToken), now);
+            var grant = state.Grants.FirstOrDefault(candidate => candidate.Id == grantId);
+            if (grant is null)
+            {
+                await approvalStore.SaveAsync(state, cancellationToken);
+                return false;
+            }
+
+            var grants = state.Grants
+                .Where(candidate => candidate.Id != grantId)
+                .ToArray();
+            var requests = state.Requests
+                .Where(request => !IsSameRouteAndIp(request, grant.RouteId, grant.SourceIp))
+                .ToArray();
+
+            await approvalStore.SaveAsync(state with { Requests = requests, Grants = grants }, cancellationToken);
+            logger.LogInformation(
+                "Audit event: temporary IP approval revoked for route {RouteName} {PublicHostname} from {SourceIp}.",
+                grant.RouteName,
+                grant.PublicHostname,
+                grant.SourceIp);
+            return true;
+        }
+        finally
+        {
+            sync.Release();
+        }
+    }
+
     public async Task<TemporaryIpApprovalEvaluationResult> EvaluateAsync(
         PublishedApplicationDefinition route,
         TemporaryIpApprovalCheckContext context,
@@ -542,6 +612,21 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             ? "Unknown"
             : $"{normalized} (from Cloudflare)";
     }
+
+    private static TrustedIpAddressViewModel MapTrustedIpAddress(TemporaryIpApprovalGrant grant) =>
+        new(
+            grant.Id,
+            grant.RouteId,
+            grant.RouteName,
+            grant.PublicHostname,
+            grant.TargetPathPrefix,
+            grant.SourceIp,
+            grant.CountryCode,
+            grant.UserAgent,
+            grant.ApprovedUtc,
+            grant.LastSeenUtc,
+            grant.IdleExpiresAtUtc,
+            grant.ExpiresAtUtc);
 
     private static bool IsSameRouteAndIp(TemporaryIpApprovalGrant grant, Guid routeId, string sourceIp) =>
         grant.RouteId == routeId &&
