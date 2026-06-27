@@ -53,8 +53,18 @@ else
         new("About", "/about", string.Empty, "Linux Made Sane product details")
     ];
 
-    private string ProductVersion =>
-        string.IsNullOrWhiteSpace(Configuration["EdgeGateway:AddonVersion"])
-            ? FallbackProductVersion
-            : Configuration["EdgeGateway:AddonVersion"]!.Trim();
+    private string ProductVersion
+    {
+        get
+        {
+            var configured = Configuration["EdgeGateway:AddonVersion"]?.Trim();
+            return IsValidProductVersion(configured)
+                ? configured!
+                : FallbackProductVersion;
+        }
+    }
+
+    private static bool IsValidProductVersion(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        !value.Equals("@productversion", StringComparison.OrdinalIgnoreCase);
 }

@@ -7,7 +7,7 @@
             <img class="lms-product-logo" src="images/lms-logo-192.png" alt="" />
             <span class="lms-product-copy">
                 <strong>Linux Made Sane - Edge Gateway</strong>
-                <small>Home Assistant Add-on <span class="lms-product-version">v@ProductVersion</span></small>
+                <small>Home Assistant Add-on <span class="lms-product-version">@FormattedProductVersion</span></small>
             </span>
         </a>
         <div class="lms-product-actions">
@@ -42,6 +42,8 @@
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public string ProductVersion { get; set; } = "0.1.55";
 
+    private string FormattedProductVersion => $"v{NormalizeProductVersion(ProductVersion)}";
+
     private static string BuildHref(string href)
     {
         var target = href.Trim();
@@ -62,5 +64,14 @@
 
         return path.Equals(target, StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith($"{target}/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeProductVersion(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        return string.IsNullOrWhiteSpace(normalized) ||
+               normalized.Equals("@productversion", StringComparison.OrdinalIgnoreCase)
+            ? "0.1.55"
+            : normalized.TrimStart('v', 'V');
     }
 }
