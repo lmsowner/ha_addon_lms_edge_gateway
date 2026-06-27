@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.56
+
+- Shows active Email approve IP trusted addresses on the Security/Users tab and allows revoking them.
+- Fixes the add-on version header so unresolved build placeholders are not shown.
+
 ## 0.1.55
 
 - Adds the login and passkey setup screenshot to the Documentation authentication section.
