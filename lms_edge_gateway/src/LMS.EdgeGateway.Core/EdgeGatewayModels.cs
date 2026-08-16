@@ -37,7 +37,8 @@ public sealed record PublishedApplicationDefinition(
     string TemporaryIpApprovalAllowedCountryCodes = "",
     bool TemporaryIpApprovalUseNotFoundResponse = false,
     int? TemporaryIpApprovalIdleTimeoutMinutes = null,
-    int? TemporaryIpApprovalMaxLifetimeMinutes = null);
+    int? TemporaryIpApprovalMaxLifetimeMinutes = null,
+    bool TemporaryIpApprovalAllowSharedIp = false);
 
 public sealed record PublicProxyRouteDefinition(
     Guid Id,

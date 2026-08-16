@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.58
+
+- Tightens Email approve IP by default so grants match the source IP and requesting client User-Agent, not every app on that public IP.
+- Adds an optional per-route Shared IP access setting to allow all clients from an approved IP for trusted home/LAN networks.
+
 ## 0.1.57
 
 - Keeps Published Apps status pills inside each route title row instead of overflowing the card header.
