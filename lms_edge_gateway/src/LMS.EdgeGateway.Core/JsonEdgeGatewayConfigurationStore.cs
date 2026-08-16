@@ -86,7 +86,8 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 LanTrustCidrs = application.LanTrustCidrs?.Trim() ?? string.Empty,
                 LanTrustDnsSuffixes = application.LanTrustDnsSuffixes?.Trim() ?? string.Empty,
                 LanTrustRequireForwardConfirm = application.LanTrustRequireForwardConfirm,
-                LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(application.LanTrustMaxLatencyMilliseconds, 1, 2000)
+                LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(application.LanTrustMaxLatencyMilliseconds, 1, 2000),
+                SkipAuthenticationForKnownIps = application.SkipAuthenticationForKnownIps
             })
             .ToArray() ?? [];
 

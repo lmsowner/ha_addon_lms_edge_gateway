@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.61
+
+- Removes personal example domain/CIDR placeholders from Verified LAN trust fields.
+- Adds Known source IPs UI and an opt-in Skip auth for known source IPs path for home WAN access through Cloudflare.
+- Clarifies that Verified LAN trust only applies when Edge Gateway sees a real LAN IP (split/local DNS), not Cloudflare tunnel clients.
+
 ## 0.1.60
 
 - Publishes prebuilt multi-arch images to GHCR and configures the add-on `image` field so Home Assistant pulls instead of building from source on install/update.

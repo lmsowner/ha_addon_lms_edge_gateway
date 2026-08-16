@@ -43,7 +43,8 @@ public sealed record PublishedApplicationDefinition(
     string LanTrustCidrs = "",
     string LanTrustDnsSuffixes = "",
     bool LanTrustRequireForwardConfirm = true,
-    int? LanTrustMaxLatencyMilliseconds = null);
+    int? LanTrustMaxLatencyMilliseconds = null,
+    bool SkipAuthenticationForKnownIps = false);
 
 public sealed record PublicProxyRouteDefinition(
     Guid Id,

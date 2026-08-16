@@ -11,14 +11,14 @@ public sealed class LanClientTrustTests
     {
         var route = TrustedRoute();
         var dns = new FakeDns(
-            ptr: "laptop.kiernanfamily.co.uk",
+            ptr: "laptop.example.home",
             forward: [IPAddress.Parse("192.168.1.42")]);
         var service = new LanClientTrustService(dns, new FakeLatency(5));
 
         var result = await service.EvaluateAsync(route, "192.168.1.42", cloudflareConnectingIp: "");
 
         Assert.True(result.IsTrusted);
-        Assert.Equal("laptop.kiernanfamily.co.uk", result.HostName);
+        Assert.Equal("laptop.example.home", result.HostName);
         Assert.Contains("Trusted LAN client", result.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -27,7 +27,7 @@ public sealed class LanClientTrustTests
     {
         var route = TrustedRoute();
         var dns = new FakeDns(
-            ptr: "laptop.kiernanfamily.co.uk",
+            ptr: "laptop.example.home",
             forward: [IPAddress.Parse("192.168.1.42")]);
         var service = new LanClientTrustService(dns, new FakeLatency(5));
 
@@ -45,7 +45,7 @@ public sealed class LanClientTrustTests
     {
         var route = TrustedRoute();
         var dns = new FakeDns(
-            ptr: "laptop.kiernanfamily.co.uk",
+            ptr: "laptop.example.home",
             forward: [IPAddress.Parse("10.0.0.8")]);
         var service = new LanClientTrustService(dns, new FakeLatency(5));
 
@@ -75,7 +75,7 @@ public sealed class LanClientTrustTests
     {
         var route = TrustedRoute();
         var dns = new FakeDns(
-            ptr: "laptop.kiernanfamily.co.uk",
+            ptr: "laptop.example.home",
             forward: [IPAddress.Parse("192.168.1.99")]);
         var service = new LanClientTrustService(dns, new FakeLatency(5));
 
@@ -90,7 +90,7 @@ public sealed class LanClientTrustTests
     {
         var route = TrustedRoute() with { LanTrustMaxLatencyMilliseconds = 10 };
         var dns = new FakeDns(
-            ptr: "laptop.kiernanfamily.co.uk",
+            ptr: "laptop.example.home",
             forward: [IPAddress.Parse("192.168.1.42")]);
         var service = new LanClientTrustService(dns, new FakeLatency(40));
 
@@ -104,7 +104,7 @@ public sealed class LanClientTrustTests
     public async Task Route_auth_skips_mfa_for_trusted_lan_client()
     {
         var route = TrustedRoute() with { AccessPolicy = "MFA/Passkey" };
-        var lanTrust = new FakeLanTrust(new LanClientTrustResult(true, "Trusted LAN client laptop.kiernanfamily.co.uk.", "laptop.kiernanfamily.co.uk"));
+        var lanTrust = new FakeLanTrust(new LanClientTrustResult(true, "Trusted LAN client laptop.example.home.", "laptop.example.home"));
         var service = new EdgeGatewayRouteAuthService(
             new InMemoryConfigurationStore(Configuration(route)),
             lanClientTrustService: lanTrust);
@@ -112,21 +112,49 @@ public sealed class LanClientTrustTests
         var result = await service.EvaluateAuthAsync(Context(sourceIp: "192.168.1.42"));
 
         Assert.Equal(200, result.StatusCode);
-        Assert.Equal("lan-trust:laptop.kiernanfamily.co.uk", result.UserName);
+        Assert.Equal("lan-trust:laptop.example.home", result.UserName);
         Assert.True(lanTrust.Called);
+    }
+
+    [Fact]
+    public async Task Route_auth_skips_mfa_for_configured_known_source_ip()
+    {
+        var route = new PublishedApplicationDefinition(
+            Guid.NewGuid(),
+            "Home Assistant",
+            "hassio.example.com",
+            "http://192.168.1.20:8123",
+            "MFA/Passkey",
+            true,
+            AllowKnownIps: "203.0.113.10",
+            SkipAuthenticationForKnownIps: true);
+        var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(route)));
+
+        var result = await service.EvaluateAuthAsync(new EdgeGatewayAuthCheckContext(
+            "hassio.example.com",
+            "https",
+            "/",
+            "203.0.113.10",
+            "hassio.example.com",
+            IPAddress.Loopback,
+            new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity()),
+            ConnectingIp: "203.0.113.10"));
+
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal("known-ip:203.0.113.10", result.UserName);
     }
 
     private static PublishedApplicationDefinition TrustedRoute() =>
         new(
             Guid.NewGuid(),
             "Home Assistant",
-            "hassio.kiernanfamily.co.uk",
+            "hassio.example.home",
             "http://192.168.1.20:8123",
             "MFA/Passkey",
             true,
             LanTrustEnabled: true,
-            LanTrustCidrs: "192.168.0.0/20",
-            LanTrustDnsSuffixes: "kiernanfamily.co.uk",
+            LanTrustCidrs: "192.168.1.0/24",
+            LanTrustDnsSuffixes: "example.home",
             LanTrustRequireForwardConfirm: true);
 
     private static EdgeGatewayConfiguration Configuration(PublishedApplicationDefinition route) =>
@@ -138,11 +166,11 @@ public sealed class LanClientTrustTests
 
     private static EdgeGatewayAuthCheckContext Context(string sourceIp) =>
         new(
-            "hassio.kiernanfamily.co.uk",
+            "hassio.example.home",
             "https",
             "/",
             sourceIp,
-            "hassio.kiernanfamily.co.uk",
+            "hassio.example.home",
             IPAddress.Loopback,
             new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity()),
             ConnectingIp: "");

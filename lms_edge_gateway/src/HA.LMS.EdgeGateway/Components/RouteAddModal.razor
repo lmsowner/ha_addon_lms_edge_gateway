@@ -106,24 +106,37 @@
                     {
                         <div class="edge-form-grid edge-temporary-approval-grid">
                             <label class="ui-field">
+                                <span class="ui-field-label">Known source IPs</span>
+                                <input @bind="addAppAllowKnownIps" placeholder="203.0.113.10, 198.51.100.0/24" />
+                                <span class="ui-field-helper">Optional allow-list of source IPs/CIDRs. Blank allows any source IP through to the auth checks below.</span>
+                            </label>
+                            <label class="ui-field">
+                                <span class="ui-field-label">Known IP auth skip</span>
+                                <span class="edge-checkbox-field">
+                                    <input type="checkbox" @bind="addSkipAuthenticationForKnownIps" />
+                                    <span>Skip auth for known source IPs</span>
+                                </span>
+                                <span class="ui-field-helper">Use for your home public WAN IP when clients still reach the app through Cloudflare. Requires Known source IPs to be set.</span>
+                            </label>
+                            <label class="ui-field">
                                 <span class="ui-field-label">Verified LAN trust</span>
                                 <span class="edge-checkbox-field">
                                     <input type="checkbox" @bind="addLanTrustEnabled" />
                                     <span>Skip auth for verified LAN clients</span>
                                 </span>
-                                <span class="ui-field-helper">Opt-in. Requires split/local DNS so Edge Gateway sees the real LAN IP. Never trusts Cloudflare internet clients or loopback.</span>
+                                <span class="ui-field-helper">Opt-in. Only works when the client reaches Edge Gateway with a real LAN IP (split/local DNS). Accessing the FQDN through Cloudflare still requires normal auth.</span>
                             </label>
                             @if (addLanTrustEnabled)
                             {
                                 <label class="ui-field">
                                     <span class="ui-field-label">Trusted LAN CIDRs</span>
-                                    <input @bind="addLanTrustCidrs" placeholder="192.168.0.0/20" />
-                                    <span class="ui-field-helper">Comma-separated CIDRs, for example 192.168.0.0/20.</span>
+                                    <input @bind="addLanTrustCidrs" placeholder="192.168.1.0/24" />
+                                    <span class="ui-field-helper">Comma-separated CIDRs for your LAN, for example 192.168.1.0/24.</span>
                                 </label>
                                 <label class="ui-field">
                                     <span class="ui-field-label">Trusted DNS suffixes</span>
-                                    <input @bind="addLanTrustDnsSuffixes" placeholder="kiernanfamily.co.uk" />
-                                    <span class="ui-field-helper">Reverse DNS of the source IP must end with one of these domains.</span>
+                                    <input @bind="addLanTrustDnsSuffixes" placeholder="home.arpa" />
+                                    <span class="ui-field-helper">Reverse DNS of the LAN source IP must end with one of these domains. Requires split/local DNS to Edge Gateway so the real LAN IP is visible — Cloudflare tunnel clients are never trusted this way.</span>
                                 </label>
                                 <label class="ui-field">
                                     <span class="ui-field-label">Forward confirm</span>
@@ -347,6 +360,7 @@
     private string addLanTrustDnsSuffixes = string.Empty;
     private bool addLanTrustRequireForwardConfirm = true;
     private int? addLanTrustMaxLatencyMilliseconds;
+    private bool addSkipAuthenticationForKnownIps;
     private int? addTemporaryIpApprovalIdleTimeoutMinutes;
     private int? addTemporaryIpApprovalMaxLifetimeMinutes;
     private bool addAppEnabled = true;
@@ -409,6 +423,7 @@
         addLanTrustDnsSuffixes = string.Empty;
         addLanTrustRequireForwardConfirm = true;
         addLanTrustMaxLatencyMilliseconds = null;
+        addSkipAuthenticationForKnownIps = false;
         addTemporaryIpApprovalIdleTimeoutMinutes = null;
         addTemporaryIpApprovalMaxLifetimeMinutes = null;
         addAppEnabled = true;
@@ -471,7 +486,8 @@
                 lanTrustCidrs: addLanTrustCidrs,
                 lanTrustDnsSuffixes: addLanTrustDnsSuffixes,
                 lanTrustRequireForwardConfirm: addLanTrustRequireForwardConfirm,
-                lanTrustMaxLatencyMilliseconds: addLanTrustMaxLatencyMilliseconds);
+                lanTrustMaxLatencyMilliseconds: addLanTrustMaxLatencyMilliseconds,
+                skipAuthenticationForKnownIps: addSkipAuthenticationForKnownIps);
 
             if (!result.Success)
             {
