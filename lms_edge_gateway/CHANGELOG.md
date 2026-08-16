@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.57
+
+- Keeps Published Apps status pills inside each route title row instead of overflowing the card header.
+
 ## 0.1.56
 
 - Shows active Email approve IP trusted addresses on the Security/Users tab and allows revoking them.
