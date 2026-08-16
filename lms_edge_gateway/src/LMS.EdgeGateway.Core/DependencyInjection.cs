@@ -31,6 +31,9 @@ public static class DependencyInjection
         services.AddScoped<IEdgeGatewayStatusService, EdgeGatewayStatusService>();
         services.AddScoped<IEdgeGatewayRouteAuthService, EdgeGatewayRouteAuthService>();
         services.AddScoped<IEdgeGatewayTemporaryIpApprovalService, EdgeGatewayTemporaryIpApprovalService>();
+        services.AddSingleton<IDnsNameResolver, SystemDnsNameResolver>();
+        services.AddSingleton<ILanLatencyProbe, PingLanLatencyProbe>();
+        services.AddScoped<ILanClientTrustService, LanClientTrustService>();
         services.AddScoped<ILocalHttpServiceDiscoveryService, LocalHttpServiceDiscoveryService>();
         services.AddScoped<IEmailApiProvider, ResendEmailProvider>();
         services.AddScoped<IEmailApiProvider, BrevoEmailProvider>();

@@ -38,7 +38,12 @@ public sealed record PublishedApplicationDefinition(
     bool TemporaryIpApprovalUseNotFoundResponse = false,
     int? TemporaryIpApprovalIdleTimeoutMinutes = null,
     int? TemporaryIpApprovalMaxLifetimeMinutes = null,
-    bool TemporaryIpApprovalAllowSharedIp = false);
+    bool TemporaryIpApprovalAllowSharedIp = false,
+    bool LanTrustEnabled = false,
+    string LanTrustCidrs = "",
+    string LanTrustDnsSuffixes = "",
+    bool LanTrustRequireForwardConfirm = true,
+    int? LanTrustMaxLatencyMilliseconds = null);
 
 public sealed record PublicProxyRouteDefinition(
     Guid Id,

@@ -43,6 +43,11 @@ public interface IEdgeGatewayRelayProvisioningService
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
         bool temporaryIpApprovalAllowSharedIp = false,
+        bool lanTrustEnabled = false,
+        string lanTrustCidrs = "",
+        string lanTrustDnsSuffixes = "",
+        bool lanTrustRequireForwardConfirm = true,
+        int? lanTrustMaxLatencyMilliseconds = null,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> UpdateApplicationAsync(
@@ -68,6 +73,11 @@ public interface IEdgeGatewayRelayProvisioningService
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
         bool temporaryIpApprovalAllowSharedIp = false,
+        bool lanTrustEnabled = false,
+        string lanTrustCidrs = "",
+        string lanTrustDnsSuffixes = "",
+        bool lanTrustRequireForwardConfirm = true,
+        int? lanTrustMaxLatencyMilliseconds = null,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> PublishApplicationAsync(

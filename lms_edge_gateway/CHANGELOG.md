@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.59
+
+- Adds optional Verified LAN trust for MFA and Email approve IP routes: skip auth when the real LAN source IP is in trusted CIDRs and reverse/forward DNS matches your internal domain.
+- Never applies LAN trust to Cloudflare internet clients or loopback, with an optional latency gate.
+
 ## 0.1.58
 
 - Tightens Email approve IP by default so grants match the source IP and requesting client User-Agent, not every app on that public IP.

@@ -824,6 +824,11 @@ public sealed class EdgeGatewayRelayProvisioningService(
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
         bool temporaryIpApprovalAllowSharedIp = false,
+        bool lanTrustEnabled = false,
+        string lanTrustCidrs = "",
+        string lanTrustDnsSuffixes = "",
+        bool lanTrustRequireForwardConfirm = true,
+        int? lanTrustMaxLatencyMilliseconds = null,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -891,7 +896,12 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 temporaryIpApprovalUseNotFoundResponse,
                 NormalizeOptionalMinutes(temporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
                 NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080),
-                temporaryIpApprovalAllowSharedIp);
+                temporaryIpApprovalAllowSharedIp,
+                lanTrustEnabled,
+                NormalizeCidrTextBlock(lanTrustCidrs),
+                NormalizeDnsSuffixTextBlock(lanTrustDnsSuffixes),
+                lanTrustRequireForwardConfirm,
+                NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000));
             AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
@@ -968,6 +978,11 @@ public sealed class EdgeGatewayRelayProvisioningService(
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
         bool temporaryIpApprovalAllowSharedIp = false,
+        bool lanTrustEnabled = false,
+        string lanTrustCidrs = "",
+        string lanTrustDnsSuffixes = "",
+        bool lanTrustRequireForwardConfirm = true,
+        int? lanTrustMaxLatencyMilliseconds = null,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -1025,7 +1040,12 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 TemporaryIpApprovalUseNotFoundResponse = temporaryIpApprovalUseNotFoundResponse,
                 TemporaryIpApprovalIdleTimeoutMinutes = NormalizeOptionalMinutes(temporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
                 TemporaryIpApprovalMaxLifetimeMinutes = NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080),
-                TemporaryIpApprovalAllowSharedIp = temporaryIpApprovalAllowSharedIp
+                TemporaryIpApprovalAllowSharedIp = temporaryIpApprovalAllowSharedIp,
+                LanTrustEnabled = lanTrustEnabled,
+                LanTrustCidrs = NormalizeCidrTextBlock(lanTrustCidrs),
+                LanTrustDnsSuffixes = NormalizeDnsSuffixTextBlock(lanTrustDnsSuffixes),
+                LanTrustRequireForwardConfirm = lanTrustRequireForwardConfirm,
+                LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000)
             };
             AddHomeAssistantUpstreamWarnings(updated, warnings);
 
@@ -3145,6 +3165,44 @@ public sealed class EdgeGatewayRelayProvisioningService(
             .Where(country => country.Length == 2 && country.All(char.IsLetter))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(country => country, StringComparer.OrdinalIgnoreCase));
+
+    private static string NormalizeCidrTextBlock(string? value) =>
+        string.Join(
+            ", ",
+            (value ?? string.Empty)
+            .Split([',', '\r', '\n', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(IsValidCidr)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(cidr => cidr, StringComparer.OrdinalIgnoreCase));
+
+    private static string NormalizeDnsSuffixTextBlock(string? value) =>
+        string.Join(
+            ", ",
+            (value ?? string.Empty)
+            .Split([',', '\r', '\n', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(suffix => suffix.Trim().TrimEnd('.').ToLowerInvariant())
+            .Where(suffix => suffix.Contains('.', StringComparison.Ordinal) && !suffix.StartsWith('.'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(suffix => suffix, StringComparer.OrdinalIgnoreCase));
+
+    private static bool IsValidCidr(string value)
+    {
+        var slashIndex = value.IndexOf('/');
+        if (slashIndex <= 0 ||
+            !System.Net.IPAddress.TryParse(value[..slashIndex], out var network) ||
+            !int.TryParse(value[(slashIndex + 1)..], out var prefixLength))
+        {
+            return false;
+        }
+
+        if (network.IsIPv4MappedToIPv6)
+        {
+            network = network.MapToIPv4();
+        }
+
+        var maxPrefix = network.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128;
+        return prefixLength >= 0 && prefixLength <= maxPrefix;
+    }
 
     private static int? NormalizeOptionalMinutes(int? value, int min, int max) =>
         value is null ? null : Math.Clamp(value.Value, min, max);
