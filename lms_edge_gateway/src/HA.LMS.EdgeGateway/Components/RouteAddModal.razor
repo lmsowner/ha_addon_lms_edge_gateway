@@ -5,6 +5,7 @@
 @inject IEdgeGatewayRelayProvisioningService RelayProvisioningService
 @inject ILocalHttpServiceDiscoveryService HttpServiceDiscovery
 @inject IEdgeGatewaySecurityService SecurityService
+@inject IHttpClientFactory HttpClientFactory
 
 @if (Relay is not null)
 {
@@ -60,98 +61,131 @@
                             <strong>Email approval gates this route by source IP</strong>
                             <span>@TemporaryIpApprovalWarningText</span>
                         </div>
-                        <div class="edge-form-grid edge-temporary-approval-grid">
-                            <LmsMultiSelect Label="Approval recipients"
-                                            HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
-                                            Placeholder="Choose LMS users"
-                                            EmptyText="No enabled LMS users match."
-                                            Items="@approvalRecipientOptions"
-                                            @bind-Value="addTemporaryIpApprovalRecipients" />
-                            <LmsMultiSelect Label="Allowed countries"
-                                            HelperText="Optional Cloudflare country allow-list. Blank allows any country."
-                                            Placeholder="Search countries"
-                                            EmptyText="No countries match."
-                                            Items="@CountryOptions"
-                                            @bind-Value="addTemporaryIpApprovalAllowedCountryCodes" />
-                            <label class="ui-field">
-                                <span class="ui-field-label">Denied response</span>
-                                <span class="edge-checkbox-field">
-                                    <input type="checkbox" @bind="addTemporaryIpApprovalUseNotFoundResponse" />
-                                    <span>Return 404</span>
-                                </span>
-                                <span class="ui-field-helper">Still sends the approval email, but unapproved clients see Not Found.</span>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Shared IP access</span>
-                                <span class="edge-checkbox-field">
-                                    <input type="checkbox" @bind="addTemporaryIpApprovalAllowSharedIp" />
-                                    <span>Allow all clients from this IP</span>
-                                </span>
-                                <span class="ui-field-helper">Off by default. Keeps approval bound to the requesting client (User-Agent). Enable for trusted home/LAN public IPs where any local client should share the grant.</span>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Idle cut-off</span>
-                                <input type="number" min="1" max="1440" @bind="addTemporaryIpApprovalIdleTimeoutMinutes" placeholder="15" />
-                                <span class="ui-field-helper">Minutes without traffic. Blank uses the default.</span>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Maximum expiry</span>
-                                <input type="number" min="1" max="10080" @bind="addTemporaryIpApprovalMaxLifetimeMinutes" placeholder="120" />
-                                <span class="ui-field-helper">Absolute approval lifetime in minutes. Blank uses the default.</span>
-                            </label>
+                        <div class="edge-auth-panels">
+                            <section class="edge-auth-panel">
+                                <header class="edge-auth-panel-header">
+                                    <h4>Email approval</h4>
+                                    <p>Who gets the email, optional country filter, and how long a grant lasts.</p>
+                                </header>
+                                <div class="edge-auth-panel-grid">
+                                    <LmsMultiSelect Label="Approval recipients"
+                                                    HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
+                                                    Placeholder="Choose LMS users"
+                                                    EmptyText="No enabled LMS users match."
+                                                    Items="@approvalRecipientOptions"
+                                                    @bind-Value="addTemporaryIpApprovalRecipients" />
+                                    <LmsMultiSelect Label="Allowed countries"
+                                                    HelperText="Optional Cloudflare country allow-list. Blank allows any country."
+                                                    Placeholder="Search countries"
+                                                    EmptyText="No countries match."
+                                                    Items="@CountryOptions"
+                                                    @bind-Value="addTemporaryIpApprovalAllowedCountryCodes" />
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Denied response</span>
+                                        <span class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="addTemporaryIpApprovalUseNotFoundResponse" />
+                                            <span>Return 404</span>
+                                        </span>
+                                        <span class="ui-field-helper">Still sends the approval email, but unapproved clients see Not Found.</span>
+                                    </label>
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Shared IP access</span>
+                                        <span class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="addTemporaryIpApprovalAllowSharedIp" />
+                                            <span>Allow all clients from this IP</span>
+                                        </span>
+                                        <span class="ui-field-helper">Off by default. Binds approval to User-Agent. Enable for trusted home/LAN public IPs.</span>
+                                    </label>
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Idle cut-off (minutes)</span>
+                                        <input type="number" min="1" max="1440" @bind="addTemporaryIpApprovalIdleTimeoutMinutes" placeholder="15" />
+                                        <span class="ui-field-helper">Minutes without traffic. Blank uses the default.</span>
+                                    </label>
+                                    <label class="ui-field">
+                                        <span class="ui-field-label">Maximum expiry (minutes)</span>
+                                        <input type="number" min="1" max="10080" @bind="addTemporaryIpApprovalMaxLifetimeMinutes" placeholder="120" />
+                                        <span class="ui-field-helper">Absolute approval lifetime. Blank uses the default.</span>
+                                    </label>
+                                </div>
+                            </section>
                         </div>
                     }
 
                     @if (IsMfaOrTemporaryIpAccessPolicy(addAppAccessPolicy))
                     {
-                        <div class="edge-form-grid edge-temporary-approval-grid">
-                            <label class="ui-field">
-                                <span class="ui-field-label">Known source IPs</span>
-                                <input @bind="addAppAllowKnownIps" placeholder="203.0.113.10, 198.51.100.0/24" />
-                                <span class="ui-field-helper">Optional allow-list of source IPs/CIDRs. Blank allows any source IP through to the auth checks below.</span>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Known IP auth skip</span>
-                                <span class="edge-checkbox-field">
-                                    <input type="checkbox" @bind="addSkipAuthenticationForKnownIps" />
-                                    <span>Skip auth for known source IPs</span>
-                                </span>
-                                <span class="ui-field-helper">Use for your home public WAN IP when clients still reach the app through Cloudflare. Requires Known source IPs to be set.</span>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Verified LAN trust</span>
-                                <span class="edge-checkbox-field">
-                                    <input type="checkbox" @bind="addLanTrustEnabled" />
-                                    <span>Skip auth for verified LAN clients</span>
-                                </span>
-                                <span class="ui-field-helper">Opt-in. Only works when the client reaches Edge Gateway with a real LAN IP (split/local DNS). Accessing the FQDN through Cloudflare still requires normal auth.</span>
-                            </label>
-                            @if (addLanTrustEnabled)
-                            {
-                                <label class="ui-field">
-                                    <span class="ui-field-label">Trusted LAN CIDRs</span>
-                                    <input @bind="addLanTrustCidrs" placeholder="192.168.1.0/24" />
-                                    <span class="ui-field-helper">Comma-separated CIDRs for your LAN, for example 192.168.1.0/24.</span>
-                                </label>
-                                <label class="ui-field">
-                                    <span class="ui-field-label">Trusted DNS suffixes</span>
-                                    <input @bind="addLanTrustDnsSuffixes" placeholder="home.arpa" />
-                                    <span class="ui-field-helper">Reverse DNS of the LAN source IP must end with one of these domains. Requires split/local DNS to Edge Gateway so the real LAN IP is visible — Cloudflare tunnel clients are never trusted this way.</span>
-                                </label>
-                                <label class="ui-field">
-                                    <span class="ui-field-label">Forward confirm</span>
-                                    <span class="edge-checkbox-field">
-                                        <input type="checkbox" @bind="addLanTrustRequireForwardConfirm" />
-                                        <span>Require forward DNS to match the same IP</span>
-                                    </span>
-                                    <span class="ui-field-helper">Recommended. PTR name must resolve back to the source IP.</span>
-                                </label>
-                                <label class="ui-field">
-                                    <span class="ui-field-label">Max latency (ms)</span>
-                                    <input type="number" min="1" max="2000" @bind="addLanTrustMaxLatencyMilliseconds" placeholder="optional" />
-                                    <span class="ui-field-helper">Optional ICMP latency gate. Blank disables latency checking.</span>
-                                </label>
-                            }
+                        <div class="edge-auth-panels">
+                            <section class="edge-auth-panel">
+                                <header class="edge-auth-panel-header">
+                                    <h4>Known source IPs</h4>
+                                    <p>Allow-list by public WAN IP/CIDR. Useful when clients still arrive through Cloudflare.</p>
+                                </header>
+                                <div class="edge-auth-panel-grid">
+                                    <label class="ui-field edge-auth-panel-span">
+                                        <span class="ui-field-label">Known source IPs</span>
+                                        <div class="edge-inline-field-row">
+                                            <input @bind="addAppAllowKnownIps" placeholder="203.0.113.10, 198.51.100.0/24" />
+                                            <LmsButton Label="@(isFetchingAddWanIp ? "Looking up..." : "Get current WAN IP")"
+                                                       Icon="search"
+                                                       Disabled="@isFetchingAddWanIp"
+                                                       OnClick="FetchAddKnownWanIpAsync" />
+                                        </div>
+                                        <span class="ui-field-helper">Comma-separated IPs/CIDRs. Blank allows any source IP through to the checks below.</span>
+                                        @if (!string.IsNullOrWhiteSpace(addWanIpMessage))
+                                        {
+                                            <span class="ui-field-helper">@addWanIpMessage</span>
+                                        }
+                                    </label>
+                                    <label class="ui-field edge-auth-panel-span">
+                                        <span class="ui-field-label">Skip auth for known IPs</span>
+                                        <span class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="addSkipAuthenticationForKnownIps" />
+                                            <span>Skip MFA / email approval for matching source IPs</span>
+                                        </span>
+                                        <span class="ui-field-helper">Typical use: your home public WAN IP. Requires Known source IPs above.</span>
+                                    </label>
+                                </div>
+                            </section>
+                            <section class="edge-auth-panel">
+                                <header class="edge-auth-panel-header">
+                                    <h4>Verified LAN trust</h4>
+                                    <p>Only when the client hits Edge Gateway with a real LAN IP (split/local DNS). Cloudflare tunnel clients are never trusted this way.</p>
+                                </header>
+                                <div class="edge-auth-panel-grid">
+                                    <label class="ui-field edge-auth-panel-span">
+                                        <span class="ui-field-label">Enable LAN trust</span>
+                                        <span class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="addLanTrustEnabled" />
+                                            <span>Skip auth for verified LAN clients</span>
+                                        </span>
+                                    </label>
+                                    @if (addLanTrustEnabled)
+                                    {
+                                        <label class="ui-field">
+                                            <span class="ui-field-label">Trusted LAN CIDRs</span>
+                                            <input @bind="addLanTrustCidrs" placeholder="192.168.1.0/24" />
+                                            <span class="ui-field-helper">Comma-separated, for example 192.168.1.0/24.</span>
+                                        </label>
+                                        <label class="ui-field">
+                                            <span class="ui-field-label">Trusted DNS suffixes</span>
+                                            <input @bind="addLanTrustDnsSuffixes" placeholder="home.arpa" />
+                                            <span class="ui-field-helper">PTR of the LAN source IP must end with one of these domains.</span>
+                                        </label>
+                                        <label class="ui-field">
+                                            <span class="ui-field-label">Forward confirm</span>
+                                            <span class="edge-checkbox-field">
+                                                <input type="checkbox" @bind="addLanTrustRequireForwardConfirm" />
+                                                <span>Require forward DNS to match the same IP</span>
+                                            </span>
+                                            <span class="ui-field-helper">Recommended. PTR name must resolve back to the source IP.</span>
+                                        </label>
+                                        <label class="ui-field">
+                                            <span class="ui-field-label">Max latency (ms)</span>
+                                            <input type="number" min="1" max="2000" @bind="addLanTrustMaxLatencyMilliseconds" placeholder="optional" />
+                                            <span class="ui-field-helper">Optional ICMP gate. Blank disables latency checking.</span>
+                                        </label>
+                                    }
+                                </div>
+                            </section>
                         </div>
                     }
 
@@ -361,6 +395,8 @@
     private bool addLanTrustRequireForwardConfirm = true;
     private int? addLanTrustMaxLatencyMilliseconds;
     private bool addSkipAuthenticationForKnownIps;
+    private bool isFetchingAddWanIp;
+    private string addWanIpMessage = string.Empty;
     private int? addTemporaryIpApprovalIdleTimeoutMinutes;
     private int? addTemporaryIpApprovalMaxLifetimeMinutes;
     private bool addAppEnabled = true;
@@ -519,7 +555,64 @@
 
         CancelHttpServiceLookup();
         isHttpServicePickerOpen = false;
+        addWanIpMessage = string.Empty;
+        isFetchingAddWanIp = false;
         await OnClose.InvokeAsync();
+    }
+
+    private async Task FetchAddKnownWanIpAsync()
+    {
+        if (isFetchingAddWanIp)
+        {
+            return;
+        }
+
+        isFetchingAddWanIp = true;
+        addWanIpMessage = string.Empty;
+        try
+        {
+            var wanIp = await LookupCurrentWanIpAsync();
+            addAppAllowKnownIps = MergeKnownSourceIp(addAppAllowKnownIps, wanIp);
+            addWanIpMessage = $"Added {wanIp}.";
+        }
+        catch (Exception ex)
+        {
+            addWanIpMessage = $"Could not look up WAN IP: {ex.Message}";
+        }
+        finally
+        {
+            isFetchingAddWanIp = false;
+        }
+    }
+
+    private async Task<string> LookupCurrentWanIpAsync()
+    {
+        var client = HttpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(8);
+        using var response = await client.GetAsync("https://api.ipify.org");
+        response.EnsureSuccessStatusCode();
+        var wanIp = (await response.Content.ReadAsStringAsync()).Trim();
+        if (!IPAddress.TryParse(wanIp, out _))
+        {
+            throw new InvalidOperationException("Lookup returned an invalid IP address.");
+        }
+
+        return wanIp;
+    }
+
+    private static string MergeKnownSourceIp(string existing, string ip)
+    {
+        var parts = existing
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToList();
+        if (parts.Any(part => string.Equals(part, ip, StringComparison.OrdinalIgnoreCase)))
+        {
+            return string.Join(", ", parts);
+        }
+
+        parts.Add(ip);
+        return string.Join(", ", parts);
     }
 
     private async Task CheckRouteTargetAsync()

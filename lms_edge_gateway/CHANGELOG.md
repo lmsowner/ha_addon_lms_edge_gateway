@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.62
+
+- Tidies add/edit route auth settings into stacked panels (Email approval, Known source IPs, Verified LAN trust) instead of a crowded multi-column grid.
+- Adds Get current WAN IP on Known source IPs to append the add-on's public address from ipify.
+
 ## 0.1.61
 
 - Removes personal example domain/CIDR placeholders from Verified LAN trust fields.

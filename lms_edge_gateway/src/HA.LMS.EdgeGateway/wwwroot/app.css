@@ -1387,7 +1387,7 @@ textarea {
 }
 
 .edge-temporary-approval-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .edge-token-guide-grid > .edge-temporary-approval-grid,
@@ -1400,8 +1400,7 @@ textarea {
 }
 
 .edge-route-main-grid > .ui-field,
-.edge-form-grid-target > .ui-field,
-.edge-temporary-approval-grid > .ui-field {
+.edge-form-grid-target > .ui-field {
     gap: var(--edge-route-field-gap);
     grid-template-rows:
         minmax(var(--edge-route-field-label-row), auto)
@@ -1412,37 +1411,97 @@ textarea {
 
 .edge-route-main-grid > .ui-field > .ui-field-label,
 .edge-form-grid-target > .ui-field > .ui-field-label,
-.edge-temporary-approval-grid > .ui-field > .ui-field-label,
 .edge-route-main-grid > .ui-field > .ui-field-helper,
-.edge-form-grid-target > .ui-field > .ui-field-helper,
-.edge-temporary-approval-grid > .ui-field > .ui-field-helper {
+.edge-form-grid-target > .ui-field > .ui-field-helper {
     align-self: start;
 }
 
 .edge-route-main-grid > .ui-field > input,
 .edge-form-grid-target > .ui-field > input,
-.edge-temporary-approval-grid > .ui-field > input,
 .edge-route-main-grid > .ui-field > select,
-.edge-form-grid-target > .ui-field > select,
-.edge-temporary-approval-grid > .ui-field > select {
+.edge-form-grid-target > .ui-field > select {
     align-self: end;
 }
 
 .edge-route-main-grid > .ui-field > .lms-multi-select,
 .edge-form-grid-target > .ui-field > .lms-multi-select,
 .edge-route-main-grid > .ui-field > .edge-checkbox-field,
-.edge-form-grid-target > .ui-field > .edge-checkbox-field,
-.edge-temporary-approval-grid > .ui-field > .lms-multi-select,
-.edge-temporary-approval-grid > .ui-field > .edge-checkbox-field {
+.edge-form-grid-target > .ui-field > .edge-checkbox-field {
     align-self: end;
 }
 
-.edge-temporary-approval-grid > .lms-multi-select-field {
-    grid-column: span 2;
+.edge-auth-panels {
+    display: grid;
+    gap: 0.85rem;
 }
 
-.edge-temporary-approval-grid > .ui-field:nth-child(3) {
-    grid-column: span 2;
+.edge-auth-panel {
+    background: color-mix(in srgb, var(--surface-card) 88%, var(--color-line));
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card, 0.75rem);
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.85rem 0.95rem;
+}
+
+.edge-auth-panel-header {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.edge-auth-panel-header h4 {
+    color: var(--color-text);
+    font-size: 0.86rem;
+    font-weight: 800;
+    line-height: 1.25;
+    margin: 0;
+}
+
+.edge-auth-panel-header p {
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    line-height: 1.35;
+    margin: 0;
+}
+
+.edge-auth-panel-grid {
+    align-items: start;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.edge-auth-panel-grid > .lms-multi-select-field,
+.edge-auth-panel-span {
+    grid-column: 1 / -1;
+}
+
+.edge-auth-panel-grid > .ui-field {
+    gap: 0.34rem;
+}
+
+.edge-inline-field-row {
+    align-items: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.edge-inline-field-row > input {
+    flex: 1 1 12rem;
+    min-width: 0;
+}
+
+.edge-inline-field-row > .lms-button,
+.edge-inline-field-row > button {
+    flex: 0 0 auto;
+}
+
+.edge-auth-panel-note {
+    color: var(--color-text-muted);
+    font-size: 0.74rem;
+    line-height: 1.35;
+    margin: 0;
 }
 
 .lms-multi-select {
@@ -3982,6 +4041,7 @@ textarea {
     .edge-relay-settings-form-line,
     .edge-route-main-grid,
     .edge-temporary-approval-grid,
+    .edge-auth-panel-grid,
     .edge-form-grid-target,
     .edge-form-grid-two,
     .domain-template-grid,
@@ -4024,18 +4084,18 @@ textarea {
     }
 
     .edge-route-main-grid > .ui-field,
-    .edge-temporary-approval-grid > .ui-field,
     .edge-form-grid-target > .ui-field,
     .domain-editor-grid > .ui-field {
         grid-template-rows: none;
         height: auto;
     }
 
-    .edge-temporary-approval-grid > .lms-multi-select-field {
-        grid-column: auto;
+    .edge-auth-panel-grid {
+        grid-template-columns: 1fr;
     }
 
-    .edge-temporary-approval-grid > .ui-field:nth-child(3) {
+    .edge-auth-panel-grid > .lms-multi-select-field,
+    .edge-auth-panel-span {
         grid-column: auto;
     }
 
