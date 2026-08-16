@@ -296,18 +296,20 @@
                     Email approve IP is designed for apps such as Plex or other native clients where a browser redirect to LMS MFA
                     would break the client. It is still deny-first: the first external request is blocked, an email is sent to
                     configured LMS users, and access only opens after a user deliberately approves that specific source IP.
+                    By default the grant is also bound to the requesting client User-Agent, so other apps on the same public IP stay blocked.
                 </p>
                 <ol class="numbered-list">
                     <li>A client requests the published hostname, for example <code>plex.example.com</code>.</li>
                     <li>Caddy asks LMS forward-auth to check the route. Because the source IP is not approved yet, the request is denied.</li>
                     <li>Edge Gateway sends a throttled approval email with the app name, requested URL, source IP, approximate Cloudflare country, and user agent.</li>
-                    <li>The recipient clicks the approval link from email. The link creates a temporary grant for that route and exact source IP only.</li>
-                    <li>The client retries from the same public IP. Edge Gateway allows it until the idle cut-off or maximum expiry is reached.</li>
+                    <li>The recipient clicks the approval link from email. The link creates a temporary grant for that route and exact source IP. By default it also requires the same client User-Agent.</li>
+                    <li>The original client retries from the same public IP. Edge Gateway allows it until the idle cut-off or maximum expiry is reached.</li>
                 </ol>
                 <p class="meta-text">
-                    Approval grants are not reusable across apps, hostnames, or source IPs. If the client's public IP changes, the
-                    new IP has to be approved separately. Repeated emails for the same app/IP are throttled so media clients cannot
-                    flood the mailbox while waiting for approval.
+                    Approval grants are not reusable across apps or hostnames. Approving from Chrome still works for VLC or Plex on the
+                    same device because the grant is created from the original client request, not from the browser that clicked Allow.
+                    If the client's public IP changes, the new IP has to be approved separately. Repeated emails for the same app/client
+                    are throttled so media clients cannot flood the mailbox while waiting for approval.
                 </p>
             </div>
             <div>
@@ -316,13 +318,14 @@
                     <div><strong>Approval recipients</strong><span>Select enabled LMS users. Blank falls back to route allowed users, then enabled LMS users.</span></div>
                     <div><strong>Allowed countries</strong><span>Optional Cloudflare country allow-list. Requests outside the selected countries are denied before email is sent.</span></div>
                     <div><strong>Denied response</strong><span>Show the normal approval-status response while testing, or return an empty HTTP 404 for a quieter public-facing route.</span></div>
+                    <div><strong>Shared IP access</strong><span>Off by default. When enabled, any client on the approved public IP may use the route. Use this for trusted home or LAN public IPs.</span></div>
                     <div><strong>Idle cut-off</strong><span>How long the approved IP remains open after the last seen request. Blank uses the add-on default.</span></div>
                     <div><strong>Maximum expiry</strong><span>Absolute lifetime for the approval grant even if traffic continues. Blank uses the add-on default.</span></div>
                 </div>
                 <p class="callout ready">
                     Email approve IP is not the same as pass-through. Pass-through sends traffic straight to the upstream service.
                     Email approve IP keeps Edge Gateway in front, denies by default, requires explicit email approval, and then opens
-                    a temporary route for one source IP.
+                    a temporary route for one source IP and, by default, the requesting client only.
                 </p>
             </div>
         </div>

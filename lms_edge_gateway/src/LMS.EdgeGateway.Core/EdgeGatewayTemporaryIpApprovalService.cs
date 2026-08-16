@@ -70,7 +70,14 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
                 .Where(candidate => candidate.Id != grantId)
                 .ToArray();
             var requests = state.Requests
-                .Where(request => !IsSameRouteAndIp(request, grant.RouteId, grant.SourceIp))
+                .Where(request => !MatchesApprovedClient(
+                    request.RouteId,
+                    request.SourceIp,
+                    request.UserAgent,
+                    grant.RouteId,
+                    grant.SourceIp,
+                    grant.UserAgent,
+                    allowSharedIp: false))
                 .ToArray();
 
             await approvalStore.SaveAsync(state with { Requests = requests, Grants = grants }, cancellationToken);
@@ -109,7 +116,15 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
         {
             var state = CleanExpired(await approvalStore.LoadAsync(cancellationToken), now);
             var grants = state.Grants.ToList();
-            var activeGrant = grants.FirstOrDefault(grant => IsSameRouteAndIp(grant, route.Id, context.SourceIp));
+            var activeGrant = grants.FirstOrDefault(grant =>
+                MatchesApprovedClient(
+                    grant.RouteId,
+                    grant.SourceIp,
+                    grant.UserAgent,
+                    route.Id,
+                    context.SourceIp,
+                    context.UserAgent,
+                    route.TemporaryIpApprovalAllowSharedIp));
             if (activeGrant is not null)
             {
                 var touchedGrant = TouchGrantIfNeeded(activeGrant, route, context, now);
@@ -123,7 +138,15 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             }
 
             var requests = state.Requests.ToList();
-            var pending = requests.FirstOrDefault(request => IsSameRouteAndIp(request, route.Id, context.SourceIp));
+            var pending = requests.FirstOrDefault(request =>
+                MatchesApprovedClient(
+                    request.RouteId,
+                    request.SourceIp,
+                    request.UserAgent,
+                    route.Id,
+                    context.SourceIp,
+                    context.UserAgent,
+                    route.TemporaryIpApprovalAllowSharedIp));
             if (pending is not null &&
                 pending.LastEmailSentUtc is not null &&
                 pending.LastEmailSentUtc.Value.Add(GetEmailCooldown()) > now)
@@ -141,7 +164,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
                 await approvalStore.SaveAsync(state with { Requests = requests, Grants = grants }, cancellationToken);
                 return new TemporaryIpApprovalEvaluationResult(
                     false,
-                    "Temporary IP approval email limit reached for this app and IP today.");
+                    "Temporary IP approval email limit reached for this app and client today.");
             }
 
             var eligibleRecipients = await ResolveApprovalRecipientsAsync(route, cancellationToken);
@@ -253,7 +276,14 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
                 now.Add(GetMaxLifetime(route)));
 
             var grants = state.Grants
-                .Where(candidate => !IsSameRouteAndIp(candidate, request.RouteId, request.SourceIp))
+                .Where(candidate => !MatchesApprovedClient(
+                    candidate.RouteId,
+                    candidate.SourceIp,
+                    candidate.UserAgent,
+                    request.RouteId,
+                    request.SourceIp,
+                    request.UserAgent,
+                    route.TemporaryIpApprovalAllowSharedIp))
                 .Append(grant)
                 .ToArray();
             requests[requests.FindIndex(candidate => candidate.Id == request.Id)] = request with
@@ -266,15 +296,20 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
 
             await approvalStore.SaveAsync(state with { Requests = requests, Grants = grants }, cancellationToken);
             logger.LogInformation(
-                "Audit event: temporary IP approval granted for route {RouteName} {PublicHostname} from {SourceIp}.",
+                "Audit event: temporary IP approval granted for route {RouteName} {PublicHostname} from {SourceIp} (shared IP {AllowSharedIp}).",
                 route.Name,
                 route.PublicHostname,
-                request.SourceIp);
+                request.SourceIp,
+                route.TemporaryIpApprovalAllowSharedIp);
+
+            var scopeMessage = route.TemporaryIpApprovalAllowSharedIp
+                ? $"Access from {request.SourceIp} is approved for {route.Name} for any client on that IP. Reopen the app from the same network."
+                : $"Access from {request.SourceIp} is approved for {route.Name} for the requesting client only. Reopen the same app from the same network.";
 
             return new TemporaryIpApprovalCompletionResult(
                 true,
                 "Temporary access approved",
-                $"Access from {request.SourceIp} is approved for {route.Name}. Reopen the app from the same network.",
+                scopeMessage,
                 request.SourceIp,
                 request.CountryCode,
                 route.Name,
@@ -347,7 +382,6 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
         return grant with
         {
             CountryCode = string.IsNullOrWhiteSpace(context.CountryCode) ? grant.CountryCode : NormalizeCountryCode(context.CountryCode),
-            UserAgent = string.IsNullOrWhiteSpace(context.UserAgent) ? grant.UserAgent : context.UserAgent,
             LastSeenUtc = now,
             IdleExpiresAtUtc = now.Add(GetIdleTimeout(route))
         };
@@ -485,7 +519,8 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
         Approve this IP:
         {approvalUrl}
 
-        Approval is limited to this app and source IP. It expires after {GetIdleTimeout(route).TotalMinutes:0} minutes without traffic, or after {GetMaxLifetime(route).TotalMinutes:0} minutes at most.
+        {DescribeApprovalScope(route)}
+        It expires after {GetIdleTimeout(route).TotalMinutes:0} minutes without traffic, or after {GetMaxLifetime(route).TotalMinutes:0} minutes at most.
         """;
 
     private string BuildApprovalEmailHtml(
@@ -527,7 +562,7 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
                               </td>
                             </tr>
                           </table>
-                          <p style="color:#607089;font-size:13px;line-height:1.5;margin:0;">Approval is limited to this app and source IP. It expires after {{GetIdleTimeout(route).TotalMinutes:0}} minutes without traffic, or after {{GetMaxLifetime(route).TotalMinutes:0}} minutes at most.</p>
+                          <p style="color:#607089;font-size:13px;line-height:1.5;margin:0;">{{WebUtility.HtmlEncode(DescribeApprovalScope(route))}} It expires after {{GetIdleTimeout(route).TotalMinutes:0}} minutes without traffic, or after {{GetMaxLifetime(route).TotalMinutes:0}} minutes at most.</p>
                         </td>
                       </tr>
                     </table>
@@ -628,13 +663,26 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
             grant.IdleExpiresAtUtc,
             grant.ExpiresAtUtc);
 
-    private static bool IsSameRouteAndIp(TemporaryIpApprovalGrant grant, Guid routeId, string sourceIp) =>
-        grant.RouteId == routeId &&
-        grant.SourceIp.Equals(sourceIp, StringComparison.OrdinalIgnoreCase);
+    private static string DescribeApprovalScope(PublishedApplicationDefinition route) =>
+        route.TemporaryIpApprovalAllowSharedIp
+            ? "Approval is limited to this app and source IP for any client on that IP."
+            : "Approval is limited to this app, source IP, and the requesting client (User-Agent).";
 
-    private static bool IsSameRouteAndIp(TemporaryIpApprovalRequest request, Guid routeId, string sourceIp) =>
-        request.RouteId == routeId &&
-        request.SourceIp.Equals(sourceIp, StringComparison.OrdinalIgnoreCase);
+    private static bool MatchesApprovedClient(
+        Guid leftRouteId,
+        string leftSourceIp,
+        string leftUserAgent,
+        Guid rightRouteId,
+        string rightSourceIp,
+        string rightUserAgent,
+        bool allowSharedIp) =>
+        leftRouteId == rightRouteId &&
+        leftSourceIp.Equals(rightSourceIp, StringComparison.OrdinalIgnoreCase) &&
+        (allowSharedIp ||
+         NormalizeUserAgent(leftUserAgent).Equals(NormalizeUserAgent(rightUserAgent), StringComparison.Ordinal));
+
+    private static string NormalizeUserAgent(string? value) =>
+        (value ?? string.Empty).Trim();
 
     private static string CreateToken()
     {

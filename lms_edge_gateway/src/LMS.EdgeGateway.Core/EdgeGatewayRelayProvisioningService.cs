@@ -823,6 +823,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool temporaryIpApprovalUseNotFoundResponse = false,
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
+        bool temporaryIpApprovalAllowSharedIp = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -889,7 +890,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes),
                 temporaryIpApprovalUseNotFoundResponse,
                 NormalizeOptionalMinutes(temporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
-                NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080));
+                NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080),
+                temporaryIpApprovalAllowSharedIp);
             AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
@@ -965,6 +967,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool temporaryIpApprovalUseNotFoundResponse = false,
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
+        bool temporaryIpApprovalAllowSharedIp = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -1021,7 +1024,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeTextBlock(temporaryIpApprovalAllowedCountryCodes),
                 TemporaryIpApprovalUseNotFoundResponse = temporaryIpApprovalUseNotFoundResponse,
                 TemporaryIpApprovalIdleTimeoutMinutes = NormalizeOptionalMinutes(temporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
-                TemporaryIpApprovalMaxLifetimeMinutes = NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080)
+                TemporaryIpApprovalMaxLifetimeMinutes = NormalizeOptionalMinutes(temporaryIpApprovalMaxLifetimeMinutes, 1, 10080),
+                TemporaryIpApprovalAllowSharedIp = temporaryIpApprovalAllowSharedIp
             };
             AddHomeAssistantUpstreamWarnings(updated, warnings);
 

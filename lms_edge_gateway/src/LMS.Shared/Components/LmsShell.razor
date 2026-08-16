@@ -40,7 +40,7 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<NavigationItem> Items { get; set; } = [];
     [Parameter] public RenderFragment? ChildContent { get; set; }
-    [Parameter] public string ProductVersion { get; set; } = "0.1.57";
+    [Parameter] public string ProductVersion { get; set; } = "0.1.58";
 
     private string FormattedProductVersion => $"v{NormalizeProductVersion(ProductVersion)}";
 
@@ -71,7 +71,7 @@
         var normalized = (value ?? string.Empty).Trim();
         return string.IsNullOrWhiteSpace(normalized) ||
                normalized.Equals("@productversion", StringComparison.OrdinalIgnoreCase)
-            ? "0.1.57"
+            ? "0.1.58"
             : normalized.TrimStart('v', 'V');
     }
 }

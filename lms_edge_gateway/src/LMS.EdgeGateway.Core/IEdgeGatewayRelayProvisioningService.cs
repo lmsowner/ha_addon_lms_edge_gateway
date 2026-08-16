@@ -42,6 +42,7 @@ public interface IEdgeGatewayRelayProvisioningService
         bool temporaryIpApprovalUseNotFoundResponse = false,
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
+        bool temporaryIpApprovalAllowSharedIp = false,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> UpdateApplicationAsync(
@@ -66,6 +67,7 @@ public interface IEdgeGatewayRelayProvisioningService
         bool temporaryIpApprovalUseNotFoundResponse = false,
         int? temporaryIpApprovalIdleTimeoutMinutes = null,
         int? temporaryIpApprovalMaxLifetimeMinutes = null,
+        bool temporaryIpApprovalAllowSharedIp = false,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> PublishApplicationAsync(

@@ -29,6 +29,7 @@ public sealed class TemporaryIpApprovalTests
         var approval = await service.ApproveAsync(token);
         var approved = await service.EvaluateAsync(route, context);
         var otherIp = await service.EvaluateAsync(route, context with { SourceIp = "198.51.100.45" });
+        var otherClient = await service.EvaluateAsync(route, context with { UserAgent = "VLC/3.0" });
 
         Assert.False(first.IsAllowed);
         Assert.True(first.EmailAttempted);
@@ -37,9 +38,34 @@ public sealed class TemporaryIpApprovalTests
         Assert.False(second.EmailAttempted);
         Assert.Contains("sent recently", second.Reason, StringComparison.OrdinalIgnoreCase);
         Assert.True(approval.Success);
+        Assert.Contains("requesting client only", approval.Message, StringComparison.OrdinalIgnoreCase);
         Assert.True(approved.IsAllowed);
         Assert.False(otherIp.IsAllowed);
-        Assert.Equal(2, emailDelivery.Messages.Count);
+        Assert.False(otherClient.IsAllowed);
+        Assert.Equal(3, emailDelivery.Messages.Count);
+    }
+
+    [Fact]
+    public async Task Temporary_ip_approval_shared_ip_allows_other_clients_on_same_ip()
+    {
+        var route = Route() with { TemporaryIpApprovalAllowSharedIp = true };
+        var approvalStore = new InMemoryTemporaryIpApprovalStore();
+        var emailDelivery = new RecordingEmailDeliveryService();
+        var service = CreateService(route, approvalStore, emailDelivery);
+        var context = Context(countryCode: "GB");
+
+        await service.EvaluateAsync(route, context);
+        var approvalEmail = Assert.Single(emailDelivery.Messages);
+        var token = ExtractApprovalToken(approvalEmail.PlainTextBody);
+        var approval = await service.ApproveAsync(token);
+        var sameIpOtherClient = await service.EvaluateAsync(route, context with { UserAgent = "Chrome/120" });
+        var otherIp = await service.EvaluateAsync(route, context with { SourceIp = "198.51.100.45" });
+
+        Assert.True(approval.Success);
+        Assert.Contains("any client on that IP", approval.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(sameIpOtherClient.IsAllowed);
+        Assert.False(otherIp.IsAllowed);
+        Assert.Contains("any client on that IP", approvalEmail.PlainTextBody, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
