@@ -75,6 +75,16 @@ public sealed class EdgeGatewayRouteAuthService(
                 "Source IP did not match the route allow-list.");
         }
 
+        if (route.SkipAuthenticationForKnownIps &&
+            HasConfiguredKnownIps(route) &&
+            IsKnownIpAllowed(route, sourceIp))
+        {
+            return new EdgeGatewayAuthCheckResult(
+                StatusOk,
+                "Known source IP skip-authentication allowed.",
+                UserName: $"known-ip:{sourceIp}");
+        }
+
         if (route.LanTrustEnabled && lanClientTrustService is not null)
         {
             var lanTrust = await lanClientTrustService.EvaluateAsync(
@@ -276,6 +286,9 @@ public sealed class EdgeGatewayRouteAuthService(
 
         return allowed.Any(item => AddressMatches(parsed, item));
     }
+
+    private static bool HasConfiguredKnownIps(PublishedApplicationDefinition route) =>
+        SplitRouteList(route.AllowKnownIps).Any();
 
     private static bool IsLanAddress(string sourceIp)
     {

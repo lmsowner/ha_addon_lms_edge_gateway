@@ -829,6 +829,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         string lanTrustDnsSuffixes = "",
         bool lanTrustRequireForwardConfirm = true,
         int? lanTrustMaxLatencyMilliseconds = null,
+        bool skipAuthenticationForKnownIps = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -901,7 +902,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 NormalizeCidrTextBlock(lanTrustCidrs),
                 NormalizeDnsSuffixTextBlock(lanTrustDnsSuffixes),
                 lanTrustRequireForwardConfirm,
-                NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000));
+                NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000),
+                skipAuthenticationForKnownIps);
             AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
@@ -983,6 +985,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         string lanTrustDnsSuffixes = "",
         bool lanTrustRequireForwardConfirm = true,
         int? lanTrustMaxLatencyMilliseconds = null,
+        bool skipAuthenticationForKnownIps = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -1045,7 +1048,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 LanTrustCidrs = NormalizeCidrTextBlock(lanTrustCidrs),
                 LanTrustDnsSuffixes = NormalizeDnsSuffixTextBlock(lanTrustDnsSuffixes),
                 LanTrustRequireForwardConfirm = lanTrustRequireForwardConfirm,
-                LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000)
+                LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000),
+                SkipAuthenticationForKnownIps = skipAuthenticationForKnownIps
             };
             AddHomeAssistantUpstreamWarnings(updated, warnings);
 
