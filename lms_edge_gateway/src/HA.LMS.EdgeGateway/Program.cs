@@ -574,7 +574,9 @@ app.MapGet("/edge-auth/check", async Task (
     }
     else if (result.StatusCode != StatusCodes.Status302Found)
     {
-        context.Response.ContentType = "text/plain; charset=utf-8";
+        context.Response.ContentType = string.IsNullOrWhiteSpace(result.ContentType)
+            ? "text/plain; charset=utf-8"
+            : result.ContentType;
         await context.Response.WriteAsync(result.Reason, context.RequestAborted);
     }
 }).DisableAntiforgery();

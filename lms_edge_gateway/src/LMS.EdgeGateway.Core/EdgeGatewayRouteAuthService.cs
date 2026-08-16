@@ -75,9 +75,11 @@ public sealed class EdgeGatewayRouteAuthService(
                 "Source IP did not match the route allow-list.");
         }
 
+        var knownIpsConfigured = HasConfiguredKnownIps(route);
+        var knownIpMatched = IsKnownIpAllowed(route, sourceIp);
         if (route.SkipAuthenticationForKnownIps &&
-            HasConfiguredKnownIps(route) &&
-            IsKnownIpAllowed(route, sourceIp))
+            knownIpsConfigured &&
+            knownIpMatched)
         {
             return new EdgeGatewayAuthCheckResult(
                 StatusOk,
@@ -85,6 +87,7 @@ public sealed class EdgeGatewayRouteAuthService(
                 UserName: $"known-ip:{sourceIp}");
         }
 
+        string? lanTrustReason = null;
         if (route.LanTrustEnabled && lanClientTrustService is not null)
         {
             var lanTrust = await lanClientTrustService.EvaluateAsync(
@@ -101,15 +104,32 @@ public sealed class EdgeGatewayRouteAuthService(
                         ? $"lan-trust:{sourceIp}"
                         : $"lan-trust:{lanTrust.HostName}");
             }
+
+            lanTrustReason = lanTrust.Reason;
+        }
+        else if (route.LanTrustEnabled)
+        {
+            lanTrustReason = "LAN trust is enabled but the verifier service is not available.";
+        }
+        else
+        {
+            lanTrustReason = "Verified LAN trust is disabled for this route.";
         }
 
         if (EdgeGatewayAccessPolicies.IsTemporaryIpApproval(route.AccessPolicy))
         {
             if (temporaryIpApprovalService is null)
             {
-                return new EdgeGatewayAuthCheckResult(
-                    StatusForbidden,
-                    "Temporary IP approval service is not available.");
+                return DenyTemporaryIpWithDiagnostics(
+                    route,
+                    context,
+                    sourceIp,
+                    knownIpsConfigured,
+                    knownIpMatched,
+                    lanTrustReason,
+                    "Temporary IP approval service is not available.",
+                    emailAttempted: false,
+                    emailSucceeded: false);
             }
 
             var requestedUrl = BuildRequestedUrl(requestedHost, requestedPath);
@@ -132,9 +152,16 @@ public sealed class EdgeGatewayRouteAuthService(
                     UserName: $"temporary-ip:{sourceIp}");
             }
 
-            return route.TemporaryIpApprovalUseNotFoundResponse
-                ? new EdgeGatewayAuthCheckResult(StatusNotFound, string.Empty, SuppressResponseBody: true)
-                : new EdgeGatewayAuthCheckResult(StatusForbidden, result.Reason);
+            return DenyTemporaryIpWithDiagnostics(
+                route,
+                context,
+                sourceIp,
+                knownIpsConfigured,
+                knownIpMatched,
+                lanTrustReason,
+                result.Reason,
+                result.EmailAttempted,
+                result.EmailSucceeded);
         }
 
         if (context.User.Identity?.IsAuthenticated != true ||
@@ -206,6 +233,148 @@ public sealed class EdgeGatewayRouteAuthService(
                 RoutePathMatches(route.TargetPathPrefix, pathOnly))
             .OrderByDescending(route => NormalizeRoutePathPrefix(route.TargetPathPrefix).Length)
             .FirstOrDefault();
+    }
+
+    private static EdgeGatewayAuthCheckResult DenyTemporaryIpWithDiagnostics(
+        PublishedApplicationDefinition route,
+        EdgeGatewayAuthCheckContext context,
+        string sourceIp,
+        bool knownIpsConfigured,
+        bool knownIpMatched,
+        string? lanTrustReason,
+        string temporaryIpReason,
+        bool emailAttempted,
+        bool emailSucceeded)
+    {
+        if (route.TemporaryIpApprovalUseNotFoundResponse)
+        {
+            return new EdgeGatewayAuthCheckResult(StatusNotFound, string.Empty, SuppressResponseBody: true);
+        }
+
+        var knownSkipEnabled = route.SkipAuthenticationForKnownIps;
+        var knownStatus = !knownIpsConfigured
+            ? "Not configured"
+            : knownIpMatched
+                ? knownSkipEnabled
+                    ? "Matched, but skip did not apply"
+                    : "Matched"
+                : "No match";
+        var knownDetail = !knownIpsConfigured
+            ? "Known source IPs is empty, so Cloudflare home WAN skip cannot apply."
+            : knownIpMatched
+                ? knownSkipEnabled
+                    ? "This should have skipped auth. Check that the saved route includes Skip auth for known source IPs."
+                    : $"Source IP {sourceIp} matches Known source IPs, but Skip auth for known source IPs is off."
+                : $"Source IP {sourceIp} is not in Known source IPs ({route.AllowKnownIps}).";
+
+        var lanEnabled = route.LanTrustEnabled;
+        var lanOk = false;
+        var lanStatus = lanEnabled ? "Not trusted" : "Disabled";
+        var lanDetail = lanTrustReason ?? "No LAN trust result.";
+
+        var emailStatus = emailSucceeded
+            ? "Email sent"
+            : emailAttempted
+                ? "Email failed"
+                : temporaryIpReason.Contains("pending", StringComparison.OrdinalIgnoreCase)
+                    ? "Pending approval"
+                    : "Not granted";
+
+        var diagnostics = new EdgeGatewayAccessDiagnostics(
+            Title: "Access pending or denied",
+            Summary: temporaryIpReason,
+            RouteName: route.Name,
+            PublicHostname: route.PublicHostname,
+            AccessPolicy: route.AccessPolicy,
+            SourceIp: string.IsNullOrWhiteSpace(sourceIp) ? "Unknown" : sourceIp,
+            CloudflareConnectingIp: context.ConnectingIp,
+            CountryCode: context.CountryCode,
+            UserAgent: TruncateForDiagnostics(context.UserAgent, 160),
+            Checks:
+            [
+                new EdgeGatewayAccessDiagnosticCheck(
+                    "Known source IPs",
+                    knownStatus,
+                    knownDetail,
+                    IsOk: knownIpsConfigured && knownIpMatched && knownSkipEnabled),
+                new EdgeGatewayAccessDiagnosticCheck(
+                    "Verified LAN trust",
+                    lanStatus,
+                    lanDetail,
+                    IsOk: lanOk),
+                new EdgeGatewayAccessDiagnosticCheck(
+                    "Email approve IP",
+                    emailStatus,
+                    temporaryIpReason,
+                    IsOk: false)
+            ],
+            NextSteps: BuildTemporaryIpNextSteps(
+                knownIpsConfigured,
+                knownIpMatched,
+                knownSkipEnabled,
+                lanEnabled,
+                emailSucceeded,
+                temporaryIpReason));
+
+        return new EdgeGatewayAuthCheckResult(
+            StatusForbidden,
+            EdgeGatewayAccessDiagnosticsPage.Render(diagnostics),
+            ContentType: "text/html; charset=utf-8");
+    }
+
+    private static IReadOnlyList<string> BuildTemporaryIpNextSteps(
+        bool knownIpsConfigured,
+        bool knownIpMatched,
+        bool knownSkipEnabled,
+        bool lanEnabled,
+        bool emailSucceeded,
+        string temporaryIpReason)
+    {
+        var steps = new List<string>();
+        if (!knownIpsConfigured)
+        {
+            steps.Add("For home access through Cloudflare, add your current public WAN IP under Known source IPs and enable Skip auth for known source IPs.");
+        }
+        else if (knownIpMatched && !knownSkipEnabled)
+        {
+            steps.Add("Enable Skip auth for known source IPs on this route so matching WAN IPs skip email approval.");
+        }
+        else if (!knownIpMatched)
+        {
+            steps.Add("Compare the Source IP on this page with Known source IPs. Use Get current WAN IP in the route editor if your public address changed.");
+        }
+
+        if (lanEnabled)
+        {
+            steps.Add("Verified LAN trust only works with split/local DNS that reaches Edge Gateway with a real LAN IP. The public Cloudflare hostname will not satisfy LAN trust.");
+        }
+        else
+        {
+            steps.Add("Leave Verified LAN trust off unless you also publish the same hostname via split/local DNS.");
+        }
+
+        if (emailSucceeded || temporaryIpReason.Contains("pending", StringComparison.OrdinalIgnoreCase))
+        {
+            steps.Add("Open the approval email, approve this client, then reload the app.");
+        }
+        else if (temporaryIpReason.Contains("email", StringComparison.OrdinalIgnoreCase))
+        {
+            steps.Add("Check Messaging/email settings and that this route has at least one approval recipient.");
+        }
+
+        steps.Add("When everything works, enable Return 404 so unapproved visitors no longer see this diagnostics page.");
+        return steps;
+    }
+
+    private static string TruncateForDiagnostics(string? value, int maxLength)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (text.Length <= maxLength)
+        {
+            return text;
+        }
+
+        return text[..maxLength] + "…";
     }
 
     private async Task<EdgeGatewayAuthCheckResult> RedirectToLoginAsync(
@@ -533,4 +702,5 @@ public sealed record EdgeGatewayAuthCheckResult(
     string? UserName = null,
     string? UserEmail = null,
     string? Groups = null,
-    bool SuppressResponseBody = false);
+    bool SuppressResponseBody = false,
+    string ContentType = "text/plain; charset=utf-8");

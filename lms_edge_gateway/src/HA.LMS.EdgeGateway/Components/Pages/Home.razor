@@ -273,7 +273,7 @@
                                                     <input type="checkbox" @bind="editTemporaryIpApprovalUseNotFoundResponse" />
                                                     <span>Return 404</span>
                                                 </span>
-                                                <span class="ui-field-helper">Still sends the approval email, but unapproved clients see Not Found.</span>
+                                                <span class="ui-field-helper">Off shows an Edge Gateway diagnostics page (source IP, known-IP/LAN checks, email status). On hides the route with Not Found once setup is confirmed.</span>
                                             </label>
                                             <label class="ui-field">
                                                 <span class="ui-field-label">Shared IP access</span>
@@ -910,7 +910,7 @@
             : $"Countries: {route.TemporaryIpApprovalAllowedCountryCodes}.";
         var response = route.TemporaryIpApprovalUseNotFoundResponse
             ? "Denied response: 404."
-            : "Denied response: approval message.";
+            : "Denied response: diagnostics page.";
         var sharedIp = route.TemporaryIpApprovalAllowSharedIp
             ? "Scope: all clients on this IP."
             : "Scope: requesting client only.";
