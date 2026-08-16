@@ -319,6 +319,7 @@
                     <div><strong>Allowed countries</strong><span>Optional Cloudflare country allow-list. Requests outside the selected countries are denied before email is sent.</span></div>
                     <div><strong>Denied response</strong><span>Show the normal approval-status response while testing, or return an empty HTTP 404 for a quieter public-facing route.</span></div>
                     <div><strong>Shared IP access</strong><span>Off by default. When enabled, any client on the approved public IP may use the route. Use this for trusted home or LAN public IPs.</span></div>
+                    <div><strong>Verified LAN trust</strong><span>Optional. Skip MFA/Email approve IP when the real LAN source IP is inside your trusted CIDRs and reverse DNS (plus forward confirm) matches your internal domain. Cloudflare internet clients are never trusted this way.</span></div>
                     <div><strong>Idle cut-off</strong><span>How long the approved IP remains open after the last seen request. Blank uses the add-on default.</span></div>
                     <div><strong>Maximum expiry</strong><span>Absolute lifetime for the approval grant even if traffic continues. Blank uses the add-on default.</span></div>
                 </div>

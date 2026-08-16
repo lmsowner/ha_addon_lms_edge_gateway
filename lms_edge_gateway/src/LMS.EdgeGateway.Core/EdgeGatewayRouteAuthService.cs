@@ -17,7 +17,8 @@ public interface IEdgeGatewayRouteAuthService
 
 public sealed class EdgeGatewayRouteAuthService(
     IEdgeGatewayConfigurationStore configurationStore,
-    IEdgeGatewayTemporaryIpApprovalService? temporaryIpApprovalService = null) : IEdgeGatewayRouteAuthService
+    IEdgeGatewayTemporaryIpApprovalService? temporaryIpApprovalService = null,
+    ILanClientTrustService? lanClientTrustService = null) : IEdgeGatewayRouteAuthService
 {
     private const int StatusOk = 200;
     private const int StatusFound = 302;
@@ -72,6 +73,24 @@ public sealed class EdgeGatewayRouteAuthService(
             return new EdgeGatewayAuthCheckResult(
                 StatusForbidden,
                 "Source IP did not match the route allow-list.");
+        }
+
+        if (route.LanTrustEnabled && lanClientTrustService is not null)
+        {
+            var lanTrust = await lanClientTrustService.EvaluateAsync(
+                route,
+                sourceIp,
+                context.ConnectingIp,
+                cancellationToken);
+            if (lanTrust.IsTrusted)
+            {
+                return new EdgeGatewayAuthCheckResult(
+                    StatusOk,
+                    lanTrust.Reason,
+                    UserName: string.IsNullOrWhiteSpace(lanTrust.HostName)
+                        ? $"lan-trust:{sourceIp}"
+                        : $"lan-trust:{lanTrust.HostName}");
+            }
         }
 
         if (EdgeGatewayAccessPolicies.IsTemporaryIpApproval(route.AccessPolicy))

@@ -80,7 +80,13 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 TemporaryIpApprovalAllowedCountryCodes = NormalizeCountryCodeList(application.TemporaryIpApprovalAllowedCountryCodes),
                 TemporaryIpApprovalUseNotFoundResponse = application.TemporaryIpApprovalUseNotFoundResponse,
                 TemporaryIpApprovalIdleTimeoutMinutes = NormalizeOptionalMinutes(application.TemporaryIpApprovalIdleTimeoutMinutes, 1, 1440),
-                TemporaryIpApprovalMaxLifetimeMinutes = NormalizeOptionalMinutes(application.TemporaryIpApprovalMaxLifetimeMinutes, 1, 10080)
+                TemporaryIpApprovalMaxLifetimeMinutes = NormalizeOptionalMinutes(application.TemporaryIpApprovalMaxLifetimeMinutes, 1, 10080),
+                TemporaryIpApprovalAllowSharedIp = application.TemporaryIpApprovalAllowSharedIp,
+                LanTrustEnabled = application.LanTrustEnabled,
+                LanTrustCidrs = application.LanTrustCidrs?.Trim() ?? string.Empty,
+                LanTrustDnsSuffixes = application.LanTrustDnsSuffixes?.Trim() ?? string.Empty,
+                LanTrustRequireForwardConfirm = application.LanTrustRequireForwardConfirm,
+                LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(application.LanTrustMaxLatencyMilliseconds, 1, 2000)
             })
             .ToArray() ?? [];
 

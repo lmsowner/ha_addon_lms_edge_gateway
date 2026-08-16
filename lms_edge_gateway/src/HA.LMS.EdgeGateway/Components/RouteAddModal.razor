@@ -102,6 +102,46 @@
                         </div>
                     }
 
+                    @if (IsMfaOrTemporaryIpAccessPolicy(addAppAccessPolicy))
+                    {
+                        <div class="edge-form-grid edge-temporary-approval-grid">
+                            <label class="ui-field">
+                                <span class="ui-field-label">Verified LAN trust</span>
+                                <span class="edge-checkbox-field">
+                                    <input type="checkbox" @bind="addLanTrustEnabled" />
+                                    <span>Skip auth for verified LAN clients</span>
+                                </span>
+                                <span class="ui-field-helper">Opt-in. Requires split/local DNS so Edge Gateway sees the real LAN IP. Never trusts Cloudflare internet clients or loopback.</span>
+                            </label>
+                            @if (addLanTrustEnabled)
+                            {
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Trusted LAN CIDRs</span>
+                                    <input @bind="addLanTrustCidrs" placeholder="192.168.0.0/20" />
+                                    <span class="ui-field-helper">Comma-separated CIDRs, for example 192.168.0.0/20.</span>
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Trusted DNS suffixes</span>
+                                    <input @bind="addLanTrustDnsSuffixes" placeholder="kiernanfamily.co.uk" />
+                                    <span class="ui-field-helper">Reverse DNS of the source IP must end with one of these domains.</span>
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Forward confirm</span>
+                                    <span class="edge-checkbox-field">
+                                        <input type="checkbox" @bind="addLanTrustRequireForwardConfirm" />
+                                        <span>Require forward DNS to match the same IP</span>
+                                    </span>
+                                    <span class="ui-field-helper">Recommended. PTR name must resolve back to the source IP.</span>
+                                </label>
+                                <label class="ui-field">
+                                    <span class="ui-field-label">Max latency (ms)</span>
+                                    <input type="number" min="1" max="2000" @bind="addLanTrustMaxLatencyMilliseconds" placeholder="optional" />
+                                    <span class="ui-field-helper">Optional ICMP latency gate. Blank disables latency checking.</span>
+                                </label>
+                            }
+                        </div>
+                    }
+
                     @if (IsPassThroughAccessPolicy(addAppAccessPolicy))
                     {
                         <div class="callout warning edge-pass-through-warning" role="alert">
@@ -302,6 +342,11 @@
     private string addTemporaryIpApprovalAllowedCountryCodes = string.Empty;
     private bool addTemporaryIpApprovalUseNotFoundResponse;
     private bool addTemporaryIpApprovalAllowSharedIp;
+    private bool addLanTrustEnabled;
+    private string addLanTrustCidrs = string.Empty;
+    private string addLanTrustDnsSuffixes = string.Empty;
+    private bool addLanTrustRequireForwardConfirm = true;
+    private int? addLanTrustMaxLatencyMilliseconds;
     private int? addTemporaryIpApprovalIdleTimeoutMinutes;
     private int? addTemporaryIpApprovalMaxLifetimeMinutes;
     private bool addAppEnabled = true;
@@ -359,6 +404,11 @@
         addTemporaryIpApprovalAllowedCountryCodes = string.Empty;
         addTemporaryIpApprovalUseNotFoundResponse = false;
         addTemporaryIpApprovalAllowSharedIp = false;
+        addLanTrustEnabled = false;
+        addLanTrustCidrs = string.Empty;
+        addLanTrustDnsSuffixes = string.Empty;
+        addLanTrustRequireForwardConfirm = true;
+        addLanTrustMaxLatencyMilliseconds = null;
         addTemporaryIpApprovalIdleTimeoutMinutes = null;
         addTemporaryIpApprovalMaxLifetimeMinutes = null;
         addAppEnabled = true;
@@ -416,7 +466,12 @@
                 temporaryIpApprovalUseNotFoundResponse: addTemporaryIpApprovalUseNotFoundResponse,
                 temporaryIpApprovalIdleTimeoutMinutes: addTemporaryIpApprovalIdleTimeoutMinutes,
                 temporaryIpApprovalMaxLifetimeMinutes: addTemporaryIpApprovalMaxLifetimeMinutes,
-                temporaryIpApprovalAllowSharedIp: addTemporaryIpApprovalAllowSharedIp);
+                temporaryIpApprovalAllowSharedIp: addTemporaryIpApprovalAllowSharedIp,
+                lanTrustEnabled: addLanTrustEnabled,
+                lanTrustCidrs: addLanTrustCidrs,
+                lanTrustDnsSuffixes: addLanTrustDnsSuffixes,
+                lanTrustRequireForwardConfirm: addLanTrustRequireForwardConfirm,
+                lanTrustMaxLatencyMilliseconds: addLanTrustMaxLatencyMilliseconds);
 
             if (!result.Success)
             {
@@ -949,6 +1004,10 @@
 
     private static bool IsTemporaryIpApprovalAccessPolicy(string? accessPolicy)
         => EdgeGatewayAccessPolicies.IsTemporaryIpApproval(accessPolicy);
+
+    private static bool IsMfaOrTemporaryIpAccessPolicy(string? accessPolicy) =>
+        !IsPassThroughAccessPolicy(accessPolicy) &&
+        !EdgeGatewayAccessPolicies.IsBlocked(accessPolicy);
 
     private string BuildAddAppPreviewExternalUrl()
     {
