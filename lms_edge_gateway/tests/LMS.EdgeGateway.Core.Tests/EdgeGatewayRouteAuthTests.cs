@@ -75,10 +75,37 @@ public sealed class EdgeGatewayRouteAuthTests
             countryCode: "GB"));
 
         Assert.Equal(403, result.StatusCode);
-        Assert.Equal("Approval email sent.", result.Reason);
+        Assert.Equal("text/html; charset=utf-8", result.ContentType);
+        Assert.Contains("Edge Gateway diagnostics", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("Approval email sent.", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("198.51.100.44", result.Reason, StringComparison.Ordinal);
         Assert.NotNull(approvalService.LastContext);
         Assert.Equal("198.51.100.44", approvalService.LastContext.SourceIp);
         Assert.Equal("GB", approvalService.LastContext.CountryCode);
+    }
+
+    [Fact]
+    public async Task Temporary_ip_denial_diagnostics_explain_known_ip_skip_off()
+    {
+        var approvalService = new RecordingTemporaryIpApprovalService(
+            new TemporaryIpApprovalEvaluationResult(false, "Temporary IP approval email sent. Retry after approving the request.", EmailAttempted: true, EmailSucceeded: true));
+        var route = Route(EdgeGatewayAccessPolicies.TemporaryIpApproval) with
+        {
+            AllowKnownIps = "198.51.100.44",
+            SkipAuthenticationForKnownIps = false
+        };
+        var service = new EdgeGatewayRouteAuthService(
+            new InMemoryConfigurationStore(Configuration(route)),
+            approvalService);
+
+        var result = await service.EvaluateAuthAsync(Context(
+            new ClaimsPrincipal(new ClaimsIdentity()),
+            connectingIp: "198.51.100.44",
+            countryCode: "GB"));
+
+        Assert.Equal(403, result.StatusCode);
+        Assert.Contains("Skip auth for known source IPs is off", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("Known source IPs", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

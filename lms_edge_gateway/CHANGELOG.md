@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.63
+
+- Shows an Edge Gateway diagnostics page for Email approve IP denials when Return 404 is off, including source IP, known-IP/LAN check results, and next steps.
+- Keeps Return 404 as the silent production hide once setup is confirmed.
+
 ## 0.1.62
 
 - Tidies add/edit route auth settings into stacked panels (Email approval, Known source IPs, Verified LAN trust) instead of a crowded multi-column grid.
