@@ -17,6 +17,8 @@ This repo is consumed by Home Assistant as a source-built add-on store repositor
 
 Do this without waiting to be asked again when the user says they want to test in HA, publish, or see the update in Home Assistant.
 
+When changing packaging that affects Home Assistant install/update behaviour (for example adding or changing the add-on `image` field), also ensure matching prebuilt images are published to GHCR for that version before expecting HA to install cleanly.
+
 ## Edge Gateway version files
 
 Update these together when publishing `lms_edge_gateway`:

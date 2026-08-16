@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.60
+
+- Publishes prebuilt multi-arch images to GHCR and configures the add-on `image` field so Home Assistant pulls instead of building from source on install/update.
+
 ## 0.1.59
 
 - Adds optional Verified LAN trust for MFA and Email approve IP routes: skip auth when the real LAN source IP is in trusted CIDRs and reverse/forward DNS matches your internal domain.

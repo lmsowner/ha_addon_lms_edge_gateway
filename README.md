@@ -29,11 +29,19 @@ https://github.com/lmsowner/ha_addon_lms_edge_gateway
 
 ### Install progress in Home Assistant
 
-If Home Assistant shows the install progress jumping from `0%` to `100%` and then keeps showing `Installing`, that usually means the Supervisor has finished one coarse progress phase but is still building or preparing the add-on container.
+If Home Assistant previously showed install progress stuck at `0%` then jumping to finished, that was usually because the Supervisor was building the add-on image locally from source.
 
-This repository currently ships the add-on source and Dockerfile. Until prebuilt registry images are published and referenced by the add-on config, Home Assistant builds the image locally on the HA host. That can take a while because the image restores and publishes the .NET app, installs Caddy, downloads cloudflared, creates the Docker image, and then starts the supervised services. Slow HA hardware makes this more visible.
+From `0.1.60`, LMS Edge Gateway publishes prebuilt images to GHCR and sets the add-on `image` field. Home Assistant should pull:
 
-That progress display is not the same as the Edge Gateway web app being ready. After install, start the add-on and use the Setup tab to validate Cloudflare, cloudflared, Caddy, DNS, and route health.
+```text
+ghcr.io/lmsowner/lms_edge_gateway-{arch}:<version>
+```
+
+instead of compiling .NET/Caddy/cloudflared on the HA host. The progress UI can still be coarse, but installs/updates should be much faster.
+
+If a pull fails with unauthorized/not found, open the matching package under GitHub Packages and set visibility to Public (CI attempts this automatically).
+
+After install, start the add-on and use the Setup tab to validate Cloudflare, cloudflared, Caddy, DNS, and route health.
 
 ## Product shape
 
