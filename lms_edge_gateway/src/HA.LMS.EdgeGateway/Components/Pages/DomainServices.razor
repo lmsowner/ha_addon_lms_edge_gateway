@@ -372,16 +372,18 @@
                             <div class="edge-route-card-header">
                                 <div class="edge-route-title">
                                     <h3>@service.DisplayName</h3>
-                                    <LmsStatusPill Text="@(service.Enabled ? "Enabled" : "Disabled")" Tone="@(service.Enabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
-                                    <LmsStatusPill Text="@BuildVerificationLabel(service)" Tone="@BuildVerificationTone(service)" />
-                                    @if (service.RequiresAuth)
-                                    {
-                                        <LmsStatusPill Text="Auth required" Tone="@LmsStatusTone.Warning" />
-                                    }
-                                    else
-                                    {
-                                        <LmsStatusPill Text="Public" Tone="@LmsStatusTone.Ready" />
-                                    }
+                                    <span class="edge-route-title-pills">
+                                        <LmsStatusPill Text="@(service.Enabled ? "Enabled" : "Disabled")" Tone="@(service.Enabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+                                        <LmsStatusPill Text="@BuildVerificationLabel(service)" Tone="@BuildVerificationTone(service)" />
+                                        @if (service.RequiresAuth)
+                                        {
+                                            <LmsStatusPill Text="Auth required" Tone="@LmsStatusTone.Warning" />
+                                        }
+                                        else
+                                        {
+                                            <LmsStatusPill Text="Public" Tone="@LmsStatusTone.Ready" />
+                                        }
+                                    </span>
                                 </div>
                                 <div class="edge-route-actions">
                                     <LmsButton Label="Copy URL" Icon="copy" OnClick="@(() => CopyAsync(service.PublicUrl))" />

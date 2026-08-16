@@ -1,0 +1,39 @@
+---
+description: Bump HA add-on version and push to GitHub so Home Assistant can pick up testable updates
+alwaysApply: true
+---
+
+# Home Assistant add-on publish for testing
+
+This repo is consumed by Home Assistant as a source-built add-on store repository. Local UI/code changes are not testable in HA until they are version-bumped and pushed to GitHub.
+
+## When the user wants to test in Home Assistant
+
+1. Bump the affected add-on version (patch by default, e.g. `0.1.56` → `0.1.57`).
+2. Keep version strings aligned across that add-on's metadata and UI fallbacks.
+3. Add a concise `CHANGELOG.md` entry for the new version.
+4. Commit the feature/fix plus the version bump.
+5. Push to `origin` (`main` unless told otherwise) so Home Assistant can see the update.
+
+Do this without waiting to be asked again when the user says they want to test in HA, publish, or see the update in Home Assistant.
+
+## Edge Gateway version files
+
+Update these together when publishing `lms_edge_gateway`:
+
+- `lms_edge_gateway/config.yaml` (`version`)
+- `lms_edge_gateway/build.yaml` (`org.opencontainers.image.version`)
+- `lms_edge_gateway/Dockerfile` (`BUILD_VERSION` defaults)
+- `lms_edge_gateway/CHANGELOG.md`
+- `lms_edge_gateway/src/HA.LMS.EdgeGateway/Components/Layout/MainLayout.razor` (`FallbackProductVersion`)
+- `lms_edge_gateway/src/LMS.Shared/Components/LmsShell.razor` (default + placeholder fallback)
+
+## Tesla Fleet Helper
+
+If publishing `lms_tesla_fleet_helper`, bump that add-on's matching `config.yaml` / `build.yaml` / `Dockerfile` / `CHANGELOG.md` (and any UI version fallbacks) the same way. Do not bump Tesla when only Edge Gateway changed, and vice versa.
+
+## Do not
+
+- Leave HA testing dependent on unpushed local commits
+- Bump version without a changelog note
+- Commit unrelated untracked debug/image files

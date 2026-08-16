@@ -967,7 +967,7 @@ textarea {
     color: var(--color-text);
     display: grid;
     gap: 0.55rem;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
     padding: 0.48rem 0.58rem;
     width: 100%;
 }
@@ -1039,10 +1039,15 @@ textarea {
 .edge-route-domain-pills {
     align-items: center;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.25rem;
+    justify-content: flex-end;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .edge-route-domain-pills .lms-button {
+    flex: 0 1 auto;
     font-size: 0.72rem;
     min-height: 1.9rem;
     padding: 0.32rem 0.58rem;
@@ -1075,10 +1080,11 @@ textarea {
 }
 
 .edge-route-card-header {
-    align-items: center;
+    align-items: start;
     display: grid;
     gap: 0.55rem;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    min-width: 0;
 }
 
 .edge-route-title {
@@ -1086,11 +1092,34 @@ textarea {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
+    max-width: 100%;
     min-width: 0;
 }
 
 .edge-route-title h3 {
     margin: 0;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.edge-route-title-pills {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.edge-route-title-pills .lms-status-pill {
+    flex: 0 1 auto;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .edge-route-actions {
@@ -1099,7 +1128,8 @@ textarea {
     flex-wrap: wrap;
     gap: 0.3rem;
     justify-content: flex-end;
-    min-width: min(100%, 20rem);
+    max-width: 100%;
+    min-width: 0;
 }
 
 .edge-route-actions .lms-button {

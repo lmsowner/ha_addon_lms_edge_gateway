@@ -104,9 +104,11 @@
                                             <div class="edge-route-card-header">
                                                 <div class="edge-route-title">
                                                     <h3>@route.Name</h3>
-                                                    <LmsStatusPill Text="@(route.IsEnabled ? "Enabled" : "Disabled")" Tone="@(route.IsEnabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
-                                                    <LmsStatusPill Text="@BuildAccessLabel(route)" Tone="@GetAccessTone(route)" />
-                                                    <LmsStatusPill Text="@GetRouteTestLabel(route.Id)" Tone="@GetRouteTestTone(route.Id)" />
+                                                    <span class="edge-route-title-pills">
+                                                        <LmsStatusPill Text="@(route.IsEnabled ? "Enabled" : "Disabled")" Tone="@(route.IsEnabled ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+                                                        <LmsStatusPill Text="@BuildAccessLabel(route)" Tone="@GetAccessTone(route)" />
+                                                        <LmsStatusPill Text="@GetRouteTestLabel(route.Id)" Tone="@GetRouteTestTone(route.Id)" />
+                                                    </span>
                                                 </div>
                                                 <div class="edge-route-actions">
                                                     <LmsButton Label="@(IsRouteBusy(route.Id, RouteToggleAction) ? "Saving..." : route.IsEnabled ? "Disable" : "Enable")"
