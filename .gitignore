@@ -8,6 +8,8 @@ artifacts/
 local-data/
 local-tesla-data/
 **/data/
+**/local-edge-debug-data/
+**/wwwroot/images/ChatGPT Image*
 *.user
 *.rsuser
 *.suo
