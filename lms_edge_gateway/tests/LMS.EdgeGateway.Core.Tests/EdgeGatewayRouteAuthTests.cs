@@ -76,7 +76,7 @@ public sealed class EdgeGatewayRouteAuthTests
 
         Assert.Equal(403, result.StatusCode);
         Assert.Equal("text/html; charset=utf-8", result.ContentType);
-        Assert.Contains("Edge Gateway diagnostics", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("Edge Gateway access check", result.Reason, StringComparison.Ordinal);
         Assert.Contains("Approval email sent.", result.Reason, StringComparison.Ordinal);
         Assert.Contains("198.51.100.44", result.Reason, StringComparison.Ordinal);
         Assert.NotNull(approvalService.LastContext);

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.65
+
+- Renames the Email approve IP setup page to "access check page" in the UI and on the page itself, distinct from Return 404 and the admin Diagnostics tab.
+
 ## 0.1.64
 
 - Makes the Email approve IP diagnostics page explicitly show CF-Connecting-IP, which header supplied the auth IP, and that Known source IPs are compared against it.
