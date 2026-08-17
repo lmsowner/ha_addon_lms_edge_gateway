@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.08.17.21.36
+
+- Switches add-on versioning to `yyyy.MM.dd.HH.mm` so Home Assistant can show a new build as soon as GitHub has `config.yaml`.
+
 ## 0.1.71
 
 - Restores the Home Assistant ingress UI: the add-on stays on 0.0.0.0:5000, allows LAN/Docker/supervisor clients, and no longer traps the admin page on a login spinner.
