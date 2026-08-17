@@ -105,8 +105,7 @@ public sealed class LanClientTrustService(
         }
 
         var cloudflareIp = (cloudflareConnectingIp ?? string.Empty).Trim();
-        if (!string.IsNullOrWhiteSpace(cloudflareIp) &&
-            IPAddress.TryParse(cloudflareIp, out var parsedCloudflareIp) &&
+        if (EdgeGatewayIpAddress.TryCanonicalize(cloudflareIp, out var parsedCloudflareIp) &&
             !cidrs.Any(cidr => AddressInCidr(parsedCloudflareIp, cidr.Network, cidr.PrefixLength)))
         {
             return new LanClientTrustResult(
@@ -114,14 +113,9 @@ public sealed class LanClientTrustService(
                 "LAN trust is not applied to Cloudflare internet clients.");
         }
 
-        if (!IPAddress.TryParse(sourceIp, out var address))
+        if (!EdgeGatewayIpAddress.TryCanonicalize(sourceIp, out var address))
         {
             return new LanClientTrustResult(false, "LAN trust could not parse the source IP.");
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
         }
 
         if (IPAddress.IsLoopback(address))

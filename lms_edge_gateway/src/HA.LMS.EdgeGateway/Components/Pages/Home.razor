@@ -748,9 +748,13 @@
         editWanIpMessage = string.Empty;
         try
         {
-            var wanIp = await LookupCurrentWanIpAsync();
-            editAppAllowKnownIps = MergeKnownSourceIp(editAppAllowKnownIps, wanIp);
-            editWanIpMessage = $"Added {wanIp}.";
+            var wanIps = await LookupCurrentWanIpsAsync();
+            foreach (var wanIp in wanIps)
+            {
+                editAppAllowKnownIps = MergeKnownSourceIp(editAppAllowKnownIps, wanIp);
+            }
+
+            editWanIpMessage = $"Added {string.Join(", ", wanIps)}.";
         }
         catch (Exception ex)
         {
@@ -762,19 +766,11 @@
         }
     }
 
-    private async Task<string> LookupCurrentWanIpAsync()
+    private async Task<IReadOnlyList<string>> LookupCurrentWanIpsAsync()
     {
         var client = HttpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(8);
-        using var response = await client.GetAsync("https://api.ipify.org");
-        response.EnsureSuccessStatusCode();
-        var wanIp = (await response.Content.ReadAsStringAsync()).Trim();
-        if (!IPAddress.TryParse(wanIp, out _))
-        {
-            throw new InvalidOperationException("Lookup returned an invalid IP address.");
-        }
-
-        return wanIp;
+        return await PublicWanAddressLookup.LookupAsync(client);
     }
 
     private static string MergeKnownSourceIp(string existing, string ip)
@@ -783,12 +779,14 @@
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(part => !string.IsNullOrWhiteSpace(part))
             .ToList();
-        if (parts.Any(part => string.Equals(part, ip, StringComparison.OrdinalIgnoreCase)))
+        var canonical = EdgeGatewayIpAddress.CanonicalizeString(ip);
+        if (parts.Any(part =>
+                string.Equals(EdgeGatewayIpAddress.CanonicalizeString(part), canonical, StringComparison.OrdinalIgnoreCase)))
         {
             return string.Join(", ", parts);
         }
 
-        parts.Add(ip);
+        parts.Add(canonical);
         return string.Join(", ", parts);
     }
 

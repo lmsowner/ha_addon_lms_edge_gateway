@@ -32,13 +32,42 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PasskeyAuthenticationService>();
 builder.Services.AddScoped<LoginEmailOtpService>();
 builder.Services.AddScoped<IEdgeGatewayAuthSessionFlushService, EdgeGatewayAuthSessionFlushService>();
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.Cookie.Name = "lms-edge-auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.LoginPath = "/login";
         options.LogoutPath = "/lmshaauth/logout";
         options.SlidingExpiration = true;
+        options.Events = new CookieAuthenticationEvents
+        {
+            OnRedirectToLogin = context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return Task.CompletedTask;
+                }
+
+                context.Response.Redirect(context.RedirectUri);
+                return Task.CompletedTask;
+            },
+            OnRedirectToAccessDenied = context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return Task.CompletedTask;
+                }
+
+                context.Response.Redirect(context.RedirectUri);
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
 builder.Services.AddRazorComponents()
@@ -52,6 +81,16 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.Use(async (context, next) =>
+{
+    if (!EdgeGatewayListenAccess.IsAllowedRemoteAddress(context.Connection.RemoteIpAddress))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
@@ -430,12 +469,26 @@ app.MapPost("/api/setup/reset-cloudflare-token", async (
 app.MapPost("/lmshaauth/email-otp", async (
     HttpContext context,
     LoginEmailOtpService emailOtpService,
+    EmailOtpSendRateLimiter otpSendRateLimiter,
     CancellationToken cancellationToken) =>
 {
     var form = await context.Request.ReadFormAsync(cancellationToken);
     var email = form["email"].ToString();
     var returnUrl = NormalizeReturnUrl(form["returnUrl"].ToString());
+    var clientIp = ResolveRequestClientIp(context);
+    if (otpSendRateLimiter.IsLimited($"otp:{email}") ||
+        otpSendRateLimiter.IsLimited($"otp-ip:{clientIp}"))
+    {
+        return Results.Redirect(BuildLoginRedirectTarget(
+            returnUrl,
+            "Too many email code requests. Try again later.",
+            email,
+            method: "email"));
+    }
+
     var result = await emailOtpService.SendAsync(email, cancellationToken);
+    otpSendRateLimiter.RecordFailure($"otp:{email}");
+    otpSendRateLimiter.RecordFailure($"otp-ip:{clientIp}");
 
     return Results.Redirect(BuildLoginRedirectTarget(
         returnUrl,
@@ -449,6 +502,7 @@ app.MapPost("/lmshaauth/login", async (
     HttpContext context,
     IEdgeGatewaySecurityService securityService,
     LoginEmailOtpService emailOtpService,
+    IAuthAttemptRateLimiter loginRateLimiter,
     CancellationToken cancellationToken) =>
 {
     var form = await context.Request.ReadFormAsync(cancellationToken);
@@ -457,6 +511,18 @@ app.MapPost("/lmshaauth/login", async (
     var authenticatorCode = form["authenticatorCode"].ToString();
     var emailCode = form["emailCode"].ToString();
     var returnUrl = NormalizeReturnUrl(form["returnUrl"].ToString());
+    var clientIp = ResolveRequestClientIp(context);
+    var loginKey = $"login:{clientIp}:{email}";
+    var loginIpKey = $"login-ip:{clientIp}";
+    if (loginRateLimiter.IsLimited(loginKey) || loginRateLimiter.IsLimited(loginIpKey))
+    {
+        return Results.Redirect(BuildLoginRedirectTarget(
+            returnUrl,
+            "Too many sign-in attempts. Try again later.",
+            email,
+            method: authMethod));
+    }
+
     var result = SecurityAuthenticationResult.Failure("Enter your MFA code.");
     var mfaMethod = authMethod;
 
@@ -479,8 +545,13 @@ app.MapPost("/lmshaauth/login", async (
 
     if (!result.Succeeded || !result.UserId.HasValue || string.IsNullOrWhiteSpace(result.Email))
     {
+        loginRateLimiter.RecordFailure(loginKey);
+        loginRateLimiter.RecordFailure(loginIpKey);
         return Results.Redirect(BuildLoginRedirectTarget(returnUrl, result.Message, email, method: authMethod));
     }
+
+    loginRateLimiter.RecordSuccess(loginKey);
+    loginRateLimiter.RecordSuccess(loginIpKey);
 
     var claims = new List<Claim>
     {
@@ -488,6 +559,7 @@ app.MapPost("/lmshaauth/login", async (
         new(ClaimTypes.Name, result.Email),
         new(ClaimTypes.Email, result.Email),
         new("amr", "otp"),
+        new("lms:mfa", "true"),
         new("lms:mfa_method", mfaMethod),
         new("auth_time", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture))
     };
@@ -633,7 +705,7 @@ app.MapGet("/api/passkeys/users/{userId:guid}", async (
         passkey.CreatedAtUtc,
         passkey.LastUsedAtUtc
     }));
-});
+}).RequireAuthorization();
 
 app.MapDelete("/api/passkeys/{passkeyId:guid}", async (
     Guid passkeyId,
@@ -642,7 +714,7 @@ app.MapDelete("/api/passkeys/{passkeyId:guid}", async (
 {
     var result = await passkeyAuthenticationService.DeleteAsync(passkeyId, context.RequestAborted);
     return Results.Json(new { result.Succeeded, result.Message });
-});
+}).RequireAuthorization();
 
 app.MapPost("/api/passkeys/users/{userId:guid}/enroll/options", async (
     Guid userId,
@@ -669,7 +741,7 @@ app.MapPost("/api/passkeys/users/{userId:guid}/enroll/options", async (
             new { succeeded = false, message = "Passkey setup could not start." },
             statusCode: StatusCodes.Status500InternalServerError);
     }
-}).DisableAntiforgery();
+}).RequireAuthorization().DisableAntiforgery();
 
 app.MapPost("/api/passkeys/me/enroll/options", async (
     HttpContext context,
@@ -732,7 +804,7 @@ app.MapPost("/api/passkeys/register/complete", async (
             new { succeeded = false, message = "Passkey setup failed." },
             statusCode: StatusCodes.Status500InternalServerError);
     }
-}).DisableAntiforgery();
+}).RequireAuthorization().DisableAntiforgery();
 
 app.MapPost("/api/passkeys/login/options", async (
     HttpContext context,
@@ -762,10 +834,20 @@ app.MapPost("/api/passkeys/login/options", async (
 app.MapPost("/api/passkeys/login/complete", async (
     HttpContext context,
     PasskeyAuthenticationService passkeyAuthenticationService,
+    IAuthAttemptRateLimiter loginRateLimiter,
     ILogger<Program> logger) =>
 {
     try
     {
+        var clientIp = ResolveRequestClientIp(context);
+        var loginIpKey = $"login-ip:{clientIp}";
+        if (loginRateLimiter.IsLimited(loginIpKey))
+        {
+            return Results.Json(
+                new { succeeded = false, message = "Too many sign-in attempts. Try again later." },
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
         var (stateId, credentialJson, error) = await ReadPasskeyCeremonyRequestAsync(context);
         if (!string.IsNullOrWhiteSpace(error))
         {
@@ -780,8 +862,11 @@ app.MapPost("/api/passkeys/login/complete", async (
             context.RequestAborted);
         if (!result.Succeeded || result.User is null)
         {
+            loginRateLimiter.RecordFailure(loginIpKey);
             return Results.Json(new { succeeded = false, message = result.ErrorMessage });
         }
+
+        loginRateLimiter.RecordSuccess(loginIpKey);
 
         var claims = new List<Claim>
         {
@@ -789,6 +874,7 @@ app.MapPost("/api/passkeys/login/complete", async (
             new(ClaimTypes.Name, result.User.Email),
             new(ClaimTypes.Email, result.User.Email),
             new("amr", "passkey"),
+            new("lms:passkey", "true"),
             new("auth_time", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture))
         };
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
@@ -839,15 +925,14 @@ static bool IsTrustedLocalPublicAssetRequest(HttpContext context)
         return false;
     }
 
-    var remoteIp = context.Connection.RemoteIpAddress;
-    if (remoteIp is null)
-    {
-        return false;
-    }
-
-    return IPAddress.IsLoopback(remoteIp) ||
-           remoteIp.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(remoteIp.MapToIPv4());
+    return EdgeGatewayIpAddress.IsLoopback(context.Connection.RemoteIpAddress);
 }
+
+static string ResolveRequestClientIp(HttpContext context) =>
+    AuthClientAddress.Resolve(
+        context.Request.Headers["CF-Connecting-IP"].ToString(),
+        context.Request.Headers["X-Forwarded-For"].ToString(),
+        context.Connection.RemoteIpAddress);
 
 static bool IsJsonPublicAsset(string contentType, string path)
 {

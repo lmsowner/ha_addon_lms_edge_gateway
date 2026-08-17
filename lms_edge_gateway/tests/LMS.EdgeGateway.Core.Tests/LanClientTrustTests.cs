@@ -147,6 +147,36 @@ public sealed class LanClientTrustTests
         Assert.Equal("known-ip:203.0.113.10", result.UserName);
     }
 
+    [Fact]
+    public async Task Route_auth_skips_mfa_when_cloudflare_connecting_ip_is_ipv4_mapped()
+    {
+        var route = new PublishedApplicationDefinition(
+            Guid.NewGuid(),
+            "Home Assistant",
+            "hassio.example.com",
+            "http://192.168.1.20:8123",
+            "MFA/Passkey",
+            true,
+            AllowKnownIps: "203.0.113.10",
+            SkipAuthenticationForKnownIps: true);
+        var service = new EdgeGatewayRouteAuthService(
+            new InMemoryConfigurationStore(Configuration(route)),
+            new MemoryEdgeGatewayAccessCheckPageStore());
+
+        var result = await service.EvaluateAuthAsync(new EdgeGatewayAuthCheckContext(
+            "hassio.example.com",
+            "https",
+            "/",
+            "::ffff:203.0.113.10",
+            "hassio.example.com",
+            IPAddress.Loopback,
+            new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity()),
+            ConnectingIp: "::ffff:203.0.113.10"));
+
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal("known-ip:203.0.113.10", result.UserName);
+    }
+
     private static PublishedApplicationDefinition TrustedRoute() =>
         new(
             Guid.NewGuid(),
