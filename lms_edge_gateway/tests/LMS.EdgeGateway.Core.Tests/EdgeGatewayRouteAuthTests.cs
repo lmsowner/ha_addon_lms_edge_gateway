@@ -105,7 +105,8 @@ public sealed class EdgeGatewayRouteAuthTests
 
         Assert.Equal(403, result.StatusCode);
         Assert.Contains("Skip auth for known source IPs is off", result.Reason, StringComparison.Ordinal);
-        Assert.Contains("Known source IPs", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("Known source IPs vs CF-Connecting-IP", result.Reason, StringComparison.Ordinal);
+        Assert.Contains("CF-Connecting-IP (Cloudflare client IP)", result.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -183,6 +184,8 @@ public sealed class EdgeGatewayRouteAuthTests
         Assert.Contains("forward_auth 127.0.0.1:5299", caddyfile, StringComparison.Ordinal);
         Assert.Contains("uri /edge-auth/check", caddyfile, StringComparison.Ordinal);
         Assert.Contains("copy_headers X-LMS-User X-LMS-Email X-LMS-Groups", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("header_up CF-Connecting-IP {http.request.header.CF-Connecting-IP}", caddyfile, StringComparison.Ordinal);
+        Assert.Contains("header_up CF-IPCountry {http.request.header.CF-IPCountry}", caddyfile, StringComparison.Ordinal);
         Assert.Contains("path /login /login/* /lmshaauth/login /lmshaauth/email-otp /lmshaauth/logout /edge-auth/* /api/passkeys/login/* /api/passkeys/me/* /api/passkeys/register/complete", caddyfile, StringComparison.Ordinal);
         Assert.DoesNotContain("/auth/login", caddyfile, StringComparison.Ordinal);
         Assert.DoesNotContain("/auth/logout", caddyfile, StringComparison.Ordinal);

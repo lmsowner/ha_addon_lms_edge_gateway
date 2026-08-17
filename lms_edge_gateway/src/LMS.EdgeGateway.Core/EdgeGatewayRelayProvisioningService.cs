@@ -2133,6 +2133,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                     builder.AppendLine($"            forward_auth {BuildForwardAuthUpstream()} {{");
                     builder.AppendLine("                uri /edge-auth/check");
                     builder.AppendLine("                copy_headers X-LMS-User X-LMS-Email X-LMS-Groups");
+                    builder.AppendLine("                header_up CF-Connecting-IP {http.request.header.CF-Connecting-IP}");
+                    builder.AppendLine("                header_up CF-IPCountry {http.request.header.CF-IPCountry}");
                     builder.AppendLine("            }");
                     builder.AppendLine();
                 }

@@ -16,6 +16,7 @@ public sealed record EdgeGatewayAccessDiagnostics(
     string PublicHostname,
     string AccessPolicy,
     string SourceIp,
+    string SourceIpHeader,
     string CloudflareConnectingIp,
     string CountryCode,
     string UserAgent,
@@ -47,9 +48,12 @@ public static class EdgeGatewayAccessDiagnosticsPage
 
         var country = string.IsNullOrWhiteSpace(diagnostics.CountryCode) ? "Unknown" : diagnostics.CountryCode;
         var cloudflareIp = string.IsNullOrWhiteSpace(diagnostics.CloudflareConnectingIp)
-            ? "Not present"
+            ? "Not present on this request"
             : diagnostics.CloudflareConnectingIp;
         var userAgent = string.IsNullOrWhiteSpace(diagnostics.UserAgent) ? "Unknown" : diagnostics.UserAgent;
+        var sourceHeader = string.IsNullOrWhiteSpace(diagnostics.SourceIpHeader)
+            ? "Unknown"
+            : diagnostics.SourceIpHeader;
 
         return $$"""
             <!doctype html>
@@ -67,6 +71,7 @@ public static class EdgeGatewayAccessDiagnosticsPage
                 .eyebrow { color: #0f7b57; font-size: 11px; font-weight: 900; letter-spacing: .08em; margin: 0 0 8px; text-transform: uppercase; }
                 .facts, .checks { display: grid; gap: 10px; margin: 0 0 18px; }
                 .fact, .check { background: #f7f9fc; border: 1px solid #e3edf7; border-radius: 12px; padding: 12px 14px; }
+                .fact.emphasis { background: #eef8f3; border-color: #b7e2d1; }
                 .fact span, .check-label { color: #607089; display: block; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
                 .fact strong, .check-status { display: block; font-size: 15px; margin-top: 4px; overflow-wrap: anywhere; }
                 .check-detail { color: #607089; font-size: 13px; line-height: 1.4; margin-top: 6px; overflow-wrap: anywhere; }
@@ -81,6 +86,7 @@ public static class EdgeGatewayAccessDiagnosticsPage
                   main { background: #121b26; border-color: #26384d; box-shadow: none; }
                   p, .fact span, .check-label, .check-detail, ol, .note { color: #9fb0c5; }
                   .fact, .check { background: #182433; border-color: #2a3d52; }
+                  .fact.emphasis { background: #143028; border-color: #1f5f48; }
                   .check.ok { border-color: #1f5f48; }
                 }
               </style>
@@ -94,9 +100,10 @@ public static class EdgeGatewayAccessDiagnosticsPage
                   <div class="fact"><span>App</span><strong>{{Html(diagnostics.RouteName)}}</strong></div>
                   <div class="fact"><span>Host</span><strong>{{Html(diagnostics.PublicHostname)}}</strong></div>
                   <div class="fact"><span>Access policy</span><strong>{{Html(diagnostics.AccessPolicy)}}</strong></div>
-                  <div class="fact"><span>Source IP used for auth</span><strong>{{Html(diagnostics.SourceIp)}}</strong></div>
-                  <div class="fact"><span>Cloudflare CF-Connecting-IP</span><strong>{{Html(cloudflareIp)}}</strong></div>
-                  <div class="fact"><span>Country</span><strong>{{Html(country)}}</strong></div>
+                  <div class="fact emphasis"><span>CF-Connecting-IP (Cloudflare client IP)</span><strong>{{Html(cloudflareIp)}}</strong></div>
+                  <div class="fact emphasis"><span>IP used for Known source IPs / email approve</span><strong>{{Html(diagnostics.SourceIp)}}</strong></div>
+                  <div class="fact"><span>IP taken from</span><strong>{{Html(sourceHeader)}}</strong></div>
+                  <div class="fact"><span>Country (CF-IPCountry)</span><strong>{{Html(country)}}</strong></div>
                   <div class="fact"><span>User-Agent</span><strong>{{Html(userAgent)}}</strong></div>
                 </div>
                 <h2>Auth checks</h2>
