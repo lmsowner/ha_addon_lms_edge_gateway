@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.69
+
+- Fixes add-on build failure caused by calling MemoryCache.Compact on IMemoryCache in the authentication flush service.
+
 ## 0.1.68
 
 - Adds Flush authentication cache on Security to clear email-approval grants/requests, access check pages, and in-memory login/passkey ceremony state, with an optional browser LMS sign-out.

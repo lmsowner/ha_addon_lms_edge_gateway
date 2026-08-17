@@ -12,7 +12,10 @@ public sealed class EdgeGatewayAuthSessionFlushService(
     {
         var emailApproval = await temporaryIpApprovalService.ClearAllAsync(cancellationToken);
         var accessCheckPagesCleared = accessCheckPageStore.ClearAll();
-        memoryCache.Compact(1.0);
+        if (memoryCache is MemoryCache concreteCache)
+        {
+            concreteCache.Compact(1.0);
+        }
 
         var total = emailApproval.GrantsCleared + emailApproval.RequestsCleared + accessCheckPagesCleared;
         var message = total == 0
