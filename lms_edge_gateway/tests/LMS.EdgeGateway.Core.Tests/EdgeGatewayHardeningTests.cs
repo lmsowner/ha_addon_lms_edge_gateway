@@ -13,22 +13,22 @@ public sealed class EdgeGatewayHardeningTests
     [InlineData("172.30.32.10", true)]
     [InlineData("172.30.33.255", true)]
     [InlineData("172.30.232.1", true)]
-    [InlineData("172.30.233.50", true)]
+    [InlineData("172.17.0.2", true)]
+    [InlineData("192.168.1.10", true)]
+    [InlineData("10.0.0.5", true)]
     [InlineData("fe80::1", true)]
-    [InlineData("192.168.1.10", false)]
-    [InlineData("10.0.0.5", false)]
+    [InlineData("fd12:3456:789a::1", true)]
     [InlineData("8.8.8.8", false)]
-    [InlineData("172.30.34.1", false)]
     [InlineData("2001:db8::1", false)]
-    public void Listen_access_allows_loopback_and_supervisor_only(string ip, bool allowed)
+    public void Listen_access_allows_loopback_lan_and_docker_but_not_public_internet(string ip, bool allowed)
     {
         Assert.Equal(allowed, EdgeGatewayListenAccess.IsAllowedRemoteAddress(IPAddress.Parse(ip)));
     }
 
     [Fact]
-    public void Listen_access_rejects_null_remote_address()
+    public void Listen_access_allows_null_remote_address()
     {
-        Assert.False(EdgeGatewayListenAccess.IsAllowedRemoteAddress(null));
+        Assert.True(EdgeGatewayListenAccess.IsAllowedRemoteAddress(null));
     }
 
     [Fact]
