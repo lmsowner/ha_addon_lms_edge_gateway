@@ -1,13 +1,9 @@
-@using Microsoft.AspNetCore.Components.Authorization
 @inherits LayoutComponentBase
 @inject IConfiguration Configuration
 @inject ICloudflareApiTokenStore ApiTokenStore
 @inject IEdgeGatewayStatusService StatusService
-@inject IEdgeGatewaySecurityStore SecurityStore
-@inject AuthenticationStateProvider AuthenticationStateProvider
-@inject NavigationManager Navigation
 
-@if (tokenState is null || isCheckingAdminAuth)
+@if (tokenState is null)
 {
     <main class="setup-gate">
         <section class="setup-card edge-loading-card" aria-busy="true">
@@ -38,38 +34,12 @@ else
 @code {
     private CloudflareApiTokenState? tokenState;
     private EdgeGatewayRuntimeStatus? status;
-    private bool isCheckingAdminAuth = true;
-    private const string FallbackProductVersion = "0.1.70";
+    private const string FallbackProductVersion = "0.1.71";
 
     protected override async Task OnInitializedAsync()
     {
         tokenState = await ApiTokenStore.GetStateAsync();
-        if (tokenState is { HasToken: true } && await RequiresAdminLoginAsync())
-        {
-            var relative = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).TrimStart('/');
-            if (relative.Equals("/", StringComparison.Ordinal))
-            {
-                relative = "/";
-            }
-
-            Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(relative)}", forceLoad: true);
-            return;
-        }
-
         status = await StatusService.GetStatusAsync();
-        isCheckingAdminAuth = false;
-    }
-
-    private async Task<bool> RequiresAdminLoginAsync()
-    {
-        var security = await SecurityStore.LoadAsync();
-        if (!security.Users.Any(user => user.IsEnabled))
-        {
-            return false;
-        }
-
-        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        return authState.User.Identity?.IsAuthenticated != true;
     }
 
     private IReadOnlyList<NavigationItem> Items =>

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.71
+
+- Restores the Home Assistant ingress UI: the add-on stays on 0.0.0.0:5000, allows LAN/Docker/supervisor clients, and no longer traps the admin page on a login spinner.
+
 ## 0.1.70
 
 - Requires admin login for the add-on UI once users exist, hardens auth cookies, and rate-limits login/passkey failures.
