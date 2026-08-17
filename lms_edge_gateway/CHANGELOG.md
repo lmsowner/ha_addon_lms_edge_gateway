@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.70
+
+- Requires admin login for the add-on UI once users exist, hardens auth cookies, and rate-limits login/passkey failures.
+- Restricts add-on HTTP access to loopback and the Home Assistant supervisor network, and requires authorization on passkey management APIs.
+- Looks up both IPv4 and IPv6 for Get current WAN IP, and canonicalizes known-source/LAN IP matching.
+
 ## 0.1.69
 
 - Fixes add-on build failure caused by calling MemoryCache.Compact on IMemoryCache in the authentication flush service.

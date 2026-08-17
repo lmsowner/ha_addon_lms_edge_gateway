@@ -7,6 +7,8 @@ public static class DependencyInjection
     public static IServiceCollection AddEdgeGatewayCore(this IServiceCollection services)
     {
         services.AddSingleton<IEdgeGatewayAccessCheckPageStore, MemoryEdgeGatewayAccessCheckPageStore>();
+        services.AddSingleton<IAuthAttemptRateLimiter>(_ => new AuthAttemptRateLimiter(8, TimeSpan.FromMinutes(15)));
+        services.AddSingleton<EmailOtpSendRateLimiter>();
         services.AddSingleton<IProcessStatusProbe, ProcessStatusProbe>();
         services.AddSingleton<IEdgeGatewayConfigurationStore, JsonEdgeGatewayConfigurationStore>();
         services.AddSingleton<IEdgeGatewaySecurityStore, JsonEdgeGatewaySecurityStore>();

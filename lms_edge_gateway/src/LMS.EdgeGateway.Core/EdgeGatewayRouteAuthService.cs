@@ -461,7 +461,7 @@ public sealed class EdgeGatewayRouteAuthService(
         }
 
         return IPAddress.IsLoopback(remoteIpAddress) ||
-               remoteIpAddress.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(remoteIpAddress.MapToIPv4());
+               (remoteIpAddress.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(remoteIpAddress.MapToIPv4()));
     }
 
     private static bool IsKnownIpAllowed(PublishedApplicationDefinition route, string sourceIp)
@@ -472,7 +472,7 @@ public sealed class EdgeGatewayRouteAuthService(
             return true;
         }
 
-        if (!IPAddress.TryParse(sourceIp, out var parsed))
+        if (!EdgeGatewayIpAddress.TryCanonicalize(sourceIp, out var parsed))
         {
             return false;
         }
@@ -483,34 +483,9 @@ public sealed class EdgeGatewayRouteAuthService(
     private static bool HasConfiguredKnownIps(PublishedApplicationDefinition route) =>
         SplitRouteList(route.AllowKnownIps).Any();
 
-    private static bool IsLanAddress(string sourceIp)
-    {
-        if (!IPAddress.TryParse(sourceIp, out var address))
-        {
-            return false;
-        }
-
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-            return bytes[0] == 10 ||
-                   bytes[0] == 172 && bytes[1] is >= 16 and <= 31 ||
-                   bytes[0] == 192 && bytes[1] == 168 ||
-                   bytes[0] == 169 && bytes[1] == 254;
-        }
-
-        return address.IsIPv6LinkLocal || address.IsIPv6SiteLocal;
-    }
+    private static bool IsLanAddress(string sourceIp) =>
+        EdgeGatewayIpAddress.TryCanonicalize(sourceIp, out var address) &&
+        EdgeGatewayIpAddress.IsLanAddress(address);
 
     private static bool AddressMatches(IPAddress address, string rule)
     {
@@ -522,13 +497,13 @@ public sealed class EdgeGatewayRouteAuthService(
 
         if (value.Equals("private_ranges", StringComparison.OrdinalIgnoreCase))
         {
-            return IsLanAddress(address.ToString());
+            return EdgeGatewayIpAddress.IsLanAddress(address);
         }
 
         var slashIndex = value.IndexOf('/');
         if (slashIndex < 0)
         {
-            return IPAddress.TryParse(value, out var exact) && AddressesEqual(address, exact);
+            return IPAddress.TryParse(value, out var exact) && EdgeGatewayIpAddress.AddressesEqual(address, exact);
         }
 
         if (!IPAddress.TryParse(value[..slashIndex], out var network) ||
@@ -582,21 +557,6 @@ public sealed class EdgeGatewayRouteAuthService(
 
         var mask = (byte)(0xff << (8 - remainingBits));
         return (addressBytes[fullBytes] & mask) == (networkBytes[fullBytes] & mask);
-    }
-
-    private static bool AddressesEqual(IPAddress left, IPAddress right)
-    {
-        if (left.IsIPv4MappedToIPv6)
-        {
-            left = left.MapToIPv4();
-        }
-
-        if (right.IsIPv4MappedToIPv6)
-        {
-            right = right.MapToIPv4();
-        }
-
-        return left.Equals(right);
     }
 
     private static bool IsUserAllowed(PublishedApplicationDefinition route, string userEmail)
@@ -673,18 +633,7 @@ public sealed class EdgeGatewayRouteAuthService(
 
     private static string ResolveSourceIp(string connectingIp, string forwardedFor, IPAddress? remoteIpAddress)
     {
-        var cloudflareConnectingIp = (connectingIp ?? string.Empty).Trim();
-        if (!string.IsNullOrWhiteSpace(cloudflareConnectingIp))
-        {
-            return cloudflareConnectingIp;
-        }
-
-        var firstForwarded = (forwardedFor ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault();
-        return string.IsNullOrWhiteSpace(firstForwarded)
-            ? remoteIpAddress?.ToString() ?? string.Empty
-            : firstForwarded;
+        return AuthClientAddress.Resolve(connectingIp, forwardedFor, remoteIpAddress);
     }
 
     private static IEnumerable<string> SplitRouteList(string? value) =>
