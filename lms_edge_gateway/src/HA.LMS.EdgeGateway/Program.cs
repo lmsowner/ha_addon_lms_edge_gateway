@@ -31,6 +31,7 @@ builder.Services.AddHostedService<EdgeGatewayCaddyStartupService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PasskeyAuthenticationService>();
 builder.Services.AddScoped<LoginEmailOtpService>();
+builder.Services.AddScoped<IEdgeGatewayAuthSessionFlushService, EdgeGatewayAuthSessionFlushService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

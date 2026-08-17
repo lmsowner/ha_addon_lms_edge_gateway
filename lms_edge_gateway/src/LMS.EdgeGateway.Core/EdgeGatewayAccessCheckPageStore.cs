@@ -7,6 +7,8 @@ public interface IEdgeGatewayAccessCheckPageStore
     string Store(EdgeGatewayAccessDiagnostics diagnostics, TimeSpan lifetime);
 
     EdgeGatewayAccessDiagnostics? TryGet(string token);
+
+    int ClearAll();
 }
 
 public sealed class MemoryEdgeGatewayAccessCheckPageStore : IEdgeGatewayAccessCheckPageStore
@@ -34,6 +36,13 @@ public sealed class MemoryEdgeGatewayAccessCheckPageStore : IEdgeGatewayAccessCh
         }
 
         return entry.Diagnostics;
+    }
+
+    public int ClearAll()
+    {
+        var count = entries.Count;
+        entries.Clear();
+        return count;
     }
 
     private void CleanupExpired()

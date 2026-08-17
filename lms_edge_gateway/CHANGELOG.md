@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.68
+
+- Adds Flush authentication cache on Security to clear email-approval grants/requests, access check pages, and in-memory login/passkey ceremony state, with an optional browser LMS sign-out.
+
 ## 0.1.67
 
 - Redirects Email approve IP denials to /edge-auth/access-check so the full access check page renders in the browser instead of a stripped 403 from forward_auth.

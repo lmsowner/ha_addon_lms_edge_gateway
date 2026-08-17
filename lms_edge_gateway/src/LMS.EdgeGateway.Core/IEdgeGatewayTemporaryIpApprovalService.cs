@@ -17,4 +17,6 @@ public interface IEdgeGatewayTemporaryIpApprovalService
     Task<TemporaryIpApprovalCompletionResult> ApproveAsync(
         string token,
         CancellationToken cancellationToken = default);
+
+    Task<TemporaryIpApprovalFlushResult> ClearAllAsync(CancellationToken cancellationToken = default);
 }

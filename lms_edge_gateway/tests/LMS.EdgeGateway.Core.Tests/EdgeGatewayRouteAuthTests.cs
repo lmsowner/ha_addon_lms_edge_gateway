@@ -480,5 +480,9 @@ public sealed class EdgeGatewayRouteAuthTests
             string token,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new TemporaryIpApprovalCompletionResult(false, "Not implemented", "Not implemented."));
+
+        public Task<TemporaryIpApprovalFlushResult> ClearAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new TemporaryIpApprovalFlushResult(0, 0));
     }
 }

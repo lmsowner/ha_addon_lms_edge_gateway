@@ -80,3 +80,7 @@ public sealed record TemporaryIpApprovalCompletionResult(
     string ApprovedUrl = "",
     DateTimeOffset? IdleExpiresAtUtc = null,
     DateTimeOffset? ExpiresAtUtc = null);
+
+public sealed record TemporaryIpApprovalFlushResult(
+    int GrantsCleared,
+    int RequestsCleared);
