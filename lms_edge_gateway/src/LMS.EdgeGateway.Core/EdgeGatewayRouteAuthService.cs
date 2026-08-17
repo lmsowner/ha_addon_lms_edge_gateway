@@ -252,6 +252,7 @@ public sealed class EdgeGatewayRouteAuthService(
         }
 
         var knownSkipEnabled = route.SkipAuthenticationForKnownIps;
+        var sourceIpHeader = DescribeSourceIpHeader(context);
         var knownStatus = !knownIpsConfigured
             ? "Not configured"
             : knownIpMatched
@@ -260,12 +261,12 @@ public sealed class EdgeGatewayRouteAuthService(
                     : "Matched"
                 : "No match";
         var knownDetail = !knownIpsConfigured
-            ? "Known source IPs is empty, so Cloudflare home WAN skip cannot apply."
+            ? $"Known source IPs is empty. Through Cloudflare, add your public WAN from CF-Connecting-IP ({FormatIpOrMissing(context.ConnectingIp)}) and enable Skip auth."
             : knownIpMatched
                 ? knownSkipEnabled
                     ? "This should have skipped auth. Check that the saved route includes Skip auth for known source IPs."
-                    : $"Source IP {sourceIp} matches Known source IPs, but Skip auth for known source IPs is off."
-                : $"Source IP {sourceIp} is not in Known source IPs ({route.AllowKnownIps}).";
+                    : $"CF-Connecting-IP / auth IP {sourceIp} matches Known source IPs, but Skip auth for known source IPs is off."
+                : $"Compared auth IP {sourceIp} (from {sourceIpHeader}) against Known source IPs ({route.AllowKnownIps}). No match.";
 
         var lanEnabled = route.LanTrustEnabled;
         var lanOk = false;
@@ -287,13 +288,14 @@ public sealed class EdgeGatewayRouteAuthService(
             PublicHostname: route.PublicHostname,
             AccessPolicy: route.AccessPolicy,
             SourceIp: string.IsNullOrWhiteSpace(sourceIp) ? "Unknown" : sourceIp,
+            SourceIpHeader: sourceIpHeader,
             CloudflareConnectingIp: context.ConnectingIp,
             CountryCode: context.CountryCode,
             UserAgent: TruncateForDiagnostics(context.UserAgent, 160),
             Checks:
             [
                 new EdgeGatewayAccessDiagnosticCheck(
-                    "Known source IPs",
+                    "Known source IPs vs CF-Connecting-IP",
                     knownStatus,
                     knownDetail,
                     IsOk: knownIpsConfigured && knownIpMatched && knownSkipEnabled),
@@ -341,7 +343,7 @@ public sealed class EdgeGatewayRouteAuthService(
         }
         else if (!knownIpMatched)
         {
-            steps.Add("Compare the Source IP on this page with Known source IPs. Use Get current WAN IP in the route editor if your public address changed.");
+            steps.Add("Compare CF-Connecting-IP on this page with Known source IPs. Use Get current WAN IP in the route editor if your public address changed.");
         }
 
         if (lanEnabled)
@@ -376,6 +378,24 @@ public sealed class EdgeGatewayRouteAuthService(
 
         return text[..maxLength] + "…";
     }
+
+    private static string DescribeSourceIpHeader(EdgeGatewayAuthCheckContext context)
+    {
+        if (!string.IsNullOrWhiteSpace(context.ConnectingIp))
+        {
+            return "CF-Connecting-IP";
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.ForwardedFor))
+        {
+            return "X-Forwarded-For";
+        }
+
+        return "Direct remote address";
+    }
+
+    private static string FormatIpOrMissing(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "not present" : value.Trim();
 
     private async Task<EdgeGatewayAuthCheckResult> RedirectToLoginAsync(
         string requestedHost,

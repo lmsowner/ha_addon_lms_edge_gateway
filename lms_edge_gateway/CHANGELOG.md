@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.64
+
+- Makes the Email approve IP diagnostics page explicitly show CF-Connecting-IP, which header supplied the auth IP, and that Known source IPs are compared against it.
+- Forwards CF-Connecting-IP and CF-IPCountry through Caddy forward_auth into /edge-auth/check.
+
 ## 0.1.63
 
 - Shows an Edge Gateway diagnostics page for Email approve IP denials when Return 404 is off, including source IP, known-IP/LAN check results, and next steps.
