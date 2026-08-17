@@ -6,6 +6,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddEdgeGatewayCore(this IServiceCollection services)
     {
+        services.AddSingleton<IEdgeGatewayAccessCheckPageStore, MemoryEdgeGatewayAccessCheckPageStore>();
         services.AddSingleton<IProcessStatusProbe, ProcessStatusProbe>();
         services.AddSingleton<IEdgeGatewayConfigurationStore, JsonEdgeGatewayConfigurationStore>();
         services.AddSingleton<IEdgeGatewaySecurityStore, JsonEdgeGatewaySecurityStore>();

@@ -107,6 +107,7 @@ public sealed class LanClientTrustTests
         var lanTrust = new FakeLanTrust(new LanClientTrustResult(true, "Trusted LAN client laptop.example.home.", "laptop.example.home"));
         var service = new EdgeGatewayRouteAuthService(
             new InMemoryConfigurationStore(Configuration(route)),
+            new MemoryEdgeGatewayAccessCheckPageStore(),
             lanClientTrustService: lanTrust);
 
         var result = await service.EvaluateAuthAsync(Context(sourceIp: "192.168.1.42"));
@@ -128,7 +129,9 @@ public sealed class LanClientTrustTests
             true,
             AllowKnownIps: "203.0.113.10",
             SkipAuthenticationForKnownIps: true);
-        var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(route)));
+        var service = new EdgeGatewayRouteAuthService(
+            new InMemoryConfigurationStore(Configuration(route)),
+            new MemoryEdgeGatewayAccessCheckPageStore());
 
         var result = await service.EvaluateAuthAsync(new EdgeGatewayAuthCheckContext(
             "hassio.example.com",

@@ -9,10 +9,21 @@ namespace LMS.EdgeGateway.Core.Tests;
 
 public sealed class EdgeGatewayRouteAuthTests
 {
+    private static EdgeGatewayRouteAuthService CreateService(
+        IEdgeGatewayConfigurationStore configurationStore,
+        IEdgeGatewayAccessCheckPageStore? accessCheckPageStore = null,
+        IEdgeGatewayTemporaryIpApprovalService? temporaryIpApprovalService = null,
+        ILanClientTrustService? lanClientTrustService = null) =>
+        new(
+            configurationStore,
+            accessCheckPageStore ?? new MemoryEdgeGatewayAccessCheckPageStore(),
+            temporaryIpApprovalService,
+            lanClientTrustService);
+
     [Fact]
     public async Task Protected_route_without_mfa_session_redirects_to_login()
     {
-        var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
+        var service = CreateService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
 
         var result = await service.EvaluateAuthAsync(Context(new ClaimsPrincipal(new ClaimsIdentity())));
 
@@ -27,7 +38,7 @@ public sealed class EdgeGatewayRouteAuthTests
     [Fact]
     public async Task Protected_route_with_mfa_session_is_allowed()
     {
-        var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
+        var service = CreateService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
         var principal = Principal(new Claim("amr", "otp"));
 
         var result = await service.EvaluateAuthAsync(Context(principal));
@@ -40,7 +51,7 @@ public sealed class EdgeGatewayRouteAuthTests
     [Fact]
     public async Task Protected_route_with_passkey_session_is_allowed()
     {
-        var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
+        var service = CreateService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
         var principal = Principal(new Claim("amr", "passkey"));
 
         var result = await service.EvaluateAuthAsync(Context(principal));
@@ -52,7 +63,7 @@ public sealed class EdgeGatewayRouteAuthTests
     [Fact]
     public async Task Pass_through_route_without_session_is_allowed()
     {
-        var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(Route("Pass Through"))));
+        var service = CreateService(new InMemoryConfigurationStore(Configuration(Route("Pass Through"))));
 
         var result = await service.EvaluateAuthAsync(Context(new ClaimsPrincipal(new ClaimsIdentity())));
 
@@ -63,10 +74,12 @@ public sealed class EdgeGatewayRouteAuthTests
     [Fact]
     public async Task Temporary_ip_approval_route_uses_approval_service()
     {
+        var accessCheckStore = new MemoryEdgeGatewayAccessCheckPageStore();
         var approvalService = new RecordingTemporaryIpApprovalService(
             new TemporaryIpApprovalEvaluationResult(false, "Approval email sent."));
-        var service = new EdgeGatewayRouteAuthService(
+        var service = CreateService(
             new InMemoryConfigurationStore(Configuration(Route(EdgeGatewayAccessPolicies.TemporaryIpApproval))),
+            accessCheckStore,
             approvalService);
 
         var result = await service.EvaluateAuthAsync(Context(
@@ -74,11 +87,13 @@ public sealed class EdgeGatewayRouteAuthTests
             connectingIp: "198.51.100.44",
             countryCode: "GB"));
 
-        Assert.Equal(403, result.StatusCode);
-        Assert.Equal("text/html; charset=utf-8", result.ContentType);
-        Assert.Contains("Edge Gateway access check", result.Reason, StringComparison.Ordinal);
-        Assert.Contains("Approval email sent.", result.Reason, StringComparison.Ordinal);
-        Assert.Contains("198.51.100.44", result.Reason, StringComparison.Ordinal);
+        Assert.Equal(302, result.StatusCode);
+        Assert.StartsWith("/edge-auth/access-check?token=", result.RedirectLocation, StringComparison.Ordinal);
+        var token = result.RedirectLocation!["/edge-auth/access-check?token=".Length..];
+        var html = EdgeGatewayAccessDiagnosticsPage.Render(accessCheckStore.TryGet(token)!);
+        Assert.Contains("Edge Gateway access check", html, StringComparison.Ordinal);
+        Assert.Contains("Approval email sent.", html, StringComparison.Ordinal);
+        Assert.Contains("198.51.100.44", html, StringComparison.Ordinal);
         Assert.NotNull(approvalService.LastContext);
         Assert.Equal("198.51.100.44", approvalService.LastContext.SourceIp);
         Assert.Equal("GB", approvalService.LastContext.CountryCode);
@@ -87,6 +102,7 @@ public sealed class EdgeGatewayRouteAuthTests
     [Fact]
     public async Task Temporary_ip_denial_diagnostics_explain_known_ip_skip_off()
     {
+        var accessCheckStore = new MemoryEdgeGatewayAccessCheckPageStore();
         var approvalService = new RecordingTemporaryIpApprovalService(
             new TemporaryIpApprovalEvaluationResult(false, "Temporary IP approval email sent. Retry after approving the request.", EmailAttempted: true, EmailSucceeded: true));
         var route = Route(EdgeGatewayAccessPolicies.TemporaryIpApproval) with
@@ -94,8 +110,9 @@ public sealed class EdgeGatewayRouteAuthTests
             AllowKnownIps = "198.51.100.44",
             SkipAuthenticationForKnownIps = false
         };
-        var service = new EdgeGatewayRouteAuthService(
+        var service = CreateService(
             new InMemoryConfigurationStore(Configuration(route)),
+            accessCheckStore,
             approvalService);
 
         var result = await service.EvaluateAuthAsync(Context(
@@ -103,10 +120,12 @@ public sealed class EdgeGatewayRouteAuthTests
             connectingIp: "198.51.100.44",
             countryCode: "GB"));
 
-        Assert.Equal(403, result.StatusCode);
-        Assert.Contains("Skip auth for known source IPs is off", result.Reason, StringComparison.Ordinal);
-        Assert.Contains("Known source IPs vs CF-Connecting-IP", result.Reason, StringComparison.Ordinal);
-        Assert.Contains("CF-Connecting-IP (Cloudflare client IP)", result.Reason, StringComparison.Ordinal);
+        Assert.Equal(302, result.StatusCode);
+        var token = result.RedirectLocation!["/edge-auth/access-check?token=".Length..];
+        var html = EdgeGatewayAccessDiagnosticsPage.Render(accessCheckStore.TryGet(token)!);
+        Assert.Contains("Skip auth for known source IPs is off", html, StringComparison.Ordinal);
+        Assert.Contains("Known source IPs vs CF-Connecting-IP", html, StringComparison.Ordinal);
+        Assert.Contains("CF-Connecting-IP (Cloudflare client IP)", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -118,9 +137,9 @@ public sealed class EdgeGatewayRouteAuthTests
         {
             TemporaryIpApprovalUseNotFoundResponse = true
         };
-        var service = new EdgeGatewayRouteAuthService(
+        var service = CreateService(
             new InMemoryConfigurationStore(Configuration(route)),
-            approvalService);
+            temporaryIpApprovalService: approvalService);
 
         var result = await service.EvaluateAuthAsync(Context(new ClaimsPrincipal(new ClaimsIdentity())));
 
@@ -135,9 +154,9 @@ public sealed class EdgeGatewayRouteAuthTests
     {
         var approvalService = new RecordingTemporaryIpApprovalService(
             new TemporaryIpApprovalEvaluationResult(true, "Temporary IP approval allowed."));
-        var service = new EdgeGatewayRouteAuthService(
+        var service = CreateService(
             new InMemoryConfigurationStore(Configuration(Route(EdgeGatewayAccessPolicies.TemporaryIpApproval))),
-            approvalService);
+            temporaryIpApprovalService: approvalService);
 
         var result = await service.EvaluateAuthAsync(Context(new ClaimsPrincipal(new ClaimsIdentity())));
 
@@ -148,7 +167,7 @@ public sealed class EdgeGatewayRouteAuthTests
     [Fact]
     public async Task Safe_return_target_must_match_enabled_route()
     {
-        var service = new EdgeGatewayRouteAuthService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
+        var service = CreateService(new InMemoryConfigurationStore(Configuration(Route("MFA/Passkey"))));
 
         Assert.True(await service.IsSafeReturnTargetAsync("https://hassio.example.com/"));
         Assert.True(await service.IsSafeReturnTargetAsync("https://hassio.example.com/auth/authorize?client_id=http://example"));

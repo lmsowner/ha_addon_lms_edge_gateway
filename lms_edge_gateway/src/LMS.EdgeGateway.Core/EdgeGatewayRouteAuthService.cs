@@ -17,6 +17,7 @@ public interface IEdgeGatewayRouteAuthService
 
 public sealed class EdgeGatewayRouteAuthService(
     IEdgeGatewayConfigurationStore configurationStore,
+    IEdgeGatewayAccessCheckPageStore accessCheckPageStore,
     IEdgeGatewayTemporaryIpApprovalService? temporaryIpApprovalService = null,
     ILanClientTrustService? lanClientTrustService = null) : IEdgeGatewayRouteAuthService
 {
@@ -121,6 +122,7 @@ public sealed class EdgeGatewayRouteAuthService(
             if (temporaryIpApprovalService is null)
             {
                 return DenyTemporaryIpWithDiagnostics(
+                    accessCheckPageStore,
                     route,
                     context,
                     sourceIp,
@@ -153,6 +155,7 @@ public sealed class EdgeGatewayRouteAuthService(
             }
 
             return DenyTemporaryIpWithDiagnostics(
+                accessCheckPageStore,
                 route,
                 context,
                 sourceIp,
@@ -236,6 +239,7 @@ public sealed class EdgeGatewayRouteAuthService(
     }
 
     private static EdgeGatewayAuthCheckResult DenyTemporaryIpWithDiagnostics(
+        IEdgeGatewayAccessCheckPageStore accessCheckPageStore,
         PublishedApplicationDefinition route,
         EdgeGatewayAuthCheckContext context,
         string sourceIp,
@@ -319,9 +323,9 @@ public sealed class EdgeGatewayRouteAuthService(
                 temporaryIpReason));
 
         return new EdgeGatewayAuthCheckResult(
-            StatusForbidden,
-            EdgeGatewayAccessDiagnosticsPage.Render(diagnostics),
-            ContentType: "text/html; charset=utf-8");
+            StatusFound,
+            string.Empty,
+            RedirectLocation: $"/edge-auth/access-check?token={accessCheckPageStore.Store(diagnostics, TimeSpan.FromMinutes(10))}");
     }
 
     private static IReadOnlyList<string> BuildTemporaryIpNextSteps(

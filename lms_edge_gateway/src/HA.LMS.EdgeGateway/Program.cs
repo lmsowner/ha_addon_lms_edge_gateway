@@ -524,6 +524,23 @@ app.MapPost("/lmshaauth/logout", async (HttpContext context) =>
     return Results.Redirect("/login");
 }).DisableAntiforgery();
 
+app.MapGet("/edge-auth/access-check", (string? token, IEdgeGatewayAccessCheckPageStore accessCheckPageStore) =>
+{
+    var diagnostics = accessCheckPageStore.TryGet(token ?? string.Empty);
+    if (diagnostics is null)
+    {
+        return Results.Content(
+            """
+            <!doctype html>
+            <html lang="en"><head><meta charset="utf-8"><title>Access check expired | LMS Edge Gateway</title></head>
+            <body><main><h1>Access check expired</h1><p>Open the protected app again to generate a fresh access check page.</p></main></body></html>
+            """,
+            "text/html; charset=utf-8");
+    }
+
+    return Results.Content(EdgeGatewayAccessDiagnosticsPage.Render(diagnostics), "text/html; charset=utf-8");
+}).AllowAnonymous().DisableAntiforgery();
+
 app.MapGet("/edge-auth/check", async Task (
     HttpContext context,
     IEdgeGatewayRouteAuthService routeAuthService) =>
