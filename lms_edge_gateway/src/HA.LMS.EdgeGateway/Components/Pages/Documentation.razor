@@ -317,7 +317,7 @@
                 <div class="docs-definition-list compact">
                     <div><strong>Approval recipients</strong><span>Select enabled LMS users. Blank falls back to route allowed users, then enabled LMS users.</span></div>
                     <div><strong>Allowed countries</strong><span>Optional Cloudflare country allow-list. Requests outside the selected countries are denied before email is sent.</span></div>
-                    <div><strong>Denied response</strong><span>While testing, leave Return 404 off to show the access check page (CF-Connecting-IP, known-IP/LAN results, email status). Enable Return 404 once setup is confirmed.</span></div>
+                    <div><strong>Denied response</strong><span>Leave Return 404 off to show the access check page for all unapproved clients (production included). Enable Return 404 only when you want a silent Not Found instead.</span></div>
                     <div><strong>Shared IP access</strong><span>Off by default. When enabled, any client on the approved public IP may use the route. Use this for trusted home or LAN public IPs.</span></div>
                     <div><strong>Verified LAN trust</strong><span>Optional. Skip MFA/Email approve IP when the real LAN source IP is inside your trusted CIDRs and reverse DNS (plus forward confirm) matches your internal domain. Cloudflare internet clients are never trusted this way.</span></div>
                     <div><strong>Idle cut-off</strong><span>How long the approved IP remains open after the last seen request. Blank uses the add-on default.</span></div>

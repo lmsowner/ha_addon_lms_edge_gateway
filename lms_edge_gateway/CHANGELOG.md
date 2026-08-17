@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.66
+
+- Enables the access check page for all Email approve IP routes on first startup after update, including production routes that previously had Return 404 on.
+- Clarifies that the access check page is normal production behaviour until Return 404 is deliberately enabled again.
+
 ## 0.1.65
 
 - Renames the Email approve IP setup page to "access check page" in the UI and on the page itself, distinct from Return 404 and the admin Diagnostics tab.

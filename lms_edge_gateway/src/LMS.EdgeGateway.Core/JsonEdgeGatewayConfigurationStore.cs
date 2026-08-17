@@ -20,7 +20,8 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
 
         await using var stream = File.OpenRead(path);
         var configuration = await JsonSerializer.DeserializeAsync<EdgeGatewayConfiguration>(stream, jsonOptions, cancellationToken);
-        return Normalize(configuration);
+        var normalized = Normalize(configuration);
+        return await MigrateAccessCheckDefaultsAsync(normalized, cancellationToken);
     }
 
     public async Task SaveAsync(EdgeGatewayConfiguration configuration, CancellationToken cancellationToken = default)
@@ -39,6 +40,46 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
             : Path.GetFullPath(dataRoot);
 
         return Path.Combine(root, "edge-gateway.json");
+    }
+
+    private async Task<EdgeGatewayConfiguration> MigrateAccessCheckDefaultsAsync(
+        EdgeGatewayConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var dataRoot = Path.GetDirectoryName(GetConfigurationPath()) ?? options.Value.DataRoot;
+        var markerPath = Path.Combine(dataRoot, ".migrations", "access-check-default-v1.done");
+        if (File.Exists(markerPath))
+        {
+            return configuration;
+        }
+
+        var changed = false;
+        var applications = configuration.Applications
+            .Select(application =>
+            {
+                if (!EdgeGatewayAccessPolicies.IsTemporaryIpApproval(application.AccessPolicy) ||
+                    !application.TemporaryIpApprovalUseNotFoundResponse)
+                {
+                    return application;
+                }
+
+                changed = true;
+                return application with { TemporaryIpApprovalUseNotFoundResponse = false };
+            })
+            .ToArray();
+
+        var migrated = changed
+            ? configuration with { Applications = applications }
+            : configuration;
+
+        if (changed)
+        {
+            await SaveAsync(migrated, cancellationToken);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(markerPath)!);
+        await File.WriteAllTextAsync(markerPath, DateTimeOffset.UtcNow.ToString("O"), cancellationToken);
+        return migrated;
     }
 
     private static EdgeGatewayConfiguration Normalize(EdgeGatewayConfiguration? configuration)

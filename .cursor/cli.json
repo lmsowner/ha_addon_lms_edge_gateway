@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(**)",
+      "Mcp(**)",
+      "WebFetch(**)",
+      "WebSearch(**)"
+    ]
+  },
+  "approvalMode": "allowlist",
+  "sandbox": {
+    "mode": "disabled",
+    "networkAccess": "allow_all"
+  }
+}

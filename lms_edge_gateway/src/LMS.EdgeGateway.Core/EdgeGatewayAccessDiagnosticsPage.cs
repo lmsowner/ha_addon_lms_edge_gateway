@@ -114,7 +114,7 @@ public static class EdgeGatewayAccessDiagnosticsPage
                 <ol>
                   {{steps}}
                 </ol>
-                <p class="note">Once this path works, enable Return 404 on the route so unapproved clients see Not Found instead of this access check page.</p>
+                <p class="note">Return 404 on the route is optional. While it is off, every unapproved client sees this access check page — including on production.</p>
               </main>
             </body>
             </html>
