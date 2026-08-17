@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.67
+
+- Redirects Email approve IP denials to /edge-auth/access-check so the full access check page renders in the browser instead of a stripped 403 from forward_auth.
+
 ## 0.1.66
 
 - Enables the access check page for all Email approve IP routes on first startup after update, including production routes that previously had Return 404 on.
