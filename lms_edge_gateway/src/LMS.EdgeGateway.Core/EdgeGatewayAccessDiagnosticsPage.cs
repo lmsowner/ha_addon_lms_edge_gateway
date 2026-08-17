@@ -93,7 +93,7 @@ public static class EdgeGatewayAccessDiagnosticsPage
             </head>
             <body>
               <main>
-                <p class="eyebrow">Edge Gateway diagnostics</p>
+                <p class="eyebrow">Edge Gateway access check</p>
                 <h1>{{Html(diagnostics.Title)}}</h1>
                 <p>{{Html(diagnostics.Summary)}}</p>
                 <div class="facts">
@@ -114,7 +114,7 @@ public static class EdgeGatewayAccessDiagnosticsPage
                 <ol>
                   {{steps}}
                 </ol>
-                <p class="note">Once this path works, enable Return 404 on the route so unapproved clients get a silent Not Found instead of this page.</p>
+                <p class="note">Once this path works, enable Return 404 on the route so unapproved clients see Not Found instead of this access check page.</p>
               </main>
             </body>
             </html>

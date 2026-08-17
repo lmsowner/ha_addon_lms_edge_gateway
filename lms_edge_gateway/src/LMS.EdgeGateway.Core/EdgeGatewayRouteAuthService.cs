@@ -364,7 +364,7 @@ public sealed class EdgeGatewayRouteAuthService(
             steps.Add("Check Messaging/email settings and that this route has at least one approval recipient.");
         }
 
-        steps.Add("When everything works, enable Return 404 so unapproved visitors no longer see this diagnostics page.");
+        steps.Add("When everything works, enable Return 404 so unapproved visitors see Not Found instead of this access check page.");
         return steps;
     }
 
