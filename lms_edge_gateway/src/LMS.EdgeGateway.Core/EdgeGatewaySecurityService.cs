@@ -11,7 +11,8 @@ public sealed class EdgeGatewaySecurityService(
     IEdgeGatewayTemporaryIpApprovalService temporaryIpApprovalService,
     IEdgeGatewaySecretProtector secretProtector,
     IEdgeGatewayEmailDeliveryService emailDeliveryService,
-    ILogger<EdgeGatewaySecurityService> logger) : IEdgeGatewaySecurityService
+    ILogger<EdgeGatewaySecurityService> logger,
+    IEdgeGatewayAuthSessionFlushService? authSessionFlushService = null) : IEdgeGatewaySecurityService
 {
     public async Task<SecuritySettingsPageViewModel> GetPageAsync(CancellationToken cancellationToken = default)
     {
@@ -333,6 +334,23 @@ public sealed class EdgeGatewaySecurityService(
         Guid trustedIpId,
         CancellationToken cancellationToken = default) =>
         temporaryIpApprovalService.RevokeTrustedIpAddressAsync(trustedIpId, cancellationToken);
+
+    public async Task<EdgeGatewayAuthSessionFlushResult> FlushAuthSessionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (authSessionFlushService is null)
+        {
+            return new EdgeGatewayAuthSessionFlushResult(
+                false,
+                "Authentication cache flush is not available in this host.",
+                0,
+                0,
+                0,
+                false);
+        }
+
+        return await authSessionFlushService.FlushAsync(cancellationToken);
+    }
 
     public async Task<SecurityAuthenticationResult> ValidateOtpAsync(
         string email,

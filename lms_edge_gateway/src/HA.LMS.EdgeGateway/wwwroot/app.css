@@ -2909,6 +2909,13 @@ textarea {
     padding-top: 0.9rem;
 }
 
+    gap: 0.55rem;
+}
+
+.security-flush-signout {
+    margin: 0 0 0.75rem;
+}
+
 .security-section-heading {
     align-items: start;
     display: flex;

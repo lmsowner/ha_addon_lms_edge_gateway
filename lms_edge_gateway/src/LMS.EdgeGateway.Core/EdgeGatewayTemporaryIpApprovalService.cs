@@ -94,6 +94,31 @@ public sealed class EdgeGatewayTemporaryIpApprovalService(
         }
     }
 
+    public async Task<TemporaryIpApprovalFlushResult> ClearAllAsync(CancellationToken cancellationToken = default)
+    {
+        await sync.WaitAsync(cancellationToken);
+        try
+        {
+            var state = await approvalStore.LoadAsync(cancellationToken);
+            var grantsCleared = state.Grants.Count;
+            var requestsCleared = state.Requests.Count;
+            await approvalStore.SaveAsync(TemporaryIpApprovalConfiguration.Empty, cancellationToken);
+            if (grantsCleared > 0 || requestsCleared > 0)
+            {
+                logger.LogInformation(
+                    "Audit event: cleared {GrantCount} email approval grant(s) and {RequestCount} pending request(s).",
+                    grantsCleared,
+                    requestsCleared);
+            }
+
+            return new TemporaryIpApprovalFlushResult(grantsCleared, requestsCleared);
+        }
+        finally
+        {
+            sync.Release();
+        }
+    }
+
     public async Task<TemporaryIpApprovalEvaluationResult> EvaluateAsync(
         PublishedApplicationDefinition route,
         TemporaryIpApprovalCheckContext context,

@@ -16,5 +16,6 @@ public interface IEdgeGatewaySecurityService
     Task<SecurityUserProvisioningViewModel> ResetUserOtpAsync(Guid userId, string? loginUrl = null, CancellationToken cancellationToken = default);
     Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<bool> RevokeTrustedIpAddressAsync(Guid trustedIpId, CancellationToken cancellationToken = default);
+    Task<EdgeGatewayAuthSessionFlushResult> FlushAuthSessionsAsync(CancellationToken cancellationToken = default);
     Task<SecurityAuthenticationResult> ValidateOtpAsync(string email, string otpCode, CancellationToken cancellationToken = default);
 }

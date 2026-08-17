@@ -199,7 +199,23 @@
                                 <p class="meta-text">Active email-approval grants. By default each grant is bound to one source IP and client User-Agent.</p>
                             </div>
                             <span class="security-status-pill neutral">@(page.TrustedIpAddresses.Count) trusted</span>
+                            <LmsButton Label="@(isFlushingAuthSessions ? "Flushing..." : "Flush authentication cache")"
+                                       Icon="refresh"
+                                       Danger="true"
+                                       Disabled="@(isFlushingAuthSessions || IsRevokingAnyTrustedIp)"
+                                       OnClick="FlushAuthSessionsAsync" />
                         </div>
+
+                        <p class="meta-text">Clears all email-approval grants and pending requests, access check pages, and in-memory login/passkey ceremony state. Use between auth tests, then flush again when finished.</p>
+                        <label class="edge-checkbox-field security-flush-signout">
+                            <input type="checkbox" @bind="flushAuthSessionsSignOutBrowser" disabled="@isFlushingAuthSessions" />
+                            <span>Also sign out this browser LMS session after flush</span>
+                        </label>
+
+                        @if (!string.IsNullOrWhiteSpace(flushAuthMessage))
+                        {
+                            <p class="callout @(flushAuthMessageIsError ? "warning" : "ready")">@flushAuthMessage</p>
+                        }
 
                         @if (!string.IsNullOrWhiteSpace(trustedIpMessage))
                         {
@@ -513,6 +529,10 @@
     private string? trustedIpMessage;
     private bool trustedIpMessageIsError;
     private Guid? revokingTrustedIpId;
+    private bool isFlushingAuthSessions;
+    private string? flushAuthMessage;
+    private bool flushAuthMessageIsError;
+    private bool flushAuthSessionsSignOutBrowser = true;
 
     private const string UsersTab = "users";
     private const string MessagingTab = "messaging";
@@ -739,6 +759,37 @@
         finally
         {
             revokingTrustedIpId = null;
+        }
+    }
+
+    private async Task FlushAuthSessionsAsync()
+    {
+        flushAuthMessage = null;
+        flushAuthMessageIsError = false;
+        trustedIpMessage = null;
+        trustedIpMessageIsError = false;
+        isFlushingAuthSessions = true;
+
+        try
+        {
+            var result = await SecurityService.FlushAuthSessionsAsync();
+            flushAuthMessage = result.Message;
+            flushAuthMessageIsError = !result.Success;
+            await LoadAsync();
+
+            if (result.Success && flushAuthSessionsSignOutBrowser)
+            {
+                Navigation.NavigateTo("/lmshaauth/logout", forceLoad: true);
+            }
+        }
+        catch (Exception exception)
+        {
+            flushAuthMessage = exception.Message;
+            flushAuthMessageIsError = true;
+        }
+        finally
+        {
+            isFlushingAuthSessions = false;
         }
     }
 
