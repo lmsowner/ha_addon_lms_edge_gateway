@@ -5,19 +5,27 @@ alwaysApply: true
 
 # Home Assistant add-on publish for testing
 
-This repo is consumed by Home Assistant as a source-built add-on store repository. Local UI/code changes are not testable in HA until they are version-bumped and pushed to GitHub.
+This repo is consumed by Home Assistant as an add-on store repository. Local UI/code changes are not testable in HA until they are version-bumped and pushed to GitHub.
+
+Home Assistant shows a new add-on version as soon as `config.yaml` is on `origin`. Do **not** wait for GitHub Actions or GHCR image builds to finish. Push and stop. Image publish continues in the background; HA pulls `ghcr.io/lmsowner/lms_edge_gateway-{arch}:<version>` when the user updates.
+
+## Version format
+
+Use `yyyy.MM.dd.HH.mm` in Europe/London (zero-padded), for example `2026.08.17.21.36`. Generate it at publish time with:
+
+```bash
+TZ=Europe/London date '+%Y.%m.%d.%H.%M'
+```
+
+Do not use `0.1.x` patch bumps for Edge Gateway.
 
 ## When the user wants to test in Home Assistant
 
-1. Bump the affected add-on version (patch by default, e.g. `0.1.56` → `0.1.57`).
+1. Set the affected add-on version to the current `yyyy.MM.dd.HH.mm` stamp.
 2. Keep version strings aligned across that add-on's metadata and UI fallbacks.
 3. Add a concise `CHANGELOG.md` entry for the new version.
 4. Commit the feature/fix plus the version bump.
-5. Push to `origin` (`main` unless told otherwise) so Home Assistant can see the update.
-
-Do this without waiting to be asked again when the user says they want to test in HA, publish, or see the update in Home Assistant.
-
-When changing packaging that affects Home Assistant install/update behaviour (for example adding or changing the add-on `image` field), also ensure matching prebuilt images are published to GHCR for that version before expecting HA to install cleanly.
+5. Push to `origin` (`main` unless told otherwise) and return. Do not poll Actions/GHCR.
 
 ## Edge Gateway version files
 
@@ -36,6 +44,7 @@ If publishing `lms_tesla_fleet_helper`, bump that add-on's matching `config.yaml
 
 ## Do not
 
+- Wait for GitHub Actions or GHCR after a version push
 - Leave HA testing dependent on unpushed local commits
 - Bump version without a changelog note
 - Commit unrelated untracked debug/image files
