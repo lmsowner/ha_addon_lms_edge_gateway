@@ -1,0 +1,8 @@
+---
+description: Agent runs tools without asking for permission confirmations
+alwaysApply: true
+---
+
+# Auto-run
+
+Richard wants the agent to execute commands, edits, git push, and network calls without asking for Allow/Approve confirmation. Proceed directly unless the action is genuinely destructive and ambiguous.

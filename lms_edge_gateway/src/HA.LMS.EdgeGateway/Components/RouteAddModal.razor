@@ -116,33 +116,64 @@
                         <div class="edge-auth-panels">
                             <section class="edge-auth-panel">
                                 <header class="edge-auth-panel-header">
-                                    <h4>Known source IPs</h4>
-                                    <p>Allow-list by public WAN IP/CIDR. Useful when clients still arrive through Cloudflare.</p>
+                                    <h4>Trusted source IPs</h4>
+                                    <p>IPs or CIDRs that skip auth on this route. By default uses the global list from Security settings.</p>
                                 </header>
                                 <div class="edge-auth-panel-grid">
                                     <label class="ui-field edge-auth-panel-span">
-                                        <span class="ui-field-label">Known source IPs</span>
-                                        <div class="edge-inline-field-row">
-                                            <input @bind="addAppAllowKnownIps" placeholder="203.0.113.10, 198.51.100.0/24" />
-                                            <LmsButton Label="@(isFetchingAddWanIp ? "Looking up..." : "Get current WAN IP")"
-                                                       Icon="search"
-                                                       Disabled="@isFetchingAddWanIp"
-                                                       OnClick="FetchAddKnownWanIpAsync" />
-                                        </div>
-                                        <span class="ui-field-helper">Comma-separated IPs/CIDRs. Blank allows any source IP through to the checks below.</span>
-                                        @if (!string.IsNullOrWhiteSpace(addWanIpMessage))
-                                        {
-                                            <span class="ui-field-helper">@addWanIpMessage</span>
-                                        }
-                                    </label>
-                                    <label class="ui-field edge-auth-panel-span">
-                                        <span class="ui-field-label">Skip auth for known IPs</span>
+                                        <span class="ui-field-label">Skip auth for trusted IPs</span>
                                         <span class="edge-checkbox-field">
                                             <input type="checkbox" @bind="addSkipAuthenticationForKnownIps" />
                                             <span>Skip MFA / email approval for matching source IPs</span>
                                         </span>
-                                        <span class="ui-field-helper">Typical use: your home public WAN IP. Requires Known source IPs above.</span>
+                                        <span class="ui-field-helper">Applies to whichever IP list is active below (global or override).</span>
                                     </label>
+                                    <label class="ui-field edge-auth-panel-span">
+                                        <span class="ui-field-label">Override global trusted IPs</span>
+                                        <span class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="addOverrideGlobalTrustedIps" />
+                                            <span>Use a route-specific IP list instead of the global list</span>
+                                        </span>
+                                        <span class="ui-field-helper">When off, uses the global list from Security. When on, only the list below is used for this route.</span>
+                                    </label>
+                                    @if (addOverrideGlobalTrustedIps)
+                                    {
+                                        <label class="ui-field edge-auth-panel-span">
+                                            <span class="ui-field-label">Route trusted IPs / CIDRs</span>
+                                            <div class="edge-inline-field-row">
+                                                <input @bind="addAppAllowKnownIps" placeholder="203.0.113.10, 198.51.100.0/24" />
+                                                <LmsButton Label="@(isFetchingAddWanIp ? "Looking up..." : "Get WAN IP")"
+                                                           Icon="search"
+                                                           Disabled="@isFetchingAddWanIp"
+                                                           OnClick="FetchAddKnownWanIpAsync" />
+                                                @if (!string.IsNullOrWhiteSpace(globalTrustedSourceIps))
+                                                {
+                                                    <LmsButton Label="Import global list"
+                                                               Icon="download"
+                                                               OnClick="ImportGlobalTrustedIpsAsync" />
+                                                }
+                                            </div>
+                                            <span class="ui-field-helper">Comma-separated IPs/CIDRs. Only this list is used — global list is ignored for this route.</span>
+                                            @if (!string.IsNullOrWhiteSpace(addWanIpMessage))
+                                            {
+                                                <span class="ui-field-helper">@addWanIpMessage</span>
+                                            }
+                                        </label>
+                                    }
+                                    else
+                                    {
+                                        <div class="ui-field edge-auth-panel-span">
+                                            <span class="ui-field-label">Active list</span>
+                                            @if (string.IsNullOrWhiteSpace(globalTrustedSourceIps))
+                                            {
+                                                <p class="meta-text">No global trusted IPs configured. Add them in Security → Global trusted source IPs.</p>
+                                            }
+                                            else
+                                            {
+                                                <p class="meta-text">Using global list: <code>@globalTrustedSourceIps</code></p>
+                                            }
+                                        </div>
+                                    }
                                 </div>
                             </section>
                             <section class="edge-auth-panel">
@@ -395,6 +426,8 @@
     private bool addLanTrustRequireForwardConfirm = true;
     private int? addLanTrustMaxLatencyMilliseconds;
     private bool addSkipAuthenticationForKnownIps;
+    private bool addOverrideGlobalTrustedIps;
+    private string globalTrustedSourceIps = string.Empty;
     private bool isFetchingAddWanIp;
     private string addWanIpMessage = string.Empty;
     private int? addTemporaryIpApprovalIdleTimeoutMinutes;
@@ -425,6 +458,7 @@
     {
         var page = await SecurityService.GetPageAsync();
         approvalRecipientOptions = TemporaryIpApprovalSelectionOptions.BuildUserOptions(page.Users);
+        globalTrustedSourceIps = await SecurityService.GetTrustedSourceIpsAsync();
     }
 
     protected override void OnParametersSet()
@@ -460,6 +494,7 @@
         addLanTrustRequireForwardConfirm = true;
         addLanTrustMaxLatencyMilliseconds = null;
         addSkipAuthenticationForKnownIps = false;
+        addOverrideGlobalTrustedIps = false;
         addTemporaryIpApprovalIdleTimeoutMinutes = null;
         addTemporaryIpApprovalMaxLifetimeMinutes = null;
         addAppEnabled = true;
@@ -523,7 +558,8 @@
                 lanTrustDnsSuffixes: addLanTrustDnsSuffixes,
                 lanTrustRequireForwardConfirm: addLanTrustRequireForwardConfirm,
                 lanTrustMaxLatencyMilliseconds: addLanTrustMaxLatencyMilliseconds,
-                skipAuthenticationForKnownIps: addSkipAuthenticationForKnownIps);
+                skipAuthenticationForKnownIps: addSkipAuthenticationForKnownIps,
+                overrideGlobalTrustedIps: addOverrideGlobalTrustedIps);
 
             if (!result.Success)
             {
@@ -558,6 +594,22 @@
         addWanIpMessage = string.Empty;
         isFetchingAddWanIp = false;
         await OnClose.InvokeAsync();
+    }
+
+    private void ImportGlobalTrustedIpsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(globalTrustedSourceIps))
+        {
+            return;
+        }
+
+        foreach (var ip in globalTrustedSourceIps
+            .Split([',', '\n', '\r', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            addAppAllowKnownIps = MergeKnownSourceIp(addAppAllowKnownIps, ip);
+        }
+
+        addWanIpMessage = "Global trusted IPs imported into override list.";
     }
 
     private async Task FetchAddKnownWanIpAsync()

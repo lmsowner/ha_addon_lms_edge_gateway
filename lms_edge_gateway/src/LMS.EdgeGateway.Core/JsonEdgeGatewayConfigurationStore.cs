@@ -94,7 +94,8 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
             Applications = NormalizeApplications(configuration.Applications),
             PublicProxyRoutes = NormalizePublicProxyRoutes(configuration.PublicProxyRoutes),
             RelayZones = NormalizeRelayZones(configuration.RelayZones),
-            CloudflareTunnel = NormalizeTunnel(configuration.CloudflareTunnel)
+            CloudflareTunnel = NormalizeTunnel(configuration.CloudflareTunnel),
+            TrustedSourceIps = configuration.TrustedSourceIps?.Trim() ?? string.Empty
         };
     }
 
@@ -128,7 +129,8 @@ public sealed class JsonEdgeGatewayConfigurationStore(IOptions<EdgeGatewayCoreOp
                 LanTrustDnsSuffixes = application.LanTrustDnsSuffixes?.Trim() ?? string.Empty,
                 LanTrustRequireForwardConfirm = application.LanTrustRequireForwardConfirm,
                 LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(application.LanTrustMaxLatencyMilliseconds, 1, 2000),
-                SkipAuthenticationForKnownIps = application.SkipAuthenticationForKnownIps
+                SkipAuthenticationForKnownIps = application.SkipAuthenticationForKnownIps,
+                OverrideGlobalTrustedIps = application.OverrideGlobalTrustedIps
             })
             .ToArray() ?? [];
 

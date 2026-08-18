@@ -3,6 +3,8 @@
 @inject IEdgeGatewaySecurityService SecurityService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject IHttpClientFactory HttpClientFactory
+@using HA.LMS.EdgeGateway.Services
 
 <PageTitle>Security/Users</PageTitle>
 
@@ -190,6 +192,40 @@
                                 }
                             </div>
                         }
+                    </section>
+
+                    <section class="surface-subcard security-create-panel">
+                        <div class="security-section-heading">
+                            <div>
+                                <h3>Global trusted source IPs</h3>
+                                <p class="meta-text">IPs or CIDRs that are trusted on every route. Routes can override this list individually. One entry per line, or comma-separated. Supports exact IPs and CIDR ranges.</p>
+                            </div>
+                            <LmsButton Label="@(isGettingWanIp ? "Getting..." : "Get current WAN IP")"
+                                       Icon="network_check"
+                                       Disabled="@isGettingWanIp"
+                                       OnClick="GetCurrentWanIpAsync" />
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(globalTrustedIpsMessage))
+                        {
+                            <p class="callout @(globalTrustedIpsMessageIsError ? "warning" : "ready")">@globalTrustedIpsMessage</p>
+                        }
+
+                        <label class="ui-field">
+                            <span class="ui-field-label">Trusted source IPs / CIDRs</span>
+                            <textarea @bind="globalTrustedIps"
+                                      rows="5"
+                                      placeholder="203.0.113.1&#10;198.51.100.0/24&#10;2001:db8::/32"
+                                      disabled="@isSavingGlobalTrustedIps"></textarea>
+                            <span class="ui-field-helper">Matches CF-Connecting-IP on Cloudflare-tunnelled requests. Enable "Skip auth for trusted IPs" on each route that should use this list.</span>
+                        </label>
+
+                        <div class="edge-form-actions">
+                            <LmsButton Label="@(isSavingGlobalTrustedIps ? "Saving..." : "Save trusted IPs")"
+                                       Icon="save"
+                                       Disabled="@isSavingGlobalTrustedIps"
+                                       OnClick="SaveGlobalTrustedIpsAsync" />
+                        </div>
                     </section>
 
                     <section class="surface-subcard security-create-panel">
@@ -533,6 +569,11 @@
     private string? flushAuthMessage;
     private bool flushAuthMessageIsError;
     private bool flushAuthSessionsSignOutBrowser = true;
+    private string globalTrustedIps = string.Empty;
+    private bool isSavingGlobalTrustedIps;
+    private bool isGettingWanIp;
+    private string? globalTrustedIpsMessage;
+    private bool globalTrustedIpsMessageIsError;
 
     private const string UsersTab = "users";
     private const string MessagingTab = "messaging";
@@ -605,6 +646,66 @@
     {
         page = await SecurityService.GetPageAsync();
         messagingEditor = await SecurityService.GetMessagingEditorAsync();
+        globalTrustedIps = await SecurityService.GetTrustedSourceIpsAsync();
+    }
+
+    private async Task SaveGlobalTrustedIpsAsync()
+    {
+        isSavingGlobalTrustedIps = true;
+        globalTrustedIpsMessage = null;
+        globalTrustedIpsMessageIsError = false;
+        try
+        {
+            await SecurityService.SaveTrustedSourceIpsAsync(globalTrustedIps);
+            globalTrustedIpsMessage = "Global trusted source IPs saved.";
+            globalTrustedIpsMessageIsError = false;
+        }
+        catch (Exception exception)
+        {
+            globalTrustedIpsMessage = exception.Message;
+            globalTrustedIpsMessageIsError = true;
+        }
+        finally
+        {
+            isSavingGlobalTrustedIps = false;
+        }
+    }
+
+    private async Task GetCurrentWanIpAsync()
+    {
+        isGettingWanIp = true;
+        globalTrustedIpsMessage = null;
+        globalTrustedIpsMessageIsError = false;
+        try
+        {
+            using var client = HttpClientFactory.CreateClient();
+            var addresses = await PublicWanAddressLookup.LookupAsync(client);
+            var existing = (globalTrustedIps ?? string.Empty).Trim();
+            var added = new List<string>();
+            foreach (var ip in addresses)
+            {
+                if (!existing.Contains(ip, StringComparison.Ordinal))
+                {
+                    existing = string.IsNullOrWhiteSpace(existing) ? ip : $"{existing}\n{ip}";
+                    added.Add(ip);
+                }
+            }
+
+            globalTrustedIps = existing;
+            globalTrustedIpsMessage = added.Count > 0
+                ? $"Added {string.Join(", ", added)} to the list. Save to apply."
+                : "Current WAN IP is already in the list.";
+            globalTrustedIpsMessageIsError = false;
+        }
+        catch (Exception exception)
+        {
+            globalTrustedIpsMessage = exception.Message;
+            globalTrustedIpsMessageIsError = true;
+        }
+        finally
+        {
+            isGettingWanIp = false;
+        }
     }
 
     private async Task SaveUserFormAsync()

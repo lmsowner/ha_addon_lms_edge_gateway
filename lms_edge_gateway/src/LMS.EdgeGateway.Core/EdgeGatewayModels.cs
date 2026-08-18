@@ -44,7 +44,8 @@ public sealed record PublishedApplicationDefinition(
     string LanTrustDnsSuffixes = "",
     bool LanTrustRequireForwardConfirm = true,
     int? LanTrustMaxLatencyMilliseconds = null,
-    bool SkipAuthenticationForKnownIps = false);
+    bool SkipAuthenticationForKnownIps = false,
+    bool OverrideGlobalTrustedIps = false);
 
 public sealed record PublicProxyRouteDefinition(
     Guid Id,
@@ -86,14 +87,16 @@ public sealed record EdgeGatewayConfiguration(
     IReadOnlyList<EdgeGatewayRelayZone> RelayZones,
     CloudflareTunnelState CloudflareTunnel,
     DateTimeOffset UpdatedAtUtc,
-    IReadOnlyList<PublicProxyRouteDefinition>? PublicProxyRoutes = null)
+    IReadOnlyList<PublicProxyRouteDefinition>? PublicProxyRoutes = null,
+    string TrustedSourceIps = "")
 {
     public static EdgeGatewayConfiguration Empty { get; } = new(
         [],
         [],
         new CloudflareTunnelState(string.Empty, string.Empty, string.Empty, false, null, string.Empty),
         DateTimeOffset.UtcNow,
-        []);
+        [],
+        "");
 }
 
 public sealed record EdgeGatewayRuntimeStatus(
