@@ -591,7 +591,7 @@ app.MapPost("/lmshaauth/login", async (
     return Results.Redirect(returnUrl);
 }).DisableAntiforgery();
 
-app.MapPost("/lmshaauth/logout", async (HttpContext context) =>
+app.MapMethods("/lmshaauth/logout", ["GET", "POST"], async (HttpContext context) =>
 {
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");

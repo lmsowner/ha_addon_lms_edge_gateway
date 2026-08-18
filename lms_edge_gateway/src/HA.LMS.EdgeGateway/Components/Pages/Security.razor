@@ -200,10 +200,6 @@
                                 <h3>Global trusted source IPs</h3>
                                 <p class="meta-text">IPs or CIDRs that are trusted on every route. Routes can override this list individually. One entry per line, or comma-separated. Supports exact IPs and CIDR ranges.</p>
                             </div>
-                            <LmsButton Label="@(isGettingWanIp ? "Getting..." : "Get current WAN IP")"
-                                       Icon="network_check"
-                                       Disabled="@isGettingWanIp"
-                                       OnClick="GetCurrentWanIpAsync" />
                         </div>
 
                         @if (!string.IsNullOrWhiteSpace(globalTrustedIpsMessage))
@@ -215,14 +211,19 @@
                             <span class="ui-field-label">Trusted source IPs / CIDRs</span>
                             <textarea @bind="globalTrustedIps"
                                       rows="5"
-                                      placeholder="203.0.113.1&#10;198.51.100.0/24&#10;2001:db8::/32"
+                                      placeholder="@GlobalTrustedIpsPlaceholder"
                                       disabled="@isSavingGlobalTrustedIps"></textarea>
                             <span class="ui-field-helper">Matches CF-Connecting-IP on Cloudflare-tunnelled requests. Enable "Skip auth for trusted IPs" on each route that should use this list.</span>
                         </label>
 
-                        <div class="edge-form-actions">
+                        <div class="toolbar-row security-toolbar">
+                            <LmsButton Label="@(isGettingWanIp ? "Getting..." : "Get current WAN IP")"
+                                       Icon="search"
+                                       Disabled="@isGettingWanIp"
+                                       OnClick="GetCurrentWanIpAsync" />
                             <LmsButton Label="@(isSavingGlobalTrustedIps ? "Saving..." : "Save trusted IPs")"
                                        Icon="save"
+                                       Primary="true"
                                        Disabled="@isSavingGlobalTrustedIps"
                                        OnClick="SaveGlobalTrustedIpsAsync" />
                         </div>
@@ -577,6 +578,7 @@
 
     private const string UsersTab = "users";
     private const string MessagingTab = "messaging";
+    private const string GlobalTrustedIpsPlaceholder = "203.0.113.1\n198.51.100.0/24\n2001:db8::/32";
     private const int MinutesPerHour = 60;
     private const int MinutesPerDay = 24 * MinutesPerHour;
 

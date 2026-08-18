@@ -2919,9 +2919,14 @@ textarea {
 .security-section-heading {
     align-items: start;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.75rem;
     justify-content: space-between;
     margin-bottom: 0.72rem;
+}
+
+.security-section-heading .lms-button {
+    flex: 0 0 auto;
 }
 
 .security-status-pill {
