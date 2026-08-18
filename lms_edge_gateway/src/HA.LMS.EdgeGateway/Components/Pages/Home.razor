@@ -180,42 +180,71 @@
                         <div>
                             <p class="eyebrow">Edit app</p>
                             <h2 id="edge-edit-app-title">@editingRoute.PublicHostname</h2>
-                            <p class="meta-text">Update the local Caddy target for this published host.</p>
+                            <p class="meta-text">Change the local target, access policy, and trust options for this host.</p>
                         </div>
                         <button class="edge-modal-close" type="button" aria-label="Close edit app" @onclick="CloseEditRouteModal">x</button>
                     </header>
 
                     <div class="edge-modal-body">
                         <div class="edge-token-guide-grid">
-                            <label class="ui-field">
-                                <span class="ui-field-label">App name</span>
+                            <div class="ui-field">
+                                <span class="ui-field-label">
+                                    App name
+                                    <LmsFieldInfo Title="App name">
+                                        <p>Friendly name shown in the Published Apps list. It does not change the public hostname.</p>
+                                    </LmsFieldInfo>
+                                </span>
                                 <input @bind="editAppName" placeholder="Home Assistant" />
-                            </label>
-                            <div class="edge-readonly-field">
-                                <span class="ui-field-label">Public host</span>
-                                <strong>@editingRoute.PublicHostname</strong>
-                                <span>Delete and add the app again if the public hostname needs to change.</span>
                             </div>
-                            <label class="ui-field">
-                                <span class="ui-field-label">URL path prefix</span>
+                            <div class="edge-readonly-field">
+                                <span class="ui-field-label">
+                                    Public host
+                                    <LmsFieldInfo Title="Public host">
+                                        <p>The Cloudflare hostname already published for this app. Delete and add the app again if the public hostname needs to change.</p>
+                                    </LmsFieldInfo>
+                                </span>
+                                <strong>@editingRoute.PublicHostname</strong>
+                            </div>
+                            <div class="ui-field">
+                                <span class="ui-field-label">
+                                    URL path prefix
+                                    <LmsFieldInfo Title="URL path prefix">
+                                        <p>Optional public path, for example /plex. Caddy matches this path on the hostname and strips it before proxying to the target.</p>
+                                        <p>Leave blank to publish the whole hostname.</p>
+                                    </LmsFieldInfo>
+                                </span>
                                 <input @bind="editAppTargetPathPrefix" placeholder="/plex" />
-                                <span class="ui-field-helper">Optional. Caddy strips this prefix before proxying.</span>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Target scheme</span>
+                            </div>
+                            <div class="ui-field">
+                                <span class="ui-field-label">
+                                    Target scheme
+                                    <LmsFieldInfo Title="Target scheme">
+                                        <p>How Edge Gateway talks to the local app. Use http for most add-ons and LAN services. Use https only if the upstream itself serves TLS.</p>
+                                    </LmsFieldInfo>
+                                </span>
                                 <select @bind="editAppTargetScheme">
                                     <option value="http">http</option>
                                     <option value="https">https</option>
                                 </select>
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Target host or container</span>
+                            </div>
+                            <div class="ui-field">
+                                <span class="ui-field-label">
+                                    Target host or container
+                                    <LmsFieldInfo Title="Target host or container">
+                                        <p>Internal hostname, Docker/HA container name, or LAN IP that Caddy should proxy to. This is never the public Cloudflare name.</p>
+                                    </LmsFieldInfo>
+                                </span>
                                 <input @bind="editAppTargetHost" placeholder="homeassistant or 192.168.1.50" />
-                            </label>
-                            <label class="ui-field">
-                                <span class="ui-field-label">Target port</span>
+                            </div>
+                            <div class="ui-field">
+                                <span class="ui-field-label">
+                                    Target port
+                                    <LmsFieldInfo Title="Target port">
+                                        <p>Local TCP port of the upstream service, for example 8123 for Home Assistant.</p>
+                                    </LmsFieldInfo>
+                                </span>
                                 <input type="number" min="1" max="65535" @bind="editAppTargetPort" />
-                            </label>
+                            </div>
                             @if (EditRouteLooksHomeAssistant())
                             {
                                 <div class="callout @(EditHomeAssistantTargetLooksExternal() ? "warning" : "ready") edge-ha-target-warning">
@@ -234,65 +263,93 @@
                                     </div>
                                 </div>
                             }
-                            <label class="ui-field">
-                                <span class="ui-field-label">Access policy</span>
+                            <div class="ui-field">
+                                <span class="ui-field-label">
+                                    Access policy
+                                    <LmsFieldInfo Title="Access policy">
+                                        <ul>
+                                            <li><strong>MFA/Passkey</strong> — browser sign-in with authenticator or passkey before Caddy proxies to the app.</li>
+                                            <li><strong>Email approve IP</strong> — deny first. An approval email is sent; after Allow, only that source IP is granted until idle or maximum expiry.</li>
+                                            <li><strong>Pass through</strong> — no LMS authentication. Internet traffic goes straight to the upstream. Use only when the app is public by design or has its own auth.</li>
+                                        </ul>
+                                    </LmsFieldInfo>
+                                </span>
                                 <select @bind="editAppAccessPolicy">
                                     <option value="MFA/Passkey">MFA/Passkey</option>
                                     <option value="@EdgeGatewayAccessPolicies.TemporaryIpApproval">Email approve IP</option>
                                     <option value="Pass Through">Pass through</option>
                                 </select>
-                            </label>
+                            </div>
                             @if (IsTemporaryIpApprovalAccessPolicy(editAppAccessPolicy))
                             {
-                                <div class="callout ready edge-pass-through-warning" role="status">
-                                    <strong>Email approval gates this route by source IP</strong>
-                                    <span>@TemporaryIpApprovalWarningText</span>
-                                </div>
                                 <div class="edge-auth-panels">
                                     <section class="edge-auth-panel">
                                         <header class="edge-auth-panel-header">
-                                            <h4>Email approval</h4>
-                                            <p>Who gets the email, optional country filter, and how long a grant lasts.</p>
+                                            <h4>
+                                                Email approval
+                                                <LmsFieldInfo Title="Email approval">
+                                                    <p>@TemporaryIpApprovalWarningText</p>
+                                                    <p>Who gets the email, optional country filter, and how long a grant lasts are set on the fields below.</p>
+                                                </LmsFieldInfo>
+                                            </h4>
                                         </header>
                                         <div class="edge-auth-panel-grid">
                                             <LmsMultiSelect Label="Approval recipients"
-                                                            HelperText="Optional. Blank sends to route allowed users, then enabled LMS users."
+                                                            HelperText="Optional. Blank sends to this route's allowed users, then every enabled LMS user. Only enabled LMS accounts can be chosen."
                                                             Placeholder="Choose LMS users"
                                                             EmptyText="No enabled LMS users match."
                                                             Items="@approvalRecipientOptions"
                                                             @bind-Value="editTemporaryIpApprovalRecipients" />
                                             <LmsMultiSelect Label="Allowed countries"
-                                                            HelperText="Optional Cloudflare country allow-list. Blank allows any country."
+                                                            HelperText="Optional Cloudflare country allow-list using CF-IPCountry. Blank allows any country. Requests from other countries are denied before an approval email is sent."
                                                             Placeholder="Search countries"
                                                             EmptyText="No countries match."
                                                             Items="@CountryOptions"
                                                             @bind-Value="editTemporaryIpApprovalAllowedCountryCodes" />
-                                            <label class="ui-field">
-                                                <span class="ui-field-label">Denied response</span>
-                                                <span class="edge-checkbox-field">
+                                            <div class="ui-field">
+                                                <span class="ui-field-label">
+                                                    Denied response
+                                                    <LmsFieldInfo Title="Denied response">
+                                                        <p>While Return 404 is off, unapproved clients see the access check page. That page lists CF-Connecting-IP, trusted-IP results, LAN trust, and email status — including on production.</p>
+                                                        <p>Turn on Return 404 only when you want a silent Not Found instead of that diagnostic page.</p>
+                                                    </LmsFieldInfo>
+                                                </span>
+                                                <label class="edge-checkbox-field">
                                                     <input type="checkbox" @bind="editTemporaryIpApprovalUseNotFoundResponse" />
                                                     <span>Return 404</span>
+                                                </label>
+                                            </div>
+                                            <div class="ui-field">
+                                                <span class="ui-field-label">
+                                                    Shared IP access
+                                                    <LmsFieldInfo Title="Shared IP access">
+                                                        <p>Off by default. Approval is bound to the exact source IP and the client User-Agent, so a phone and a laptop on the same public IP need separate grants.</p>
+                                                        <p>Enable this for a trusted home or office WAN IP when every browser on that IP should share one approval.</p>
+                                                    </LmsFieldInfo>
                                                 </span>
-                                                <span class="ui-field-helper">Shown for all unapproved clients while off — including production. Lists CF-Connecting-IP, known-IP/LAN results, and email status. Turn on Return 404 only when you want a silent Not Found instead.</span>
-                                            </label>
-                                            <label class="ui-field">
-                                                <span class="ui-field-label">Shared IP access</span>
-                                                <span class="edge-checkbox-field">
+                                                <label class="edge-checkbox-field">
                                                     <input type="checkbox" @bind="editTemporaryIpApprovalAllowSharedIp" />
                                                     <span>Allow all clients from this IP</span>
+                                                </label>
+                                            </div>
+                                            <div class="ui-field">
+                                                <span class="ui-field-label">
+                                                    Idle cut-off (minutes)
+                                                    <LmsFieldInfo Title="Idle cut-off">
+                                                        <p>Minutes without traffic before the grant expires. Blank uses the add-on default, currently 15 minutes.</p>
+                                                    </LmsFieldInfo>
                                                 </span>
-                                                <span class="ui-field-helper">Off by default. Binds approval to User-Agent. Enable for trusted home/LAN public IPs.</span>
-                                            </label>
-                                            <label class="ui-field">
-                                                <span class="ui-field-label">Idle cut-off (minutes)</span>
                                                 <input type="number" min="1" max="1440" @bind="editTemporaryIpApprovalIdleTimeoutMinutes" placeholder="15" />
-                                                <span class="ui-field-helper">Minutes without traffic. Blank uses the default.</span>
-                                            </label>
-                                            <label class="ui-field">
-                                                <span class="ui-field-label">Maximum expiry (minutes)</span>
+                                            </div>
+                                            <div class="ui-field">
+                                                <span class="ui-field-label">
+                                                    Maximum expiry (minutes)
+                                                    <LmsFieldInfo Title="Maximum expiry">
+                                                        <p>Absolute lifetime of an approval, even if the client stays active. Blank uses the add-on default, currently 120 minutes.</p>
+                                                    </LmsFieldInfo>
+                                                </span>
                                                 <input type="number" min="1" max="10080" @bind="editTemporaryIpApprovalMaxLifetimeMinutes" placeholder="120" />
-                                                <span class="ui-field-helper">Absolute approval lifetime. Blank uses the default.</span>
-                                            </label>
+                                            </div>
                                         </div>
                                     </section>
                                 </div>
@@ -302,30 +359,50 @@
                                 <div class="edge-auth-panels">
                                     <section class="edge-auth-panel">
                                         <header class="edge-auth-panel-header">
-                                            <h4>Trusted source IPs</h4>
-                                            <p>IPs or CIDRs that skip auth on this route. By default uses the global list from Security settings.</p>
+                                            <h4>
+                                                Trusted source IPs
+                                                <LmsFieldInfo Title="Trusted source IPs">
+                                                    <p>Public WAN IPs or CIDRs that can skip MFA or email approval on this route. Matching uses CF-Connecting-IP for Cloudflare-tunnelled traffic.</p>
+                                                    <p>By default this route uses the global list from Security. Turn on override only when this app needs a different list.</p>
+                                                </LmsFieldInfo>
+                                            </h4>
                                         </header>
                                         <div class="edge-auth-panel-grid">
-                                            <label class="ui-field edge-auth-panel-span">
-                                                <span class="ui-field-label">Skip auth for trusted IPs</span>
-                                                <span class="edge-checkbox-field">
+                                            <div class="ui-field edge-auth-panel-span">
+                                                <span class="ui-field-label">
+                                                    Skip auth for trusted IPs
+                                                    <LmsFieldInfo Title="Skip auth for trusted IPs">
+                                                        <p>When enabled, a matching source IP is allowed without MFA, passkey, or email approval. Applies to whichever list is active: the global list, or this route's override list.</p>
+                                                    </LmsFieldInfo>
+                                                </span>
+                                                <label class="edge-checkbox-field">
                                                     <input type="checkbox" @bind="editSkipAuthenticationForKnownIps" />
-                                                    <span>Skip MFA / email approval for matching source IPs</span>
+                                                    <span>Enabled</span>
+                                                </label>
+                                            </div>
+                                            <div class="ui-field edge-auth-panel-span">
+                                                <span class="ui-field-label">
+                                                    Override global trusted IPs
+                                                    <LmsFieldInfo Title="Override global trusted IPs">
+                                                        <p>Off: this route uses Security → Global trusted source IPs.</p>
+                                                        <p>On: the global list is ignored and only the route list below is used. Import global list copies the current global entries so you can add or remove from them.</p>
+                                                    </LmsFieldInfo>
                                                 </span>
-                                                <span class="ui-field-helper">Applies to whichever IP list is active below (global or override).</span>
-                                            </label>
-                                            <label class="ui-field edge-auth-panel-span">
-                                                <span class="ui-field-label">Override global trusted IPs</span>
-                                                <span class="edge-checkbox-field">
+                                                <label class="edge-checkbox-field">
                                                     <input type="checkbox" @bind="editOverrideGlobalTrustedIps" />
-                                                    <span>Use a route-specific IP list instead of the global list</span>
-                                                </span>
-                                                <span class="ui-field-helper">When off, uses the global list from Security. When on, only the list below is used for this route.</span>
-                                            </label>
+                                                    <span>Use a route-specific list</span>
+                                                </label>
+                                            </div>
                                             @if (editOverrideGlobalTrustedIps)
                                             {
-                                                <label class="ui-field edge-auth-panel-span">
-                                                    <span class="ui-field-label">Route trusted IPs / CIDRs</span>
+                                                <div class="ui-field edge-auth-panel-span">
+                                                    <span class="ui-field-label">
+                                                        Route trusted IPs / CIDRs
+                                                        <LmsFieldInfo Title="Route trusted IPs">
+                                                            <p>Comma-separated IPs or CIDRs for this route only. The global list is ignored while override is on.</p>
+                                                            <p>Get WAN IP adds this machine's current public address. Import global list seeds the field from Security.</p>
+                                                        </LmsFieldInfo>
+                                                    </span>
                                                     <div class="edge-inline-field-row">
                                                         <input @bind="editAppAllowKnownIps" placeholder="203.0.113.10, 198.51.100.0/24" />
                                                         <LmsButton Label="@(isFetchingEditWanIp ? "Looking up..." : "Get WAN IP")"
@@ -339,24 +416,28 @@
                                                                        OnClick="ImportGlobalTrustedIpsAsync" />
                                                         }
                                                     </div>
-                                                    <span class="ui-field-helper">Comma-separated IPs/CIDRs. Only this list is used — global list is ignored for this route.</span>
                                                     @if (!string.IsNullOrWhiteSpace(editWanIpMessage))
                                                     {
                                                         <span class="ui-field-helper">@editWanIpMessage</span>
                                                     }
-                                                </label>
+                                                </div>
                                             }
                                             else
                                             {
                                                 <div class="ui-field edge-auth-panel-span">
-                                                    <span class="ui-field-label">Active list</span>
+                                                    <span class="ui-field-label">
+                                                        Active list
+                                                        <LmsFieldInfo Title="Active list">
+                                                            <p>This route is using the global trusted source IP list. Change it in Security, or turn on override to use a list only for this app.</p>
+                                                        </LmsFieldInfo>
+                                                    </span>
                                                     @if (string.IsNullOrWhiteSpace(globalTrustedSourceIps))
                                                     {
-                                                        <p class="meta-text">No global trusted IPs configured. Add them in Security → Global trusted source IPs.</p>
+                                                        <p class="meta-text">No global trusted IPs configured.</p>
                                                     }
                                                     else
                                                     {
-                                                        <p class="meta-text">Using global list: <code>@globalTrustedSourceIps</code></p>
+                                                        <p class="meta-text"><code>@globalTrustedSourceIps</code></p>
                                                     }
                                                 </div>
                                             }
@@ -364,42 +445,68 @@
                                     </section>
                                     <section class="edge-auth-panel">
                                         <header class="edge-auth-panel-header">
-                                            <h4>Verified LAN trust</h4>
-                                            <p>Only when the client hits Edge Gateway with a real LAN IP (split/local DNS). Cloudflare tunnel clients are never trusted this way.</p>
+                                            <h4>
+                                                Verified LAN trust
+                                                <LmsFieldInfo Title="Verified LAN trust">
+                                                    <p>Only works when the client hits Edge Gateway with a real LAN source IP, usually via split or local DNS. Cloudflare tunnel clients are never trusted this way.</p>
+                                                    <p>Prefer global trusted WAN IPs for home access through Cloudflare. Use LAN trust only if you also publish the hostname on the LAN.</p>
+                                                </LmsFieldInfo>
+                                            </h4>
                                         </header>
                                         <div class="edge-auth-panel-grid">
-                                            <label class="ui-field edge-auth-panel-span">
-                                                <span class="ui-field-label">Enable LAN trust</span>
-                                                <span class="edge-checkbox-field">
-                                                    <input type="checkbox" @bind="editLanTrustEnabled" />
-                                                    <span>Skip auth for verified LAN clients</span>
+                                            <div class="ui-field edge-auth-panel-span">
+                                                <span class="ui-field-label">
+                                                    Enable LAN trust
+                                                    <LmsFieldInfo Title="Enable LAN trust">
+                                                        <p>Skip MFA or email approval when the source IP is inside the trusted LAN CIDRs and reverse DNS matches a trusted suffix.</p>
+                                                    </LmsFieldInfo>
                                                 </span>
-                                            </label>
+                                                <label class="edge-checkbox-field">
+                                                    <input type="checkbox" @bind="editLanTrustEnabled" />
+                                                    <span>Enabled</span>
+                                                </label>
+                                            </div>
                                             @if (editLanTrustEnabled)
                                             {
-                                                <label class="ui-field">
-                                                    <span class="ui-field-label">Trusted LAN CIDRs</span>
-                                                    <input @bind="editLanTrustCidrs" placeholder="192.168.1.0/24" />
-                                                    <span class="ui-field-helper">Comma-separated, for example 192.168.1.0/24.</span>
-                                                </label>
-                                                <label class="ui-field">
-                                                    <span class="ui-field-label">Trusted DNS suffixes</span>
-                                                    <input @bind="editLanTrustDnsSuffixes" placeholder="home.arpa" />
-                                                    <span class="ui-field-helper">PTR of the LAN source IP must end with one of these domains.</span>
-                                                </label>
-                                                <label class="ui-field">
-                                                    <span class="ui-field-label">Forward confirm</span>
-                                                    <span class="edge-checkbox-field">
-                                                        <input type="checkbox" @bind="editLanTrustRequireForwardConfirm" />
-                                                        <span>Require forward DNS to match the same IP</span>
+                                                <div class="ui-field">
+                                                    <span class="ui-field-label">
+                                                        Trusted LAN CIDRs
+                                                        <LmsFieldInfo Title="Trusted LAN CIDRs">
+                                                            <p>Comma-separated private ranges, for example 192.168.1.0/24. The client source IP must fall inside one of these networks.</p>
+                                                        </LmsFieldInfo>
                                                     </span>
-                                                    <span class="ui-field-helper">Recommended. PTR name must resolve back to the source IP.</span>
-                                                </label>
-                                                <label class="ui-field">
-                                                    <span class="ui-field-label">Max latency (ms)</span>
+                                                    <input @bind="editLanTrustCidrs" placeholder="192.168.1.0/24" />
+                                                </div>
+                                                <div class="ui-field">
+                                                    <span class="ui-field-label">
+                                                        Trusted DNS suffixes
+                                                        <LmsFieldInfo Title="Trusted DNS suffixes">
+                                                            <p>The PTR name of the LAN source IP must equal or end with one of these domains, for example home.arpa or lan.example.com.</p>
+                                                        </LmsFieldInfo>
+                                                    </span>
+                                                    <input @bind="editLanTrustDnsSuffixes" placeholder="home.arpa" />
+                                                </div>
+                                                <div class="ui-field">
+                                                    <span class="ui-field-label">
+                                                        Forward confirm
+                                                        <LmsFieldInfo Title="Forward confirm">
+                                                            <p>Recommended. After reverse DNS, Edge Gateway resolves that name and requires it to point back to the same source IP. This blocks spoofed PTR records.</p>
+                                                        </LmsFieldInfo>
+                                                    </span>
+                                                    <label class="edge-checkbox-field">
+                                                        <input type="checkbox" @bind="editLanTrustRequireForwardConfirm" />
+                                                        <span>Require forward DNS to match</span>
+                                                    </label>
+                                                </div>
+                                                <div class="ui-field">
+                                                    <span class="ui-field-label">
+                                                        Max latency (ms)
+                                                        <LmsFieldInfo Title="Max latency">
+                                                            <p>Optional ICMP ping gate. If set, the LAN client must reply within this many milliseconds. Blank disables latency checking.</p>
+                                                        </LmsFieldInfo>
+                                                    </span>
                                                     <input type="number" min="1" max="2000" @bind="editLanTrustMaxLatencyMilliseconds" placeholder="optional" />
-                                                    <span class="ui-field-helper">Optional ICMP gate. Blank disables latency checking.</span>
-                                                </label>
+                                                </div>
                                             }
                                         </div>
                                     </section>
@@ -408,12 +515,17 @@
                             @if (IsPassThroughAccessPolicy(editAppAccessPolicy))
                             {
                                 <div class="callout warning edge-pass-through-warning" role="alert">
-                                    <strong>Pass-through sends internet traffic straight to the destination</strong>
+                                    <strong>Pass-through has no LMS login</strong>
                                     <span>@PassThroughWarningText</span>
                                 </div>
                             }
                             <div class="edge-readonly-field edge-route-preview-field">
-                                <span class="ui-field-label">Route</span>
+                                <span class="ui-field-label">
+                                    Route
+                                    <LmsFieldInfo Title="Route">
+                                        <p>Preview of the Caddy proxy from the public hostname to the local target after you save.</p>
+                                    </LmsFieldInfo>
+                                </span>
                                 <strong>@editingRoute.PublicHostname</strong>
                                 <span><code>@BuildEditRoutePreview()</code></span>
                             </div>
@@ -423,18 +535,43 @@
                                     <small>Proxy headers and upstream TLS</small>
                                 </summary>
                                 <div class="edge-advanced-settings-body">
-                                    <label class="edge-checkbox-field">
-                                        <input type="checkbox" @bind="editAppUsePublicHostHeader" />
-                                        <span>Send public Host header</span>
-                                    </label>
-                                    <label class="edge-checkbox-field">
-                                        <input type="checkbox" @bind="editAppStripForwardedFor" />
-                                        <span>Strip X-Forwarded-For</span>
-                                    </label>
-                                    <label class="edge-checkbox-field">
-                                        <input type="checkbox" @bind="editAppSkipUpstreamTlsVerification" />
-                                        <span>Skip upstream TLS verification</span>
-                                    </label>
+                                    <div class="ui-field">
+                                        <span class="ui-field-label">
+                                            Send public Host header
+                                            <LmsFieldInfo Title="Send public Host header">
+                                                <p>When on, Caddy sends the public hostname to the upstream. Turn this on for apps that generate links from the Host header.</p>
+                                                <p>When off, the upstream sees its internal host name instead.</p>
+                                            </LmsFieldInfo>
+                                        </span>
+                                        <label class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="editAppUsePublicHostHeader" />
+                                            <span>Enabled</span>
+                                        </label>
+                                    </div>
+                                    <div class="ui-field">
+                                        <span class="ui-field-label">
+                                            Strip X-Forwarded-For
+                                            <LmsFieldInfo Title="Strip X-Forwarded-For">
+                                                <p>When on, Caddy does not pass the client IP chain to the upstream. Use this when the app should not see or trust forwarded client addresses.</p>
+                                            </LmsFieldInfo>
+                                        </span>
+                                        <label class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="editAppStripForwardedFor" />
+                                            <span>Enabled</span>
+                                        </label>
+                                    </div>
+                                    <div class="ui-field">
+                                        <span class="ui-field-label">
+                                            Skip upstream TLS verification
+                                            <LmsFieldInfo Title="Skip upstream TLS verification">
+                                                <p>When the target scheme is https, this allows a self-signed or otherwise untrusted upstream certificate. Typical for Home Assistant HTTPS on the LAN. Leave off if the upstream has a valid certificate.</p>
+                                            </LmsFieldInfo>
+                                        </span>
+                                        <label class="edge-checkbox-field">
+                                            <input type="checkbox" @bind="editAppSkipUpstreamTlsVerification" />
+                                            <span>Enabled</span>
+                                        </label>
+                                    </div>
                                 </div>
                             </details>
                         </div>

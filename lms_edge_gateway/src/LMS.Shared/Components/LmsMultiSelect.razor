@@ -3,7 +3,13 @@
 <div class="ui-field lms-multi-select-field">
     @if (!string.IsNullOrWhiteSpace(Label))
     {
-        <span class="ui-field-label">@Label</span>
+        <span class="ui-field-label">
+            @Label
+            @if (!string.IsNullOrWhiteSpace(HelperText))
+            {
+                <LmsFieldInfo Title="@Label" Body="@HelperText" />
+            }
+        </span>
     }
     <div class="lms-multi-select @(isOpen ? "open" : string.Empty)">
         <div class="lms-multi-select-control">
@@ -52,10 +58,6 @@
             </div>
         }
     </div>
-    @if (!string.IsNullOrWhiteSpace(HelperText))
-    {
-        <span class="ui-field-helper">@HelperText</span>
-    }
 </div>
 
 @code {
