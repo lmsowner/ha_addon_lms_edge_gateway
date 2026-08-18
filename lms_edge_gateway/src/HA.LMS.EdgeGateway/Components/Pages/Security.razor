@@ -211,7 +211,7 @@
                             <span class="ui-field-label">Trusted source IPs / CIDRs</span>
                             <textarea @bind="globalTrustedIps"
                                       rows="5"
-                                      placeholder="@GlobalTrustedIpsPlaceholder"
+                                      placeholder="203.0.113.1, 198.51.100.0/24"
                                       disabled="@isSavingGlobalTrustedIps"></textarea>
                             <span class="ui-field-helper">Matches CF-Connecting-IP on Cloudflare-tunnelled requests. Enable "Skip auth for trusted IPs" on each route that should use this list.</span>
                         </label>
@@ -578,7 +578,6 @@
 
     private const string UsersTab = "users";
     private const string MessagingTab = "messaging";
-    private const string GlobalTrustedIpsPlaceholder = "203.0.113.1\n198.51.100.0/24\n2001:db8::/32";
     private const int MinutesPerHour = 60;
     private const int MinutesPerDay = 24 * MinutesPerHour;
 
