@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.08.18.09.10
+
+- Adds a global trusted source IP/CIDR list in Security settings. All routes use this list by default; matching IPs skip auth when "Skip auth for trusted IPs" is enabled on the route.
+- Per-route "Override global trusted IPs" toggle lets individual routes use their own IP list instead of the global one, with an "Import global list" button to seed the override from the global list.
+- Fixes auth evaluation to load Cloudflare configuration once per request rather than twice.
+
 ## 2026.08.17.21.36
 
 - Switches add-on versioning to `yyyy.MM.dd.HH.mm` so Home Assistant can show a new build as soon as GitHub has `config.yaml`.

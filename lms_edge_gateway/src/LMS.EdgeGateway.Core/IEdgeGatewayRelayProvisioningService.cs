@@ -49,6 +49,7 @@ public interface IEdgeGatewayRelayProvisioningService
         bool lanTrustRequireForwardConfirm = true,
         int? lanTrustMaxLatencyMilliseconds = null,
         bool skipAuthenticationForKnownIps = false,
+        bool overrideGlobalTrustedIps = false,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> UpdateApplicationAsync(
@@ -80,6 +81,7 @@ public interface IEdgeGatewayRelayProvisioningService
         bool lanTrustRequireForwardConfirm = true,
         int? lanTrustMaxLatencyMilliseconds = null,
         bool skipAuthenticationForKnownIps = false,
+        bool overrideGlobalTrustedIps = false,
         CancellationToken cancellationToken = default);
 
     Task<EdgeGatewayApplicationSaveResult> PublishApplicationAsync(

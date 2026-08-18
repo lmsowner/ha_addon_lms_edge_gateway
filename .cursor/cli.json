@@ -4,12 +4,14 @@
       "Shell(**)",
       "Mcp(**)",
       "WebFetch(**)",
-      "WebSearch(**)"
-    ]
-  },
-  "approvalMode": "allowlist",
-  "sandbox": {
-    "mode": "disabled",
-    "networkAccess": "allow_all"
+      "WebSearch(**)",
+      "Write(**)",
+      "Read(**)",
+      "Delete(**)",
+      "Task(**)",
+      "SwitchMode(**)",
+      "GenerateImage(**)"
+    ],
+    "deny": []
   }
 }

@@ -44,7 +44,8 @@ public sealed class EdgeGatewayRouteAuthService(
                 "Forward auth request did not come from the local Caddy proxy.");
         }
 
-        var route = await FindRouteForRequestAsync(requestedHost, requestedPath, enabledOnly: true, cancellationToken);
+        var configuration = await configurationStore.LoadAsync(cancellationToken);
+        var route = FindRouteForRequest(configuration, requestedHost, requestedPath, enabledOnly: true);
         if (route is null || !route.IsEnabled)
         {
             return new EdgeGatewayAuthCheckResult(
@@ -69,22 +70,27 @@ public sealed class EdgeGatewayRouteAuthService(
                 "Route only allows LAN source addresses.");
         }
 
-        if (!IsKnownIpAllowed(route, sourceIp))
+        // Resolve the effective trusted IP list: route override wins when set, otherwise global.
+        var effectiveTrustedIps = route.OverrideGlobalTrustedIps
+            ? route.AllowKnownIps
+            : configuration.TrustedSourceIps;
+
+        var trustedIpsConfigured = HasConfiguredIpList(effectiveTrustedIps);
+        var trustedIpMatched = trustedIpsConfigured && IsIpInList(effectiveTrustedIps, sourceIp);
+
+        // When an override list is active and the IP isn't in it, block immediately.
+        if (route.OverrideGlobalTrustedIps && trustedIpsConfigured && !trustedIpMatched)
         {
             return new EdgeGatewayAuthCheckResult(
                 StatusForbidden,
-                "Source IP did not match the route allow-list.");
+                "Source IP did not match the route trusted IP override list.");
         }
 
-        var knownIpsConfigured = HasConfiguredKnownIps(route);
-        var knownIpMatched = IsKnownIpAllowed(route, sourceIp);
-        if (route.SkipAuthenticationForKnownIps &&
-            knownIpsConfigured &&
-            knownIpMatched)
+        if (route.SkipAuthenticationForKnownIps && trustedIpsConfigured && trustedIpMatched)
         {
             return new EdgeGatewayAuthCheckResult(
                 StatusOk,
-                "Known source IP skip-authentication allowed.",
+                "Trusted source IP skip-authentication allowed.",
                 UserName: $"known-ip:{sourceIp}");
         }
 
@@ -121,17 +127,18 @@ public sealed class EdgeGatewayRouteAuthService(
         {
             if (temporaryIpApprovalService is null)
             {
-                return DenyTemporaryIpWithDiagnostics(
-                    accessCheckPageStore,
-                    route,
-                    context,
-                    sourceIp,
-                    knownIpsConfigured,
-                    knownIpMatched,
-                    lanTrustReason,
-                    "Temporary IP approval service is not available.",
-                    emailAttempted: false,
-                    emailSucceeded: false);
+            return DenyTemporaryIpWithDiagnostics(
+                accessCheckPageStore,
+                route,
+                context,
+                sourceIp,
+                trustedIpsConfigured,
+                trustedIpMatched,
+                effectiveTrustedIps,
+                lanTrustReason,
+                "Temporary IP approval service is not available.",
+                emailAttempted: false,
+                emailSucceeded: false);
             }
 
             var requestedUrl = BuildRequestedUrl(requestedHost, requestedPath);
@@ -159,8 +166,9 @@ public sealed class EdgeGatewayRouteAuthService(
                 route,
                 context,
                 sourceIp,
-                knownIpsConfigured,
-                knownIpMatched,
+                trustedIpsConfigured,
+                trustedIpMatched,
+                effectiveTrustedIps,
                 lanTrustReason,
                 result.Reason,
                 result.EmailAttempted,
@@ -214,19 +222,19 @@ public sealed class EdgeGatewayRouteAuthService(
             return false;
         }
 
-        var route = await FindRouteForRequestAsync(uri.Host, uri.PathAndQuery, enabledOnly: true, cancellationToken);
+        var configuration = await configurationStore.LoadAsync(cancellationToken);
+        var route = FindRouteForRequest(configuration, uri.Host, uri.PathAndQuery, enabledOnly: true);
         return route is { IsEnabled: true };
     }
 
-    private async Task<PublishedApplicationDefinition?> FindRouteForRequestAsync(
+    private static PublishedApplicationDefinition? FindRouteForRequest(
+        EdgeGatewayConfiguration configuration,
         string requestedHost,
         string requestedPath,
-        bool enabledOnly,
-        CancellationToken cancellationToken)
+        bool enabledOnly)
     {
         var normalizedHost = NormalizeForwardedHost(requestedHost, requestedHost);
         var pathOnly = ExtractPathOnly(requestedPath);
-        var configuration = await configurationStore.LoadAsync(cancellationToken);
 
         return configuration.Applications
             .Where(route =>
@@ -243,8 +251,9 @@ public sealed class EdgeGatewayRouteAuthService(
         PublishedApplicationDefinition route,
         EdgeGatewayAuthCheckContext context,
         string sourceIp,
-        bool knownIpsConfigured,
-        bool knownIpMatched,
+        bool trustedIpsConfigured,
+        bool trustedIpMatched,
+        string effectiveTrustedIps,
         string? lanTrustReason,
         string temporaryIpReason,
         bool emailAttempted,
@@ -257,20 +266,22 @@ public sealed class EdgeGatewayRouteAuthService(
 
         var knownSkipEnabled = route.SkipAuthenticationForKnownIps;
         var sourceIpHeader = DescribeSourceIpHeader(context);
-        var knownStatus = !knownIpsConfigured
+        var usingOverride = route.OverrideGlobalTrustedIps;
+        var listSource = usingOverride ? "route override list" : "global trusted IPs";
+        var knownStatus = !trustedIpsConfigured
             ? "Not configured"
-            : knownIpMatched
+            : trustedIpMatched
                 ? knownSkipEnabled
                     ? "Matched, but skip did not apply"
                     : "Matched"
                 : "No match";
-        var knownDetail = !knownIpsConfigured
-            ? $"Known source IPs is empty. Through Cloudflare, add your public WAN from CF-Connecting-IP ({FormatIpOrMissing(context.ConnectingIp)}) and enable Skip auth."
-            : knownIpMatched
+        var knownDetail = !trustedIpsConfigured
+            ? $"No trusted IPs configured ({listSource} is empty). Add your public WAN IP from CF-Connecting-IP ({FormatIpOrMissing(context.ConnectingIp)}) to the {listSource} and enable Skip auth for trusted IPs."
+            : trustedIpMatched
                 ? knownSkipEnabled
-                    ? "This should have skipped auth. Check that the saved route includes Skip auth for known source IPs."
-                    : $"CF-Connecting-IP / auth IP {sourceIp} matches Known source IPs, but Skip auth for known source IPs is off."
-                : $"Compared auth IP {sourceIp} (from {sourceIpHeader}) against Known source IPs ({route.AllowKnownIps}). No match.";
+                    ? $"This should have skipped auth. Check Skip auth for trusted IPs is enabled on this route."
+                    : $"CF-Connecting-IP / auth IP {sourceIp} matches the {listSource}, but Skip auth for trusted IPs is off."
+                : $"Compared auth IP {sourceIp} (from {sourceIpHeader}) against {listSource} ({effectiveTrustedIps}). No match.";
 
         var lanEnabled = route.LanTrustEnabled;
         var lanOk = false;
@@ -299,10 +310,10 @@ public sealed class EdgeGatewayRouteAuthService(
             Checks:
             [
                 new EdgeGatewayAccessDiagnosticCheck(
-                    "Known source IPs vs CF-Connecting-IP",
+                    usingOverride ? "Trusted IPs (route override) vs CF-Connecting-IP" : "Trusted IPs (global) vs CF-Connecting-IP",
                     knownStatus,
                     knownDetail,
-                    IsOk: knownIpsConfigured && knownIpMatched && knownSkipEnabled),
+                    IsOk: trustedIpsConfigured && trustedIpMatched && knownSkipEnabled),
                 new EdgeGatewayAccessDiagnosticCheck(
                     "Verified LAN trust",
                     lanStatus,
@@ -315,9 +326,10 @@ public sealed class EdgeGatewayRouteAuthService(
                     IsOk: false)
             ],
             NextSteps: BuildTemporaryIpNextSteps(
-                knownIpsConfigured,
-                knownIpMatched,
+                trustedIpsConfigured,
+                trustedIpMatched,
                 knownSkipEnabled,
+                usingOverride,
                 lanEnabled,
                 emailSucceeded,
                 temporaryIpReason));
@@ -329,25 +341,27 @@ public sealed class EdgeGatewayRouteAuthService(
     }
 
     private static IReadOnlyList<string> BuildTemporaryIpNextSteps(
-        bool knownIpsConfigured,
-        bool knownIpMatched,
+        bool trustedIpsConfigured,
+        bool trustedIpMatched,
         bool knownSkipEnabled,
+        bool usingOverride,
         bool lanEnabled,
         bool emailSucceeded,
         string temporaryIpReason)
     {
         var steps = new List<string>();
-        if (!knownIpsConfigured)
+        var listLabel = usingOverride ? "the route trusted IP override list" : "Security → Global Trusted Source IPs";
+        if (!trustedIpsConfigured)
         {
-            steps.Add("For home access through Cloudflare, add your current public WAN IP under Known source IPs and enable Skip auth for known source IPs.");
+            steps.Add($"For home access through Cloudflare, add your current public WAN IP to {listLabel} and enable Skip auth for trusted IPs on this route.");
         }
-        else if (knownIpMatched && !knownSkipEnabled)
+        else if (trustedIpMatched && !knownSkipEnabled)
         {
-            steps.Add("Enable Skip auth for known source IPs on this route so matching WAN IPs skip email approval.");
+            steps.Add("Enable Skip auth for trusted IPs on this route so matching WAN IPs skip email approval.");
         }
-        else if (!knownIpMatched)
+        else if (!trustedIpMatched)
         {
-            steps.Add("Compare CF-Connecting-IP on this page with Known source IPs. Use Get current WAN IP in the route editor if your public address changed.");
+            steps.Add($"Compare CF-Connecting-IP on this page with {listLabel}. Use Get current WAN IP if your public address changed.");
         }
 
         if (lanEnabled)
@@ -464,12 +478,12 @@ public sealed class EdgeGatewayRouteAuthService(
                (remoteIpAddress.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(remoteIpAddress.MapToIPv4()));
     }
 
-    private static bool IsKnownIpAllowed(PublishedApplicationDefinition route, string sourceIp)
+    private static bool IsIpInList(string ipList, string sourceIp)
     {
-        var allowed = SplitRouteList(route.AllowKnownIps).ToArray();
+        var allowed = SplitRouteList(ipList).ToArray();
         if (allowed.Length == 0)
         {
-            return true;
+            return false;
         }
 
         if (!EdgeGatewayIpAddress.TryCanonicalize(sourceIp, out var parsed))
@@ -480,8 +494,8 @@ public sealed class EdgeGatewayRouteAuthService(
         return allowed.Any(item => AddressMatches(parsed, item));
     }
 
-    private static bool HasConfiguredKnownIps(PublishedApplicationDefinition route) =>
-        SplitRouteList(route.AllowKnownIps).Any();
+    private static bool HasConfiguredIpList(string ipList) =>
+        SplitRouteList(ipList).Any();
 
     private static bool IsLanAddress(string sourceIp) =>
         EdgeGatewayIpAddress.TryCanonicalize(sourceIp, out var address) &&

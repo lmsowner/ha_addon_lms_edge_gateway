@@ -8,6 +8,7 @@ namespace LMS.EdgeGateway.Core;
 
 public sealed class EdgeGatewaySecurityService(
     IEdgeGatewaySecurityStore securityStore,
+    IEdgeGatewayConfigurationStore configurationStore,
     IEdgeGatewayTemporaryIpApprovalService temporaryIpApprovalService,
     IEdgeGatewaySecretProtector secretProtector,
     IEdgeGatewayEmailDeliveryService emailDeliveryService,
@@ -334,6 +335,20 @@ public sealed class EdgeGatewaySecurityService(
         Guid trustedIpId,
         CancellationToken cancellationToken = default) =>
         temporaryIpApprovalService.RevokeTrustedIpAddressAsync(trustedIpId, cancellationToken);
+
+    public async Task<string> GetTrustedSourceIpsAsync(CancellationToken cancellationToken = default)
+    {
+        var configuration = await configurationStore.LoadAsync(cancellationToken);
+        return configuration.TrustedSourceIps ?? string.Empty;
+    }
+
+    public async Task SaveTrustedSourceIpsAsync(string trustedSourceIps, CancellationToken cancellationToken = default)
+    {
+        var configuration = await configurationStore.LoadAsync(cancellationToken);
+        await configurationStore.SaveAsync(
+            configuration with { TrustedSourceIps = (trustedSourceIps ?? string.Empty).Trim() },
+            cancellationToken);
+    }
 
     public async Task<EdgeGatewayAuthSessionFlushResult> FlushAuthSessionsAsync(
         CancellationToken cancellationToken = default)

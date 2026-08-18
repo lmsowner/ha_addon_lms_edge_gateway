@@ -830,6 +830,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool lanTrustRequireForwardConfirm = true,
         int? lanTrustMaxLatencyMilliseconds = null,
         bool skipAuthenticationForKnownIps = false,
+        bool overrideGlobalTrustedIps = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -903,7 +904,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 NormalizeDnsSuffixTextBlock(lanTrustDnsSuffixes),
                 lanTrustRequireForwardConfirm,
                 NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000),
-                skipAuthenticationForKnownIps);
+                skipAuthenticationForKnownIps,
+                overrideGlobalTrustedIps);
             AddHomeAssistantUpstreamWarnings(application, warnings);
 
             var updatedConfiguration = configuration with
@@ -986,6 +988,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
         bool lanTrustRequireForwardConfirm = true,
         int? lanTrustMaxLatencyMilliseconds = null,
         bool skipAuthenticationForKnownIps = false,
+        bool overrideGlobalTrustedIps = false,
         CancellationToken cancellationToken = default)
     {
         var steps = new List<string>();
@@ -1049,7 +1052,8 @@ public sealed class EdgeGatewayRelayProvisioningService(
                 LanTrustDnsSuffixes = NormalizeDnsSuffixTextBlock(lanTrustDnsSuffixes),
                 LanTrustRequireForwardConfirm = lanTrustRequireForwardConfirm,
                 LanTrustMaxLatencyMilliseconds = NormalizeOptionalMinutes(lanTrustMaxLatencyMilliseconds, 1, 2000),
-                SkipAuthenticationForKnownIps = skipAuthenticationForKnownIps
+                SkipAuthenticationForKnownIps = skipAuthenticationForKnownIps,
+                OverrideGlobalTrustedIps = overrideGlobalTrustedIps
             };
             AddHomeAssistantUpstreamWarnings(updated, warnings);
 
