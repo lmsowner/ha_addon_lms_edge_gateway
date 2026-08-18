@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.08.18.09.58
+
+- Removes the broken multiline placeholder in Global trusted source IPs. The `&#10;` text was HTML newline encoding, not CIDR hashes.
+
 ## 2026.08.18.09.57
 
 - Fixes the Global trusted source IPs panel: valid button icon, real newline placeholder, and WAN lookup/save on the same toolbar.
