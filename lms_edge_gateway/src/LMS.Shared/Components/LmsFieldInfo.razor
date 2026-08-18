@@ -1,0 +1,60 @@
+@namespace LMS.Shared.Components
+
+<button type="button"
+        class="lms-field-info-trigger"
+        aria-label="@AriaLabel"
+        @onclick="Open"
+        @onclick:preventDefault="true"
+        @onclick:stopPropagation="true">
+    <svg class="ui-glyph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5"></circle>
+        <path d="M12 11.5v5"></path>
+        <path d="M12 7.5h.01"></path>
+    </svg>
+</button>
+
+@if (isOpen)
+{
+    <div class="lms-field-info-backdrop"
+         role="presentation"
+         @onclick="Close"
+         @onclick:preventDefault="true"
+         @onclick:stopPropagation="true">
+        <section class="lms-field-info-card"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="@headingId"
+                 @onclick:stopPropagation="true">
+            <header class="lms-field-info-header">
+                <h3 id="@headingId">@Title</h3>
+                <button class="lms-field-info-close" type="button" aria-label="Close" @onclick="Close">x</button>
+            </header>
+            <div class="lms-field-info-body">
+                @if (ChildContent is not null)
+                {
+                    @ChildContent
+                }
+                else
+                {
+                    <p>@Body</p>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Body { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool isOpen;
+    private readonly string headingId = $"lms-field-info-{Guid.NewGuid():N}";
+
+    private string AriaLabel =>
+        string.IsNullOrWhiteSpace(Title) ? "More information" : $"About {Title}";
+
+    private void Open() => isOpen = true;
+
+    private void Close() => isOpen = false;
+}
