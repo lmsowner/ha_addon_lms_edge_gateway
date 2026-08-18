@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.08.18.09.57
+
+- Fixes the Global trusted source IPs panel: valid button icon, real newline placeholder, and WAN lookup/save on the same toolbar.
+- Fixes Flush authentication cache signing out via GET /lmshaauth/logout, which previously showed the ugly Not Found page.
+
 ## 2026.08.18.09.10
 
 - Adds a global trusted source IP/CIDR list in Security settings. All routes use this list by default; matching IPs skip auth when "Skip auth for trusted IPs" is enabled on the route.
