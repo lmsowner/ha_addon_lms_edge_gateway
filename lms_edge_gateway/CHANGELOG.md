@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.08.19.07.48
+
+- Keeps field help and multi-select menus inside the dialog, near the control, with a readable width instead of a clipped text column.
+
 ## 2026.08.19.07.41
 
 - Field help is the original `i` icon with a drop shadow and no filled circle. Hover tips sit above the icon inside the dialog.
