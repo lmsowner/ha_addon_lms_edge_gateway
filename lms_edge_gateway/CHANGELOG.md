@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.08.19.07.41
+
+- Field help is the original `i` icon with a drop shadow and no filled circle. Hover tips sit above the icon inside the dialog.
+- Multi-select lists stay inside the dialog and close on click-outside or Escape.
+
 ## 2026.08.19.07.31
 
 - Fixes the Edit app dialog: access policy is a normal-height dropdown instead of stretching beside Email approval.
