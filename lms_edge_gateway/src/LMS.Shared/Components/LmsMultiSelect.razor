@@ -11,7 +11,16 @@
             }
         </span>
     }
-    <div class="lms-multi-select @(isOpen ? "open" : string.Empty)">
+    <div class="lms-multi-select @(isOpen ? "open" : string.Empty)"
+         @onkeydown="OnKeyDown">
+        @if (isOpen)
+        {
+            <div class="lms-multi-select-backdrop"
+                 role="presentation"
+                 @onclick="Close"
+                 @onclick:preventDefault="true"
+                 @onclick:stopPropagation="true"></div>
+        }
         <div class="lms-multi-select-control">
             @foreach (var selected in SelectedOptions)
             {
@@ -104,7 +113,30 @@
 
     private void Open() => isOpen = true;
 
-    private void ToggleOpen() => isOpen = !isOpen;
+    private void Close()
+    {
+        isOpen = false;
+        searchText = string.Empty;
+    }
+
+    private void ToggleOpen()
+    {
+        if (isOpen)
+        {
+            Close();
+            return;
+        }
+
+        Open();
+    }
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key is "Escape" or "Esc")
+        {
+            Close();
+        }
+    }
 
     private void OnSearchChanged(ChangeEventArgs args)
     {

@@ -1383,18 +1383,21 @@ textarea {
     align-items: center;
     background: transparent;
     border: 0;
+    box-shadow: none;
     color: var(--color-text-muted);
     cursor: help;
     display: inline-flex;
     flex: 0 0 auto;
-    font-size: 0.72rem;
-    font-weight: 700;
     height: 1rem;
     justify-content: center;
-    letter-spacing: 0;
-    line-height: 1;
     padding: 0;
-    width: auto;
+    width: 1rem;
+}
+
+.lms-field-info-trigger .ui-glyph-icon {
+    filter: drop-shadow(0 1px 1px rgba(15, 18, 24, 0.28));
+    height: 0.92rem;
+    width: 0.92rem;
 }
 
 .lms-field-info-trigger:hover,
@@ -1407,44 +1410,37 @@ textarea {
     background: var(--surface-elevated);
     border: 1px solid var(--color-line-strong);
     border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-soft);
+    bottom: calc(100% + 0.42rem);
+    box-shadow:
+        0 10px 24px rgba(18, 22, 30, 0.16),
+        0 2px 6px rgba(18, 22, 30, 0.1);
     color: var(--color-text-muted);
     display: grid;
     font-size: 0.78rem;
     font-weight: 500;
     gap: 0.4rem;
-    left: 0;
+    left: auto;
     line-height: 1.4;
-    max-width: min(22rem, calc(100vw - 2rem));
+    max-width: min(18rem, calc(100% + 8rem));
     opacity: 0;
     padding: 0.5rem 0.62rem;
     pointer-events: none;
     position: absolute;
-    top: calc(100% + 0.38rem);
+    right: 0;
+    top: auto;
     visibility: hidden;
     width: max-content;
-    z-index: 240;
-}
-
-@supports (anchor-name: --lms-field-info) {
-    .lms-field-info-tip {
-        left: anchor(start);
-        margin-top: 0.38rem;
-        position: fixed;
-        position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-        top: anchor(bottom);
-    }
+    z-index: 8;
 }
 
 .lms-field-info:hover,
 .lms-field-info:focus-within {
-    z-index: 6;
+    z-index: 8;
 }
 
 .lms-field-info:hover .lms-field-info-tip,
 .lms-field-info:focus-within .lms-field-info-tip {
     opacity: 1;
-    pointer-events: auto;
     visibility: visible;
 }
 
@@ -1625,9 +1621,21 @@ textarea {
     position: relative;
 }
 
+.lms-multi-select.open {
+    z-index: 30;
+}
+
+.lms-multi-select-backdrop {
+    inset: 0;
+    position: fixed;
+    z-index: 1;
+}
+
 .lms-multi-select-control {
     align-items: center;
     background: var(--field-background);
+    position: relative;
+    z-index: 2;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-button);
     box-shadow: var(--shadow-control);
@@ -1722,19 +1730,23 @@ textarea {
     background: var(--surface-elevated);
     border: 1px solid var(--color-line-strong);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-soft);
+    box-shadow:
+        0 12px 28px rgba(18, 22, 30, 0.16),
+        0 2px 8px rgba(18, 22, 30, 0.1);
     display: grid;
     gap: 0.12rem;
     left: 0;
     margin-top: 0.28rem;
     max-height: min(18rem, 48vh);
-    min-width: min(22rem, 92vw);
+    max-width: 100%;
+    min-width: 0;
     overflow: auto;
     padding: 0.32rem;
     position: absolute;
     right: 0;
     top: 100%;
-    z-index: 40;
+    width: 100%;
+    z-index: 3;
 }
 
 .lms-multi-select-option {

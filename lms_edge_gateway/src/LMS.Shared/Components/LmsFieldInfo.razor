@@ -3,15 +3,15 @@
 <span class="lms-field-info">
     <button type="button"
             class="lms-field-info-trigger"
-            style="anchor-name: --@tooltipId"
             aria-label="@AriaLabel"
             aria-describedby="@tooltipId">
-        ?
+        <svg class="ui-glyph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.5"></circle>
+            <path d="M12 11.5v5"></path>
+            <path d="M12 7.5h.01"></path>
+        </svg>
     </button>
-    <span id="@tooltipId"
-          class="lms-field-info-tip"
-          style="position-anchor: --@tooltipId"
-          role="tooltip">
+    <span id="@tooltipId" class="lms-field-info-tip" role="tooltip">
         @if (!string.IsNullOrWhiteSpace(Title))
         {
             <strong>@Title</strong>
