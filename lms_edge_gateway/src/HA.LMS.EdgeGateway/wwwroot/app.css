@@ -208,6 +208,8 @@ textarea {
 
 select {
     color-scheme: inherit;
+    height: 2.08rem;
+    max-height: 2.08rem;
 }
 
 input:focus,
@@ -1347,9 +1349,16 @@ textarea {
 }
 
 .ui-field {
+    align-content: start;
     display: grid;
     gap: 0.34rem;
     min-width: 0;
+}
+
+.ui-field > input,
+.ui-field > select,
+.ui-field > textarea {
+    align-self: start;
 }
 
 .ui-field-label {
@@ -1363,99 +1372,99 @@ textarea {
     line-height: 1.2;
 }
 
-.lms-field-info-trigger {
-    align-items: center;
-    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-line));
-    border-radius: 999px;
-    color: var(--color-accent);
-    cursor: pointer;
+.lms-field-info {
     display: inline-flex;
     flex: 0 0 auto;
-    height: 1.15rem;
-    justify-content: center;
-    padding: 0;
-    width: 1.15rem;
+    position: relative;
+    vertical-align: middle;
 }
 
-.lms-field-info-trigger .ui-glyph-icon {
-    height: 0.78rem;
-    width: 0.78rem;
+.lms-field-info-trigger {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    color: var(--color-text-muted);
+    cursor: help;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 700;
+    height: 1rem;
+    justify-content: center;
+    letter-spacing: 0;
+    line-height: 1;
+    padding: 0;
+    width: auto;
 }
 
 .lms-field-info-trigger:hover,
 .lms-field-info-trigger:focus-visible {
-    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent);
     outline: none;
 }
 
-.lms-field-info-backdrop {
-    align-items: center;
-    background: var(--modal-backdrop);
-    display: flex;
-    inset: 0;
-    justify-content: center;
-    padding: 1rem;
-    position: fixed;
-    z-index: 220;
-}
-
-.lms-field-info-card {
+.lms-field-info-tip {
     background: var(--surface-elevated);
     border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-sm);
     box-shadow: var(--shadow-soft);
+    color: var(--color-text-muted);
     display: grid;
-    gap: 0.7rem;
-    max-height: min(72vh, 28rem);
-    max-width: min(32rem, calc(100vw - 2rem));
-    overflow: auto;
-    padding: 1rem 1.05rem 1.05rem;
-    width: 100%;
+    font-size: 0.78rem;
+    font-weight: 500;
+    gap: 0.4rem;
+    left: 0;
+    line-height: 1.4;
+    max-width: min(22rem, calc(100vw - 2rem));
+    opacity: 0;
+    padding: 0.5rem 0.62rem;
+    pointer-events: none;
+    position: absolute;
+    top: calc(100% + 0.38rem);
+    visibility: hidden;
+    width: max-content;
+    z-index: 240;
 }
 
-.lms-field-info-header {
-    align-items: start;
-    display: flex;
-    gap: 0.75rem;
-    justify-content: space-between;
+@supports (anchor-name: --lms-field-info) {
+    .lms-field-info-tip {
+        left: anchor(start);
+        margin-top: 0.38rem;
+        position: fixed;
+        position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+        top: anchor(bottom);
+    }
 }
 
-.lms-field-info-header h3 {
-    font-size: 1.02rem;
+.lms-field-info:hover,
+.lms-field-info:focus-within {
+    z-index: 6;
+}
+
+.lms-field-info:hover .lms-field-info-tip,
+.lms-field-info:focus-within .lms-field-info-tip {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+}
+
+.lms-field-info-tip strong {
+    color: var(--color-text);
+    font-size: 0.8rem;
     font-weight: 800;
     line-height: 1.25;
+}
+
+.lms-field-info-tip p,
+.lms-field-info-tip li {
     margin: 0;
 }
 
-.lms-field-info-close {
-    background: transparent;
-    border: 0;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    font-size: 1.1rem;
-    line-height: 1;
-    padding: 0.1rem 0.2rem;
-}
-
-.lms-field-info-body {
-    color: var(--color-text-muted);
+.lms-field-info-tip ul {
     display: grid;
-    font-size: 0.88rem;
-    gap: 0.65rem;
-    line-height: 1.45;
-}
-
-.lms-field-info-body p,
-.lms-field-info-body li {
+    gap: 0.32rem;
     margin: 0;
-}
-
-.lms-field-info-body ul {
-    display: grid;
-    gap: 0.45rem;
-    margin: 0;
-    padding-left: 1.1rem;
+    padding-left: 1rem;
 }
 
 .ui-field-helper {
@@ -1490,8 +1499,13 @@ textarea {
 }
 
 .edge-token-guide-grid > .edge-temporary-approval-grid,
-.edge-token-guide-grid > .edge-route-preview-field {
+.edge-token-guide-grid > .edge-route-preview-field,
+.edge-token-guide-grid > .edge-auth-panels {
     grid-column: 1 / -1;
+}
+
+.edge-token-guide-grid > .ui-field {
+    align-self: start;
 }
 
 .edge-form-grid-target {

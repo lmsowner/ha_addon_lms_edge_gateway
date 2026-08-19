@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.08.19.07.31
+
+- Fixes the Edit app dialog: access policy is a normal-height dropdown instead of stretching beside Email approval.
+- Field help is a small `?` that shows a hover tooltip instead of a click-to-open popup.
+
 ## 2026.08.18.10.13
 
 - Cleans up the Add/Edit app dialogs. Helper walls of text are now info icons beside each control title, opening a popup with the full explanation.
