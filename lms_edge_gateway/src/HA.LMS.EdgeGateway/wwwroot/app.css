@@ -1410,7 +1410,6 @@ textarea {
     background: var(--surface-elevated);
     border: 1px solid var(--color-line-strong);
     border-radius: var(--radius-sm);
-    bottom: calc(100% + 0.42rem);
     box-shadow:
         0 10px 24px rgba(18, 22, 30, 0.16),
         0 2px 6px rgba(18, 22, 30, 0.1);
@@ -1419,18 +1418,19 @@ textarea {
     font-size: 0.78rem;
     font-weight: 500;
     gap: 0.4rem;
-    left: auto;
-    line-height: 1.4;
-    max-width: min(18rem, calc(100% + 8rem));
+    left: 0;
+    line-height: 1.45;
+    max-width: min(20rem, calc(100vw - 2rem));
     opacity: 0;
-    padding: 0.5rem 0.62rem;
+    overflow: auto;
+    overflow-wrap: break-word;
+    padding: 0.55rem 0.7rem;
     pointer-events: none;
-    position: absolute;
-    right: 0;
-    top: auto;
+    position: fixed;
+    top: 0;
     visibility: hidden;
-    width: max-content;
-    z-index: 8;
+    width: 20rem;
+    z-index: 240;
 }
 
 .lms-field-info:hover,
@@ -1438,8 +1438,8 @@ textarea {
     z-index: 8;
 }
 
-.lms-field-info:hover .lms-field-info-tip,
-.lms-field-info:focus-within .lms-field-info-tip {
+.lms-field-info:hover .lms-field-info-tip.is-placed,
+.lms-field-info:focus-within .lms-field-info-tip.is-placed {
     opacity: 1;
     visibility: visible;
 }
