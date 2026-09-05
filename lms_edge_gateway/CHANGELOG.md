@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.12.18
+
+- Allow Postfix to write the send log under /data. The last build pointed maillog_file there without the required prefix, so sendmail refused to start.
+
 ## 2026.09.05.12.12
 
 - Postfix now writes a send log under the Test email card. The log was missing because rsyslog never created /var/log/mail.log.
