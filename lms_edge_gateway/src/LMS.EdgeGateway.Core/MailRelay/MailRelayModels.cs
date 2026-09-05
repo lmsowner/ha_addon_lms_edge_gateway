@@ -26,7 +26,8 @@ public enum MailRelayDmarcPolicy
 
 public enum MailRelayDeliveryMode
 {
-    DirectInternet = 0
+    DirectInternet = 0,
+    Smarthost = 1
 }
 
 public enum MailRelayDnsChangeType
@@ -76,6 +77,12 @@ public sealed record MailRelayConfiguration(
     public DateTimeOffset? LastPublicIpChangeUtc { get; init; }
     public MailRelayPublicIpMonitorStatus PublicIpMonitorStatus { get; init; } = MailRelayPublicIpMonitorStatus.NotChecked;
     public string PublicIpMonitorDetail { get; init; } = "Waiting for the first public IP and DNS check.";
+    public bool UseSmarthost { get; init; }
+    public string SmarthostHostname { get; init; } = string.Empty;
+    public int SmarthostPort { get; init; } = 587;
+    public string SmarthostUsername { get; init; } = string.Empty;
+    public string? SmarthostPasswordSecretReference { get; init; }
+    public bool HasSmarthostPassword => !string.IsNullOrWhiteSpace(SmarthostPasswordSecretReference);
 
     public static MailRelayConfiguration CreateDefault(DateTimeOffset now) =>
         new(

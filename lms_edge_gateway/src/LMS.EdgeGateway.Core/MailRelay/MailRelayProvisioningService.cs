@@ -840,6 +840,85 @@ public sealed partial class MailRelayProvisioningService(
         }
     }
 
+    public async Task<MailRelaySmarthostResult> ConfigureSmarthostAsync(
+        MailRelaySmarthostRequest request,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var configuration = await store.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true)
+        {
+            return new(false, configuration, "Set up Mail Relay before configuring secure delivery.");
+        }
+
+        var hostname = request.Hostname?.Trim().TrimEnd('.') ?? string.Empty;
+        var username = request.Username?.Trim() ?? string.Empty;
+        var port = request.Port is 465 or 587 ? request.Port : 587;
+        if (request.Enabled)
+        {
+            if (string.IsNullOrWhiteSpace(hostname) || Uri.CheckHostName(hostname) == UriHostNameType.Unknown)
+            {
+                return new(false, configuration, "Enter a valid smarthost hostname, for example smtp.office365.com.");
+            }
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return new(false, configuration, "Enter the smarthost username.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Password) && string.IsNullOrWhiteSpace(configuration.SmarthostPasswordSecretReference))
+            {
+                return new(false, configuration, "Enter the smarthost password.");
+            }
+        }
+
+        try
+        {
+            progress?.Report("Saving the authenticated 587/465 delivery path…");
+            var secretReference = configuration.SmarthostPasswordSecretReference;
+            if (request.Enabled && !string.IsNullOrWhiteSpace(request.Password))
+            {
+                secretReference = await secretStore.SaveAsync("smarthost-smtp", request.Password.Trim(), cancellationToken);
+            }
+            else if (!request.Enabled && !string.IsNullOrWhiteSpace(secretReference))
+            {
+                await secretStore.DeleteAsync(secretReference, cancellationToken);
+                secretReference = null;
+            }
+
+            var candidate = configuration with
+            {
+                DeliveryMode = request.Enabled ? MailRelayDeliveryMode.Smarthost : MailRelayDeliveryMode.DirectInternet,
+                UpdatedUtc = DateTimeOffset.UtcNow,
+                UseSmarthost = request.Enabled,
+                SmarthostHostname = request.Enabled ? hostname : string.Empty,
+                SmarthostPort = request.Enabled ? port : 587,
+                SmarthostUsername = request.Enabled ? username : string.Empty,
+                SmarthostPasswordSecretReference = request.Enabled ? secretReference : null
+            };
+
+            var domains = (await store.ListDomainsAsync(cancellationToken)).Where(item => item.Enabled).ToArray();
+            var submissionNetwork = await InspectPrivateNetworkAsync(
+                candidate.AllowTailscale,
+                candidate.AllowTrustedLan,
+                cancellationToken);
+            await InstallRuntimePolicyAsync(candidate, submissionNetwork.BindAddresses, domains, cancellationToken);
+            await ApplyRuntimeConfigurationAsync(cancellationToken);
+            await hostCommand.RunAsync("postqueue", ["-f"], cancellationToken, timeout: TimeSpan.FromSeconds(10));
+            await store.SaveConfigurationAsync(candidate, cancellationToken);
+            return new(
+                true,
+                candidate,
+                candidate.UseSmarthost
+                    ? $"Outbound mail now uses authenticated STARTTLS on {candidate.SmarthostHostname}:{candidate.SmarthostPort}."
+                    : "Secure smarthost delivery is off. Postfix will try destination MX hosts on TCP/25 again.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new(false, configuration, $"Secure delivery was not changed: {FirstUsefulLine(exception.Message)}");
+        }
+    }
+
     public async Task<MailRelayRemovalResult> RemoveAsync(
         MailRelayRemovalRequest request,
         IProgress<string>? progress = null,
@@ -949,10 +1028,16 @@ public sealed partial class MailRelayProvisioningService(
                 TryDeleteDirectory(paths.ConfigDirectory, "Mail Relay managed configuration", warnings);
                 await DeleteSecretIfPresentAsync(configuration.TlsCertificateSecretReference, cancellationToken);
                 await DeleteSecretIfPresentAsync(configuration.TlsPrivateKeySecretReference, cancellationToken);
+                await DeleteSecretIfPresentAsync(configuration.SmarthostPasswordSecretReference, cancellationToken);
                 configuration = configuration with
                 {
                     TlsCertificateSecretReference = null,
                     TlsPrivateKeySecretReference = null,
+                    DeliveryMode = MailRelayDeliveryMode.DirectInternet,
+                    UseSmarthost = false,
+                    SmarthostHostname = string.Empty,
+                    SmarthostUsername = string.Empty,
+                    SmarthostPasswordSecretReference = null,
                     UpdatedUtc = DateTimeOffset.UtcNow
                 };
                 await store.SaveConfigurationAsync(configuration, cancellationToken);
@@ -1584,7 +1669,8 @@ public sealed partial class MailRelayProvisioningService(
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(paths.ConfigDirectory);
-        await WriteTextFileAsync(Path.Combine(paths.ConfigDirectory, "main.cf"), BuildMainCf(configuration.RelayHostname), cancellationToken);
+        await WriteTextFileAsync(Path.Combine(paths.ConfigDirectory, "main.cf"), BuildMainCf(configuration), cancellationToken);
+        await WriteSmarthostPasswordFileAsync(configuration, cancellationToken);
         await WriteTextFileAsync(Path.Combine(paths.ConfigDirectory, "master-lms.cf"), BuildMasterCf(submissionAddresses, configuration), cancellationToken);
         await WriteTextFileAsync(Path.Combine(paths.ConfigDirectory, "legacy_clients.cidr"), BuildLegacyClientAccess(configuration.EffectiveLegacyAllowedNetworks), cancellationToken);
         await WriteTextFileAsync(Path.Combine(paths.ConfigDirectory, "legacy_senders.pcre"), BuildLegacySenderAccess(domains), cancellationToken);
@@ -1613,7 +1699,8 @@ public sealed partial class MailRelayProvisioningService(
             Directory.Delete(dkimRoot, true);
         }
 
-        await WriteTextFileAsync(Path.Combine(root, "main.cf"), BuildMainCf(configuration.RelayHostname), cancellationToken);
+        await WriteTextFileAsync(Path.Combine(root, "main.cf"), BuildMainCf(configuration), cancellationToken);
+        await WriteSmarthostPasswordFileAsync(configuration, cancellationToken);
         await WriteTextFileAsync(Path.Combine(root, "master-lms.cf"), BuildMasterCf(bindAddresses, configuration), cancellationToken);
         await WriteTextFileAsync(
             Path.Combine(root, "smtpd.conf"),
@@ -1679,11 +1766,11 @@ public sealed partial class MailRelayProvisioningService(
         }
     }
 
-    private string BuildMainCf(string relayHostname) => $$"""
+    private string BuildMainCf(MailRelayConfiguration configuration) => $$"""
         # Managed by Linux Made Sane
         # Do not edit manually
         compatibility_level = 3.6
-        myhostname = {{relayHostname}}
+        myhostname = {{configuration.RelayHostname}}
         maillog_file_prefixes = /var, /dev/stdout, /data
         maillog_file = {{paths.MailLogPath}}
         myorigin = $myhostname
@@ -1725,7 +1812,59 @@ public sealed partial class MailRelayProvisioningService(
         mailbox_size_limit = 0
         message_size_limit = 26214400
         recipient_delimiter = +
+        {{BuildSmarthostMainCf(configuration)}}
         """;
+
+    private static string BuildSmarthostMainCf(MailRelayConfiguration configuration)
+    {
+        if (!configuration.UseSmarthost || string.IsNullOrWhiteSpace(configuration.SmarthostHostname))
+        {
+            return """
+                relayhost =
+                smtp_sasl_auth_enable = no
+                smtp_tls_wrappermode = no
+                """;
+        }
+
+        var hostname = configuration.SmarthostHostname.Trim().TrimEnd('.');
+        var port = configuration.SmarthostPort is 465 or 587 ? configuration.SmarthostPort : 587;
+        var wrapper = port == 465 ? "yes" : "no";
+        return $"""
+            relayhost = [{hostname}]:{port}
+            smtp_sasl_auth_enable = yes
+            smtp_sasl_password_maps = texthash:/etc/postfix/sasl_passwd
+            smtp_sasl_security_options = noanonymous
+            smtp_sasl_mechanism_filter = LOGIN PLAIN
+            smtp_tls_wrappermode = {wrapper}
+            """;
+    }
+
+    private async Task WriteSmarthostPasswordFileAsync(
+        MailRelayConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var path = Path.Combine(paths.ConfigDirectory, "sasl_passwd");
+        if (!configuration.UseSmarthost)
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            return;
+        }
+
+        var password = await secretStore.ResolveAsync(configuration.SmarthostPasswordSecretReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("Save a smarthost password before enabling secure delivery.");
+        }
+
+        var hostname = configuration.SmarthostHostname.Trim().TrimEnd('.');
+        var port = configuration.SmarthostPort is 465 or 587 ? configuration.SmarthostPort : 587;
+        await WriteTextFileAsync(path, $"[{hostname}]:{port} {configuration.SmarthostUsername.Trim()}:{password}", cancellationToken);
+        TrySetUnixMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
 
     internal static string BuildMasterCf(
         IReadOnlyList<string> submissionAddresses,

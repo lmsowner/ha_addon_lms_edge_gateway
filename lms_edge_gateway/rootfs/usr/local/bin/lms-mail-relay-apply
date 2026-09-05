@@ -22,6 +22,12 @@ fi
 [[ -f "${CONFIG_ROOT}/legacy_clients.cidr" ]] && cp "${CONFIG_ROOT}/legacy_clients.cidr" /etc/postfix/legacy_clients.cidr
 [[ -f "${CONFIG_ROOT}/legacy_senders.pcre" ]] && cp "${CONFIG_ROOT}/legacy_senders.pcre" /etc/postfix/legacy_senders.pcre
 [[ -f "${CONFIG_ROOT}/header_checks.pcre" ]] && cp "${CONFIG_ROOT}/header_checks.pcre" /etc/postfix/header_checks.pcre
+if [[ -f "${CONFIG_ROOT}/sasl_passwd" ]]; then
+  cp "${CONFIG_ROOT}/sasl_passwd" /etc/postfix/sasl_passwd
+  chmod 0600 /etc/postfix/sasl_passwd
+else
+  rm -f /etc/postfix/sasl_passwd
+fi
 [[ -f "${CONFIG_ROOT}/opendkim.conf" ]] && cp "${CONFIG_ROOT}/opendkim.conf" /etc/opendkim.conf
 
 if [[ -d "${CONFIG_ROOT}/dkim" ]]; then
@@ -144,5 +150,7 @@ if postfix status >/dev/null 2>&1; then
 else
   postfix start
 fi
+
+postqueue -f >/dev/null 2>&1 || true
 
 bashio::log.info "Mail Relay configuration applied."
