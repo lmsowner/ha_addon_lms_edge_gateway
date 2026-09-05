@@ -224,11 +224,40 @@
                            Busy="@isSendingTest"
                            Disabled="@isSendingTest"
                            OnClick="SendTestAsync" />
+                <LmsButton Label="@(isLoadingMailLog ? "Reading log..." : "Refresh mail log")"
+                           Icon="refresh"
+                           Busy="@isLoadingMailLog"
+                           Disabled="@isLoadingMailLog"
+                           OnClick="RefreshMailLogAsync" />
             </div>
             @if (testResult is not null)
             {
-                <p class="callout @(testResult.Passed ? "ready" : "warning")">@testResult.Summary</p>
-                <p class="ui-field-helper">SMTP: @testResult.SmtpResponse</p>
+                <div class="mail-relay-test-result">
+                    <p class="callout @(TestCalloutClass)">@testResult.Summary</p>
+                    <div class="mail-relay-test-meta">
+                        <span>Status: @testResult.Status</span>
+                        @if (!string.IsNullOrWhiteSpace(testResult.QueueId))
+                        {
+                            <span>Queue ID: <code>@testResult.QueueId</code></span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(testResult.DestinationServer))
+                        {
+                            <span>Destination: <code>@testResult.DestinationServer</code></span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(testResult.SmtpResponse))
+                        {
+                            <span>SMTP: @testResult.SmtpResponse</span>
+                        }
+                    </div>
+                </div>
+            }
+            @if (mailLog is not null)
+            {
+                <p class="meta-text">@mailLog.Summary</p>
+                @if (mailLog.Lines.Count > 0)
+                {
+                    <pre class="mail-relay-log">@string.Join('\n', mailLog.Lines)</pre>
+                }
             }
         </section>
 
@@ -398,12 +427,15 @@
             </div>
             <footer class="edge-modal-footer">
                 <LmsButton Label="Close" Icon="close" OnClick="CloseSetupModal" />
-                <LmsButton Label="@(IsSetupRunning ? "Setting up..." : "Start setup")"
-                           Icon="check"
-                           Primary="true"
-                           Busy="@IsSetupRunning"
-                           Disabled="@(!CanStartSetup)"
-                           OnClick="StartSetupAsync" />
+                @if (setupJob?.Status != MailRelayProvisioningJobStatus.Succeeded)
+                {
+                    <LmsButton Label="@(IsSetupRunning ? "Setting up..." : "Start setup")"
+                               Icon="check"
+                               Primary="true"
+                               Busy="@IsSetupRunning"
+                               Disabled="@(!CanStartSetup)"
+                               OnClick="StartSetupAsync" />
+                }
             </footer>
         </section>
     </div>
@@ -617,6 +649,8 @@
     private MailRelaySetupPreview? setupPreview;
     private MailRelayProvisioningJobSnapshot? setupJob;
     private MailRelayTestResult? testResult;
+    private MailRelayLogSnapshot? mailLog;
+    private bool isLoadingMailLog;
     private CancellationTokenSource? pollCts;
 
     private string selectedZoneId = string.Empty;
@@ -686,6 +720,8 @@
         !string.IsNullOrWhiteSpace(setupDkimSelector) &&
         !string.IsNullOrWhiteSpace(setupApplicationName) &&
         !string.IsNullOrWhiteSpace(setupApplicationUsername);
+    private string TestCalloutClass =>
+        testResult?.Status == MailRelayTestStatus.Sent ? "ready" : "warning";
     private string RelayHostname =>
         !string.IsNullOrWhiteSpace(dashboard?.Configuration?.RelayHostname)
             ? dashboard!.Configuration!.RelayHostname
@@ -796,6 +832,11 @@
         {
             testClientId = dashboard.Clients[0].Id.ToString();
             OnTestClientChanged();
+        }
+
+        if (dashboard.Configuration?.Enabled == true && mailLog is null)
+        {
+            await RefreshMailLogAsync();
         }
     }
 
@@ -1077,7 +1118,14 @@
         try
         {
             testResult = await MailRelayService.SendTestAsync(new MailRelayTestRequest(id, testFromAddress, testRecipientAddress));
-            SetAction(testResult.Summary, !testResult.Passed);
+            mailLog = new MailRelayLogSnapshot(
+                testResult.Logs.Count > 0,
+                "/var/log/mail.log",
+                testResult.Logs.Count > 0
+                    ? $"{testResult.Logs.Count} Postfix lines for this send."
+                    : "No matching Postfix lines yet. Refresh the mail log after a few seconds.",
+                testResult.Logs);
+            SetAction(testResult.Summary, testResult.Status != MailRelayTestStatus.Sent);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -1087,6 +1135,23 @@
         finally
         {
             isSendingTest = false;
+        }
+    }
+
+    private async Task RefreshMailLogAsync()
+    {
+        isLoadingMailLog = true;
+        try
+        {
+            mailLog = await MailRelayService.GetMailLogAsync(testResult?.QueueId);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            mailLog = new MailRelayLogSnapshot(false, "/var/log/mail.log", exception.Message, []);
+        }
+        finally
+        {
+            isLoadingMailLog = false;
         }
     }
 
