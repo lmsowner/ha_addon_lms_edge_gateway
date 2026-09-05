@@ -196,12 +196,7 @@ public sealed class EmailProviderTests
         {
             Messaging = Settings(MessagingEmailProvider.Brevo, apiKey: "old-saved-key")
         });
-        var service = new EdgeGatewaySecurityService(
-            store,
-            NoopTemporaryIpApprovalService.Instance,
-            new PlainSecretProtector(),
-            BuildEmailSender(store, handler),
-            NullLogger<EdgeGatewaySecurityService>.Instance);
+        var service = BuildSecurityService(store, handler);
 
         var result = await service.SendMessagingTestAsync(
             new SecurityMessagingSettingsEditor
@@ -247,12 +242,7 @@ public sealed class EmailProviderTests
                 LastVerifiedAtUtc = verifiedAt
             }
         });
-        var service = new EdgeGatewaySecurityService(
-            store,
-            NoopTemporaryIpApprovalService.Instance,
-            new PlainSecretProtector(),
-            BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
-            NullLogger<EdgeGatewaySecurityService>.Instance);
+        var service = BuildSecurityService(store);
 
         await service.SaveMessagingSettingsAsync(new SecurityMessagingSettingsEditor
         {
@@ -281,12 +271,7 @@ public sealed class EmailProviderTests
                 LastVerifiedAtUtc = verifiedAt
             }
         });
-        var service = new EdgeGatewaySecurityService(
-            store,
-            NoopTemporaryIpApprovalService.Instance,
-            new PlainSecretProtector(),
-            BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
-            NullLogger<EdgeGatewaySecurityService>.Instance);
+        var service = BuildSecurityService(store);
 
         await service.SaveMessagingSettingsAsync(new SecurityMessagingSettingsEditor
         {
@@ -312,12 +297,7 @@ public sealed class EmailProviderTests
             Content = new StringContent("""{"messageId":"brevo-current"}""")
         });
         var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty);
-        var service = new EdgeGatewaySecurityService(
-            store,
-            NoopTemporaryIpApprovalService.Instance,
-            new PlainSecretProtector(),
-            BuildEmailSender(store, handler),
-            NullLogger<EdgeGatewaySecurityService>.Instance);
+        var service = BuildSecurityService(store, handler);
 
         var result = await service.SendMessagingTestAsync(
             new SecurityMessagingSettingsEditor
@@ -363,12 +343,7 @@ public sealed class EmailProviderTests
                 GraphClientSecretProtected = "old-saved-secret"
             }
         });
-        var service = new EdgeGatewaySecurityService(
-            store,
-            NoopTemporaryIpApprovalService.Instance,
-            new PlainSecretProtector(),
-            BuildEmailSender(store, handler),
-            NullLogger<EdgeGatewaySecurityService>.Instance);
+        var service = BuildSecurityService(store, handler);
 
         var result = await service.SendMessagingTestAsync(
             new SecurityMessagingSettingsEditor
@@ -474,12 +449,7 @@ public sealed class EmailProviderTests
                 LastVerifiedAtUtc = now
             }
         });
-        var service = new EdgeGatewaySecurityService(
-            store,
-            NoopTemporaryIpApprovalService.Instance,
-            new PlainSecretProtector(),
-            BuildEmailSender(store, handler),
-            NullLogger<EdgeGatewaySecurityService>.Instance);
+        var service = BuildSecurityService(store, handler);
 
         var result = await service.CreateUserAsync(
             new SecurityUserEditor
@@ -517,14 +487,17 @@ public sealed class EmailProviderTests
         Assert.Contains("https://edge.example/login", html, StringComparison.Ordinal);
     }
 
-    private static EdgeGatewaySecurityService BuildSecurityService()
+    private static EdgeGatewaySecurityService BuildSecurityService(
+        IEdgeGatewaySecurityStore? store = null,
+        HttpMessageHandler? handler = null)
     {
-        var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty);
+        store ??= new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty);
         return new EdgeGatewaySecurityService(
             store,
+            new InMemoryConfigurationStore(EdgeGatewayConfiguration.Empty),
             NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
-            BuildEmailSender(store, new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
+            BuildEmailSender(store, handler ?? new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
             NullLogger<EdgeGatewaySecurityService>.Instance);
     }
 
@@ -652,6 +625,15 @@ public sealed class EmailProviderTests
         public Task<TemporaryIpApprovalFlushResult> ClearAllAsync(
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new TemporaryIpApprovalFlushResult(0, 0));
+    }
+
+    private sealed class InMemoryConfigurationStore(EdgeGatewayConfiguration configuration) : IEdgeGatewayConfigurationStore
+    {
+        public Task<EdgeGatewayConfiguration> LoadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(configuration);
+
+        public Task SaveAsync(EdgeGatewayConfiguration configuration, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class InMemorySecurityStore(EdgeGatewaySecurityConfiguration configuration) : IEdgeGatewaySecurityStore
