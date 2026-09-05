@@ -117,11 +117,11 @@ ensure_main_cf_param /etc/postfix/main.cf smtp_connect_timeout "15"
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_helo_timeout "15"
 ensure_main_cf_param /etc/postfix/main.cf smtp_helo_timeout "15"
 
-# Internet delivery is STARTTLS on 587 to the recipient MX. Port 25 is LAN submission only.
+# Match full LMS: MX lookup on TCP/25, then STARTTLS. 587 is inbound submission only.
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" compatibility_level "3.11"
 ensure_main_cf_param /etc/postfix/main.cf compatibility_level "3.11"
-ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tcp_port "587"
-ensure_main_cf_param /etc/postfix/main.cf smtp_tcp_port "587"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tcp_port "smtp"
+ensure_main_cf_param /etc/postfix/main.cf smtp_tcp_port "smtp"
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" default_transport "smtp"
 ensure_main_cf_param /etc/postfix/main.cf default_transport "smtp"
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" relayhost ""
@@ -130,31 +130,23 @@ ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_sasl_auth_enable "no"
 ensure_main_cf_param /etc/postfix/main.cf smtp_sasl_auth_enable "no"
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tls_wrappermode "no"
 ensure_main_cf_param /etc/postfix/main.cf smtp_tls_wrappermode "no"
-ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tls_security_level "encrypt"
-ensure_main_cf_param /etc/postfix/main.cf smtp_tls_security_level "encrypt"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tls_security_level "may"
+ensure_main_cf_param /etc/postfix/main.cf smtp_tls_security_level "may"
 for leftover in smtp_sasl_password_maps smtp_sasl_mechanism_filter smtp_sasl_security_options; do
   sed -i "/^${leftover}[[:space:]]*=/d" "${CONFIG_ROOT}/main.cf" /etc/postfix/main.cf 2>/dev/null || true
 done
-postconf -e compatibility_level=3.11 smtp_tcp_port=587 default_transport=smtp relayhost= \
-  smtp_sasl_auth_enable=no smtp_tls_wrappermode=no smtp_tls_security_level=encrypt
+postconf -e compatibility_level=3.11 smtp_tcp_port=smtp default_transport=smtp relayhost= \
+  smtp_sasl_auth_enable=no smtp_tls_wrappermode=no smtp_tls_security_level=may
 cp /etc/postfix/main.cf "${CONFIG_ROOT}/main.cf"
 
-# Keep the outbound SMTP client out of the Postfix chroot and pin it to 587.
-master_tmp="$(mktemp)"
-awk '
-  /^[#]*smtp[[:space:]]+unix/ {
-    print "smtp      unix  -       -       n       -       -       smtp"
-    print "  -o smtp_tcp_port=587"
-    skip=1
-    next
-  }
-  skip==1 && /^[[:space:]]/ { next }
-  { skip=0; print }
-' /etc/postfix/master.cf > "${master_tmp}"
-if ! grep -qE '^smtp[[:space:]]+unix' "${master_tmp}"; then
-  printf 'smtp      unix  -       -       n       -       -       smtp\n  -o smtp_tcp_port=587\n' >> "${master_tmp}"
+# Keep the outbound SMTP client out of the Postfix chroot so MX lookups work in the add-on.
+if grep -qE '^[#]*smtp[[:space:]]+unix[[:space:]]' /etc/postfix/master.cf; then
+  sed -i -E 's/^[#]*smtp[[:space:]]+unix[[:space:]].*/smtp      unix  -       -       n       -       -       smtp/' /etc/postfix/master.cf
+else
+  printf 'smtp      unix  -       -       n       -       -       smtp\n' >> /etc/postfix/master.cf
 fi
-mv "${master_tmp}" /etc/postfix/master.cf
+# Drop a leftover 587 pin from earlier HA builds.
+sed -i '/^[[:space:]]*-o smtp_tcp_port=587/d' /etc/postfix/master.cf || true
 
 if command -v rsyslogd >/dev/null 2>&1 && ! pgrep -x rsyslogd >/dev/null 2>&1; then
   if [[ ! -f /etc/rsyslog.conf ]] || ! grep -q 'mail.log' /etc/rsyslog.conf; then
@@ -178,7 +170,6 @@ else
   postfix start
 fi
 
-# Deferred jobs remember the port they first tried. Drop :25 leftovers instead of flushing them.
-postsuper -d ALL >/dev/null 2>&1 || true
+postqueue -f >/dev/null 2>&1 || true
 
-bashio::log.info "Mail Relay outbound SMTP is STARTTLS on TCP/587 (compatibility_level=3.11)."
+bashio::log.info "Mail Relay outbound SMTP matches full LMS: recipient MX on TCP/25, then STARTTLS."

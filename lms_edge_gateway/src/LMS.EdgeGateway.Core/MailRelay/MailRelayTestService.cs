@@ -121,10 +121,10 @@ public sealed partial class MailRelayTestService(
         {
             MailRelayTestStatus.Sent => "The selected user policy passed, Postfix accepted the message, and the destination mail server accepted delivery.",
             MailRelayTestStatus.Deferred when IsResolverFailure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but the relay could not resolve the recipient domain.",
-            MailRelayTestStatus.Deferred when IsPort25Failure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but delivery still used TCP/25. Clear the queue so the next attempt uses STARTTLS on 587.",
-            MailRelayTestStatus.Deferred => "The selected user policy and relay are working, but the destination deferred STARTTLS on 587. The diagnostic below is the reason returned by Postfix or the receiving host.",
+            MailRelayTestStatus.Deferred when IsPort25Failure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but this Home Assistant network cannot reach the destination MX on TCP/25. Full LMS works because that host can. Outlook MX does not accept mail on 587.",
+            MailRelayTestStatus.Deferred => "The selected user policy and relay are working, but Internet delivery was deferred. The diagnostic below is the reason returned by Postfix or the destination server.",
             MailRelayTestStatus.Bounced => "The selected user policy and relay accepted the message, but downstream delivery bounced.",
-            _ => "The selected user policy passed and Postfix accepted the message. It is still trying the recipient MX on 587."
+            _ => "The selected user policy passed and Postfix accepted the message. It is still trying the recipient MX on TCP/25, the same path full LMS uses."
         };
 
         return await ResultAsync(
@@ -302,7 +302,7 @@ public sealed partial class MailRelayTestService(
         return lastEvidence ?? new MailRelayDeliveryEvidence(
             MailRelayTestStatus.Queued,
             null,
-            "Postfix is still trying to deliver. No MX response was logged during the test window. Internet delivery uses STARTTLS on 587.");
+            "Postfix is still trying to deliver. No MX response was logged during the test window. Home ISPs often block outbound TCP/25; full LMS usually runs on a host that is not blocked.");
     }
 
     internal static MailRelayDeliveryEvidence? ParseLogEvidence(string output, string? queueId = null)
