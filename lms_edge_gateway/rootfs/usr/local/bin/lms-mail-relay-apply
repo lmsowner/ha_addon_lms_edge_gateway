@@ -22,12 +22,7 @@ fi
 [[ -f "${CONFIG_ROOT}/legacy_clients.cidr" ]] && cp "${CONFIG_ROOT}/legacy_clients.cidr" /etc/postfix/legacy_clients.cidr
 [[ -f "${CONFIG_ROOT}/legacy_senders.pcre" ]] && cp "${CONFIG_ROOT}/legacy_senders.pcre" /etc/postfix/legacy_senders.pcre
 [[ -f "${CONFIG_ROOT}/header_checks.pcre" ]] && cp "${CONFIG_ROOT}/header_checks.pcre" /etc/postfix/header_checks.pcre
-if [[ -f "${CONFIG_ROOT}/sasl_passwd" ]]; then
-  cp "${CONFIG_ROOT}/sasl_passwd" /etc/postfix/sasl_passwd
-  chmod 0600 /etc/postfix/sasl_passwd
-else
-  rm -f /etc/postfix/sasl_passwd
-fi
+rm -f /etc/postfix/sasl_passwd "${CONFIG_ROOT}/sasl_passwd"
 [[ -f "${CONFIG_ROOT}/opendkim.conf" ]] && cp "${CONFIG_ROOT}/opendkim.conf" /etc/opendkim.conf
 
 if [[ -d "${CONFIG_ROOT}/dkim" ]]; then
@@ -122,14 +117,22 @@ ensure_main_cf_param /etc/postfix/main.cf smtp_connect_timeout "15"
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_helo_timeout "15"
 ensure_main_cf_param /etc/postfix/main.cf smtp_helo_timeout "15"
 
-# Home ISPs block outbound TCP/25. Do not talk to destination MX hosts unless a 587/465 smarthost is set.
-if grep -qE '^relayhost[[:space:]]*=[[:space:]]*\[.+\]:[0-9]+' /etc/postfix/main.cf; then
-  ensure_main_cf_param "${CONFIG_ROOT}/main.cf" default_transport "smtp"
-  ensure_main_cf_param /etc/postfix/main.cf default_transport "smtp"
-else
-  ensure_main_cf_param "${CONFIG_ROOT}/main.cf" default_transport "error:Outbound TCP/25 is disabled. Configure authenticated SMTP on 587."
-  ensure_main_cf_param /etc/postfix/main.cf default_transport "error:Outbound TCP/25 is disabled. Configure authenticated SMTP on 587."
-fi
+# Internet delivery is STARTTLS on 587 to the recipient MX. Port 25 is LAN submission only.
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tcp_port "587"
+ensure_main_cf_param /etc/postfix/main.cf smtp_tcp_port "587"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" default_transport "smtp"
+ensure_main_cf_param /etc/postfix/main.cf default_transport "smtp"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" relayhost ""
+ensure_main_cf_param /etc/postfix/main.cf relayhost ""
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_sasl_auth_enable "no"
+ensure_main_cf_param /etc/postfix/main.cf smtp_sasl_auth_enable "no"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tls_wrappermode "no"
+ensure_main_cf_param /etc/postfix/main.cf smtp_tls_wrappermode "no"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_tls_security_level "encrypt"
+ensure_main_cf_param /etc/postfix/main.cf smtp_tls_security_level "encrypt"
+for leftover in smtp_sasl_password_maps smtp_sasl_mechanism_filter smtp_sasl_security_options; do
+  sed -i "/^${leftover}[[:space:]]*=/d" "${CONFIG_ROOT}/main.cf" /etc/postfix/main.cf 2>/dev/null || true
+done
 
 # Keep the outbound SMTP client out of the Postfix chroot so MX lookups work in the add-on.
 if grep -qE '^[#]*smtp[[:space:]]+unix[[:space:]]' /etc/postfix/master.cf; then
@@ -160,10 +163,6 @@ else
   postfix start
 fi
 
-if grep -qE '^relayhost[[:space:]]*=[[:space:]]*\[.+\]:[0-9]+' /etc/postfix/main.cf; then
-  postqueue -f >/dev/null 2>&1 || true
-else
-  postsuper -d ALL >/dev/null 2>&1 || true
-fi
+postqueue -f >/dev/null 2>&1 || true
 
 bashio::log.info "Mail Relay configuration applied."

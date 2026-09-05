@@ -20,13 +20,10 @@ public sealed class MailRelayService(
 
         var configuration = await configurationTask;
         var preflight = await preflightTask;
-        var needsSmarthost = configuration is { Enabled: true, UseSmarthost: false };
         var status = configuration is null
             ? MailRelayOperationalStatus.NotConfigured
             : configuration.Enabled
-                ? needsSmarthost
-                    ? MailRelayOperationalStatus.Warning
-                    : MailRelayOperationalStatus.Healthy
+                ? MailRelayOperationalStatus.Healthy
                 : MailRelayOperationalStatus.NotConfigured;
 
         var summary = configuration is null
@@ -34,9 +31,7 @@ public sealed class MailRelayService(
                 ? "This Home Assistant host is suitable. Mail Relay has not been configured yet."
                 : "Complete the required preflight checks before configuring Mail Relay."
             : configuration.Enabled
-                ? needsSmarthost
-                    ? $"Mail Relay is listening on {configuration.RelayHostname}:{configuration.SubmissionPort}. Outbound TCP/25 is disabled. Configure authenticated SMTP on 587."
-                    : $"Mail Relay is configured at {configuration.RelayHostname}:{configuration.SubmissionPort}."
+                ? $"Mail Relay is configured at {configuration.RelayHostname}:{configuration.SubmissionPort}. Internet delivery uses STARTTLS on 587 to the recipient MX. Port 25 is LAN-only."
                 : "Mail Relay configuration is saved but disabled.";
 
         return new MailRelayDashboardViewModel(
@@ -100,11 +95,6 @@ public sealed class MailRelayService(
         MailRelayLegacySubmissionRequest request,
         CancellationToken cancellationToken = default) =>
         provisioningService.ConfigureLegacySubmissionAsync(request, null, cancellationToken);
-
-    public Task<MailRelaySmarthostResult> UpdateSmarthostAsync(
-        MailRelaySmarthostRequest request,
-        CancellationToken cancellationToken = default) =>
-        provisioningService.ConfigureSmarthostAsync(request, null, cancellationToken);
 
     public Task<MailRelayRemovalResult> RemoveMailRelayAsync(
         MailRelayRemovalRequest request,

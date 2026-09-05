@@ -20,18 +20,6 @@ public sealed record MailRelayLegacySubmissionResult(
     MailRelayConfiguration? Configuration,
     string Summary);
 
-public sealed record MailRelaySmarthostRequest(
-    bool Enabled,
-    string Hostname,
-    int Port,
-    string Username,
-    string Password);
-
-public sealed record MailRelaySmarthostResult(
-    bool Success,
-    MailRelayConfiguration? Configuration,
-    string Summary);
-
 public sealed record MailRelayRemovalRequest(
     bool RemoveContainer,
     bool RemoveApplicationCredentials,
