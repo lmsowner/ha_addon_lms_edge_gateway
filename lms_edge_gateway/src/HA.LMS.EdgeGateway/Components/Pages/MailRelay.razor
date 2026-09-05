@@ -394,11 +394,11 @@
                             Relay hostname
                             <LmsFieldInfo Title="Relay hostname" Body="Defaults to smtp on the selected zone. This is the SMTP host applications use. It is not proxied through Cloudflare." />
                         </span>
-                        <input @bind="setupRelayHostname" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" placeholder="smtp.example.com" />
+                        <input @bind="setupRelayHostname" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" />
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Sending domain</span>
-                        <input @bind="setupSendingDomain" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" placeholder="example.com" />
+                        <input @bind="setupSendingDomain" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" />
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">DKIM selector</span>
@@ -595,7 +595,7 @@
                 <div>
                     <p class="eyebrow">Sending domain</p>
                     <h2 id="mail-relay-add-domain-title">Add another domain</h2>
-                    <p class="meta-text">Type the sending domain. LMS picks the matching Cloudflare zone and suggests a free smtp, relay or mail hostname. Review DNS is optional. Microsoft 365 MX is never replaced.</p>
+                    <p class="meta-text">Choose a Cloudflare zone. LMS fills the sending domain, DKIM selector, and a free smtp, relay or mail hostname. Microsoft 365 MX is never replaced.</p>
                 </div>
                 <button class="edge-modal-close" type="button" aria-label="Close add domain" @onclick="CloseAddDomainModal">x</button>
             </header>
@@ -605,14 +605,10 @@
                     <p class="callout @(domainMessageIsError ? "warning" : "ready")">@domainMessage</p>
                 }
                 <div class="edge-form-grid mail-relay-form-grid">
-                    <label class="ui-field">
-                        <span class="ui-field-label">Sending domain</span>
-                        <input @bind="addDomainName" @bind:after="OnAddDomainNameChanged" placeholder="aboutmyrental.com" />
-                    </label>
-                    <label class="ui-field">
+                    <label class="ui-field mail-relay-span-field">
                         <span class="ui-field-label">Cloudflare zone</span>
-                        <select @bind="addDomainZoneId" @bind:after="OnAddDomainZoneChanged">
-                            <option value="">Select the zone that owns this domain</option>
+                        <select @bind="addDomainZoneId" @bind:after="OnAddDomainZoneChangedAsync">
+                            <option value="">Select a zone</option>
                             @foreach (var zone in dashboard?.Preflight.AvailableZones ?? [])
                             {
                                 <option value="@zone.ZoneId">@zone.ZoneName</option>
@@ -620,19 +616,23 @@
                         </select>
                     </label>
                     <label class="ui-field">
-                        <span class="ui-field-label">DKIM selector</span>
-                        <input @bind="addDomainSelector" @bind:after="ClearDomainPreview" placeholder="lms" />
+                        <span class="ui-field-label">Sending domain</span>
+                        <input @bind="addDomainName" @bind:after="OnAddDomainNameChanged" />
                     </label>
-                    <label class="ui-field mail-relay-hostname-field">
+                    <label class="ui-field">
+                        <span class="ui-field-label">DKIM selector</span>
+                        <input @bind="addDomainSelector" @bind:after="ClearDomainPreview" />
+                    </label>
+                    <label class="ui-field mail-relay-span-field">
                         <span class="ui-field-label">Mail hostname</span>
-                        <input @bind="addDomainHostname" @bind:after="OnAddDomainHostnameChanged" placeholder="smtp.aboutmyrental.com" />
+                        <input @bind="addDomainHostname" @bind:after="OnAddDomainHostnameChanged" />
                         @if (isCheckingHostname)
                         {
-                            <span class="meta-text">Checking whether smtp, relay or mail is free on this domain...</span>
+                            <span class="meta-text">Checking smtp, relay and mail...</span>
                         }
                         else if (hostnameSuggestion is not null)
                         {
-                            <span class="meta-text">@hostnameSuggestion.Detail Leave blank if you do not want an extra A record.</span>
+                            <span class="meta-text">@hostnameSuggestion.Detail</span>
                             @if (hostnameSuggestion.TakenHostnames.Count > 0)
                             {
                                 <span class="meta-text">Already in use: @string.Join(", ", hostnameSuggestion.TakenHostnames)</span>
@@ -1481,29 +1481,20 @@
         lastAutoHostname = string.Empty;
         hostnameClearedByUser = false;
         hostnameSuggestion = null;
-        var sendingDomain = addDomainName.Trim().TrimEnd('.').ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(sendingDomain) || dashboard is null)
-        {
-            return;
-        }
-
-        var match = dashboard.Preflight.AvailableZones
-            .Where(zone =>
-                sendingDomain.Equals(zone.ZoneName, StringComparison.OrdinalIgnoreCase) ||
-                sendingDomain.EndsWith('.' + zone.ZoneName, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(zone => zone.ZoneName.Length)
-            .FirstOrDefault();
-        if (match is not null)
-        {
-            addDomainZoneId = match.ZoneId;
-        }
-
         await RefreshHostnameSuggestionAsync();
     }
 
-    private async Task OnAddDomainZoneChanged()
+    private async Task OnAddDomainZoneChangedAsync()
     {
         ClearDomainPreview();
+        var zone = (dashboard?.Preflight.AvailableZones ?? [])
+            .FirstOrDefault(item => item.ZoneId.Equals(addDomainZoneId, StringComparison.Ordinal));
+        addDomainName = zone?.ZoneName ?? string.Empty;
+        addDomainSelector = "lms";
+        addDomainHostname = string.Empty;
+        lastAutoHostname = string.Empty;
+        hostnameClearedByUser = false;
+        hostnameSuggestion = null;
         await RefreshHostnameSuggestionAsync();
     }
 
