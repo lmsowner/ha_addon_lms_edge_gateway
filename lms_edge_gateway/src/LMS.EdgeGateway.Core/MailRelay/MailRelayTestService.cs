@@ -115,14 +115,16 @@ public sealed partial class MailRelayTestService(
 
         var queueId = await FindQueueIdAsync(messageId, cancellationToken);
         await store.SaveClientAsync(client with { LastUsedUtc = testedAt, UpdatedUtc = testedAt }, cancellationToken);
+        await hostCommand.RunAsync("postqueue", ["-f"], cancellationToken, timeout: TimeSpan.FromSeconds(10));
         var delivery = await InspectDeliveryAsync(queueId, cancellationToken);
         var summary = delivery.Status switch
         {
             MailRelayTestStatus.Sent => "The selected user policy passed, Postfix accepted the message, and the destination mail server accepted delivery.",
             MailRelayTestStatus.Deferred when IsResolverFailure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but the relay could not resolve the recipient domain.",
+            MailRelayTestStatus.Deferred when IsPort25Failure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but this host cannot reach the destination MX on TCP/25. That is common on home ISPs. The message stays queued and Postfix will retry.",
             MailRelayTestStatus.Deferred => "The selected user policy and relay are working, but Internet delivery was deferred. The diagnostic below is the reason returned by Postfix or the destination server.",
             MailRelayTestStatus.Bounced => "The selected user policy and relay accepted the message, but downstream delivery bounced.",
-            _ => "The selected user policy passed and Postfix accepted the message. It is still queued, so inbox delivery is not yet known."
+            _ => "The selected user policy passed and Postfix accepted the message. It is still trying to reach the destination MX on TCP/25."
         };
 
         return await ResultAsync(
@@ -184,10 +186,30 @@ public sealed partial class MailRelayTestService(
 
     private async Task<string> ReadCombinedMailLogsAsync(CancellationToken cancellationToken)
     {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         var chunks = new List<string>();
         foreach (var path in new[] { paths.MailLogPath, paths.SystemMailLogPath, paths.MessagesLogPath })
         {
             if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            string resolved;
+            try
+            {
+                resolved = Path.GetFullPath(path);
+                if (File.ResolveLinkTarget(path, returnFinalTarget: true) is { } target)
+                {
+                    resolved = target.FullName;
+                }
+            }
+            catch (IOException)
+            {
+                resolved = Path.GetFullPath(path);
+            }
+
+            if (!seen.Add(resolved))
             {
                 continue;
             }
@@ -228,8 +250,16 @@ public sealed partial class MailRelayTestService(
             return new MailRelayDeliveryEvidence(MailRelayTestStatus.Queued, null, "Postfix accepted the message but did not return a queue ID.");
         }
 
-        var delays = new[] { TimeSpan.Zero, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3) };
-        MailRelayDeliveryEvidence? lastQueueEvidence = null;
+        var delays = new[]
+        {
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(4),
+            TimeSpan.FromSeconds(8),
+            TimeSpan.FromSeconds(12),
+            TimeSpan.FromSeconds(16)
+        };
+        MailRelayDeliveryEvidence? lastEvidence = null;
         foreach (var delay in delays)
         {
             if (delay > TimeSpan.Zero)
@@ -238,8 +268,8 @@ public sealed partial class MailRelayTestService(
             }
 
             var logs = await ReadCombinedMailLogsAsync(cancellationToken);
-            var logEvidence = ParseLogEvidence(logs);
-            if (logEvidence?.Status is MailRelayTestStatus.Sent or MailRelayTestStatus.Bounced)
+            var logEvidence = ParseLogEvidence(logs, queueId);
+            if (logEvidence?.Status is MailRelayTestStatus.Sent or MailRelayTestStatus.Bounced or MailRelayTestStatus.Deferred)
             {
                 return logEvidence;
             }
@@ -249,36 +279,51 @@ public sealed partial class MailRelayTestService(
                 ["-j"],
                 cancellationToken,
                 timeout: TimeSpan.FromSeconds(10));
-            lastQueueEvidence = ParseQueueEvidence(queueId, queue.StandardOutput) ?? logEvidence ?? lastQueueEvidence;
-            if (lastQueueEvidence?.Status == MailRelayTestStatus.Deferred)
+            lastEvidence = ParseQueueEvidence(queueId, queue.StandardOutput) ?? logEvidence ?? lastEvidence;
+            if (lastEvidence?.Status == MailRelayTestStatus.Deferred)
             {
-                return lastQueueEvidence;
+                return lastEvidence;
             }
         }
 
-        return lastQueueEvidence ?? new MailRelayDeliveryEvidence(
+        return lastEvidence ?? new MailRelayDeliveryEvidence(
             MailRelayTestStatus.Queued,
             null,
-            "Postfix accepted the message. No final delivery response was available during the test window.");
+            "Postfix is still trying to deliver. No MX response was logged during the test window. Home ISPs often block outbound TCP/25.");
     }
 
-    internal static MailRelayDeliveryEvidence? ParseLogEvidence(string output)
+    internal static MailRelayDeliveryEvidence? ParseLogEvidence(string output, string? queueId = null)
     {
-        var matches = DeliveryStatusRegex().Matches(output ?? string.Empty);
-        if (matches.Count == 0)
+        var scoped = string.IsNullOrWhiteSpace(queueId)
+            ? output ?? string.Empty
+            : string.Join('\n', (output ?? string.Empty)
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .Where(line => line.Contains(queueId, StringComparison.OrdinalIgnoreCase)));
+        var matches = DeliveryStatusRegex().Matches(scoped);
+        if (matches.Count > 0)
+        {
+            var match = matches[^1];
+            var status = match.Groups["status"].Value.ToLowerInvariant() switch
+            {
+                "sent" => MailRelayTestStatus.Sent,
+                "bounced" => MailRelayTestStatus.Bounced,
+                _ => MailRelayTestStatus.Deferred
+            };
+            var destination = match.Groups["relay"].Success ? match.Groups["relay"].Value : null;
+            return new MailRelayDeliveryEvidence(status, destination, CleanDetail(match.Groups["detail"].Value));
+        }
+
+        var connect = ConnectAttemptRegex().Matches(scoped);
+        if (connect.Count == 0)
         {
             return null;
         }
 
-        var match = matches[^1];
-        var status = match.Groups["status"].Value.ToLowerInvariant() switch
-        {
-            "sent" => MailRelayTestStatus.Sent,
-            "bounced" => MailRelayTestStatus.Bounced,
-            _ => MailRelayTestStatus.Deferred
-        };
-        var destination = match.Groups["relay"].Success ? match.Groups["relay"].Value : null;
-        return new MailRelayDeliveryEvidence(status, destination, CleanDetail(match.Groups["detail"].Value));
+        var last = connect[^1];
+        return new MailRelayDeliveryEvidence(
+            MailRelayTestStatus.Deferred,
+            last.Groups["relay"].Value,
+            CleanDetail($"connect to {last.Groups["relay"].Value}: {last.Groups["detail"].Value}"));
     }
 
     internal static MailRelayDeliveryEvidence? ParseQueueEvidence(string queueId, string output)
@@ -434,7 +479,9 @@ public sealed partial class MailRelayTestService(
                 (!string.IsNullOrWhiteSpace(queueId) && line.Contains(queueId, StringComparison.OrdinalIgnoreCase)) ||
                 (!string.IsNullOrWhiteSpace(messageId) && line.Contains(messageId, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
-        var source = keyed.Length > 0 ? keyed : all;
+        var source = (keyed.Length > 0 ? keyed : all)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         return source.Length <= maxLines
             ? source
             : source[^maxLines..];
@@ -476,8 +523,18 @@ public sealed partial class MailRelayTestService(
         detail.Contains("Name service error", StringComparison.OrdinalIgnoreCase) ||
         detail.Contains("Temporary failure in name resolution", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsPort25Failure(string detail) =>
+        detail.Contains("Connection timed out", StringComparison.OrdinalIgnoreCase) ||
+        detail.Contains("Connection refused", StringComparison.OrdinalIgnoreCase) ||
+        detail.Contains("Network is unreachable", StringComparison.OrdinalIgnoreCase) ||
+        detail.Contains("No route to host", StringComparison.OrdinalIgnoreCase) ||
+        detail.Contains(":25", StringComparison.Ordinal);
+
     [GeneratedRegex(@"relay=(?<relay>[^,\s]+).*status=(?<status>sent|deferred|bounced)\s+\((?<detail>[^\r\n]*)\)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DeliveryStatusRegex();
+
+    [GeneratedRegex(@"connect to (?<relay>\S+): (?<detail>Connection timed out|Connection refused|Network is unreachable|No route to host|Host or domain name not found[^\r\n]*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ConnectAttemptRegex();
 
     [GeneratedRegex(@"postfix/(?:cleanup|pickup)\[\d+\]:\s+(?<queueId>[A-F0-9]+):\s+message-id=<(?<messageId>[^>]+)>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex QueueMessageIdRegex();

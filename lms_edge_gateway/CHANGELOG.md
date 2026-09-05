@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.12.24
+
+- Wait for a real MX response on test send, un-chroot the outbound SMTP client, and say when TCP/25 is blocked instead of stopping at Queued.
+
 ## 2026.09.05.12.18
 
 - Allow Postfix to write the send log under /data. The last build pointed maillog_file there without the required prefix, so sendmail refused to start.

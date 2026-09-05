@@ -111,6 +111,17 @@ ensure_main_cf_param "${CONFIG_ROOT}/main.cf" maillog_file_prefixes "/var, /dev/
 ensure_main_cf_param /etc/postfix/main.cf maillog_file_prefixes "/var, /dev/stdout, /data"
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" maillog_file "${MAIL_LOG}"
 ensure_main_cf_param /etc/postfix/main.cf maillog_file "${MAIL_LOG}"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_connect_timeout "15"
+ensure_main_cf_param /etc/postfix/main.cf smtp_connect_timeout "15"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_helo_timeout "15"
+ensure_main_cf_param /etc/postfix/main.cf smtp_helo_timeout "15"
+
+# Keep the outbound SMTP client out of the Postfix chroot so MX lookups work in the add-on.
+if grep -qE '^[#]*smtp[[:space:]]+unix[[:space:]]' /etc/postfix/master.cf; then
+  sed -i -E 's/^[#]*smtp[[:space:]]+unix[[:space:]].*/smtp      unix  -       -       n       -       -       smtp/' /etc/postfix/master.cf
+else
+  printf 'smtp      unix  -       -       n       -       -       smtp\n' >> /etc/postfix/master.cf
+fi
 
 if command -v rsyslogd >/dev/null 2>&1 && ! pgrep -x rsyslogd >/dev/null 2>&1; then
   if [[ ! -f /etc/rsyslog.conf ]] || ! grep -q 'mail.log' /etc/rsyslog.conf; then
