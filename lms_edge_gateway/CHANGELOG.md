@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.12.36
+
+- Mail Relay can send through authenticated SMTP on 587 or 465 (smarthost). Home ISPs block outbound TCP/25, so direct MX delivery from this host will not work.
+
 ## 2026.09.05.12.27
 
 - Mail Relay has a Postfix send-log card with filters, queue view and copy.

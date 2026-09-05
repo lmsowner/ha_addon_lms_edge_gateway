@@ -192,11 +192,34 @@
         <section class="surface-card edge-card">
             <div class="table-header">
                 <div>
+                    <p class="eyebrow">Secure delivery</p>
+                    <h2>Authenticated SMTP on 587</h2>
+                    <p class="meta-text">
+                        Home ISPs block outbound TCP/25, so Mail Relay cannot talk to destination MX hosts directly.
+                        Send through a provider that accepts STARTTLS on 587, for example smtp.office365.com.
+                        DKIM still signs the message here.
+                    </p>
+                </div>
+                <LmsStatusPill Text="@SmarthostLabel" Tone="@SmarthostTone" />
+            </div>
+            <p class="meta-text">@SmarthostDetail</p>
+            <div class="toolbar-row">
+                <LmsButton Label="Configure smarthost" Icon="edit" Primary="@(!IsSmarthostEnabled)" OnClick="OpenSmarthostModal" />
+            </div>
+        </section>
+
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
                     <p class="eyebrow">Test email</p>
                     <h2>Send through Mail Relay</h2>
                     <p class="meta-text">This tests the local SMTP user. It is not the Messaging client on the Security tab.</p>
                 </div>
             </div>
+            @if (!IsSmarthostEnabled)
+            {
+                <p class="callout warning">Do not send a test until the smarthost on 587 is configured. Direct MX on port 25 will time out from this home network.</p>
+            }
             <div class="edge-form-grid mail-relay-form-grid">
                 <label class="ui-field">
                     <span class="ui-field-label">SMTP user</span>
@@ -594,6 +617,60 @@
     </div>
 }
 
+@if (showSmarthostModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-smarthost-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Secure delivery</p>
+                    <h2 id="mail-relay-smarthost-title">Authenticated SMTP</h2>
+                    <p class="meta-text">This is outbound client SMTP to your provider. It is not the inbound MX path and it is not the LAN listener on 587.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close smarthost settings" @onclick="CloseSmarthostModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (!string.IsNullOrWhiteSpace(smarthostMessage))
+                {
+                    <p class="callout @(smarthostMessageIsError ? "warning" : "ready")">@smarthostMessage</p>
+                }
+                <label class="mail-relay-check-field">
+                    <input type="checkbox" @bind="smarthostEnabled" />
+                    <span>Send through a smarthost on 587 or 465</span>
+                </label>
+                <div class="edge-form-grid mail-relay-form-grid">
+                    <label class="ui-field">
+                        <span class="ui-field-label">Host</span>
+                        <input @bind="smarthostHostname" placeholder="smtp.office365.com" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Port</span>
+                        <input type="number" min="1" max="65535" @bind="smarthostPort" />
+                        <span class="ui-field-helper">587 is STARTTLS. 465 is implicit TLS.</span>
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Username</span>
+                        <input @bind="smarthostUsername" placeholder="you@example.com" autocomplete="username" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Password</span>
+                        <input type="password" @bind="smarthostPassword" autocomplete="new-password" placeholder="@(dashboard?.Configuration?.HasSmarthostPassword == true ? "Leave blank to keep current" : "Provider SMTP password")" />
+                    </label>
+                </div>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="CloseSmarthostModal" />
+                <LmsButton Label="@(isSavingSmarthost ? "Saving..." : "Save")"
+                           Icon="save"
+                           Primary="true"
+                           Busy="@isSavingSmarthost"
+                           Disabled="@isSavingSmarthost"
+                           OnClick="SaveSmarthostAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
 @if (showLegacyModal)
 {
     <div class="edge-modal-backdrop" role="presentation">
@@ -712,12 +789,14 @@
     private bool isSendingTest;
     private bool isCheckingPublicIp;
     private bool isSavingPublicIp;
+    private bool isSavingSmarthost;
     private bool isSavingLegacy;
     private bool isRemoving;
 
     private bool showSetupModal;
     private bool showClientModal;
     private bool showPublicIpModal;
+    private bool showSmarthostModal;
     private bool showLegacyModal;
     private bool showRemovalModal;
 
@@ -744,6 +823,13 @@
     private bool publicIpMonitorEnabled = true;
     private int publicIpIntervalMinutes = 15;
 
+    private bool smarthostEnabled;
+    private string smarthostHostname = "smtp.office365.com";
+    private int smarthostPort = 587;
+    private string smarthostUsername = string.Empty;
+    private string smarthostPassword = string.Empty;
+    private string smarthostMessage = string.Empty;
+    private bool smarthostMessageIsError;
     private bool legacyEnabled;
     private string legacyListenAddressesText = string.Empty;
     private string legacyAllowedCidrsText = string.Empty;
@@ -772,6 +858,27 @@
         !string.IsNullOrWhiteSpace(setupApplicationUsername);
     private string TestCalloutClass =>
         testResult?.Status == MailRelayTestStatus.Sent ? "ready" : "warning";
+    private bool IsSmarthostEnabled => dashboard?.Configuration?.UseSmarthost == true;
+    private string SmarthostLabel =>
+        !IsSmarthostEnabled
+            ? "MX :25"
+            : dashboard?.Configuration?.SmarthostPort == 465
+                ? "465 TLS"
+                : "587 STARTTLS";
+    private LmsStatusTone SmarthostTone => IsSmarthostEnabled ? LmsStatusTone.Ready : LmsStatusTone.Warning;
+    private string SmarthostDetail
+    {
+        get
+        {
+            var configuration = dashboard?.Configuration;
+            if (configuration?.UseSmarthost == true)
+            {
+                return $"Outbound mail uses {configuration.SmarthostHostname}:{configuration.SmarthostPort} as {configuration.SmarthostUsername}.";
+            }
+
+            return "Not configured. Test sends will keep timing out on destination MX port 25 from this home network.";
+        }
+    }
     private IEnumerable<MailRelayLogEntry> VisibleMailLogEvents
     {
         get
@@ -1282,6 +1389,57 @@
         finally
         {
             isCheckingPublicIp = false;
+        }
+    }
+
+    private void OpenSmarthostModal()
+    {
+        var configuration = dashboard?.Configuration;
+        smarthostEnabled = configuration?.UseSmarthost == true ||
+                           string.IsNullOrWhiteSpace(configuration?.SmarthostHostname);
+        smarthostHostname = string.IsNullOrWhiteSpace(configuration?.SmarthostHostname)
+            ? "smtp.office365.com"
+            : configuration.SmarthostHostname;
+        smarthostPort = configuration?.SmarthostPort is 465 or 587 ? configuration.SmarthostPort : 587;
+        smarthostUsername = configuration?.SmarthostUsername ?? string.Empty;
+        smarthostPassword = string.Empty;
+        smarthostMessage = string.Empty;
+        showSmarthostModal = true;
+    }
+
+    private void CloseSmarthostModal() => showSmarthostModal = false;
+
+    private async Task SaveSmarthostAsync()
+    {
+        isSavingSmarthost = true;
+        smarthostMessage = string.Empty;
+        try
+        {
+            var result = await MailRelayService.UpdateSmarthostAsync(new MailRelaySmarthostRequest(
+                smarthostEnabled,
+                smarthostHostname,
+                smarthostPort,
+                smarthostUsername,
+                smarthostPassword));
+            smarthostMessage = result.Summary;
+            smarthostMessageIsError = !result.Success;
+            if (!result.Success)
+            {
+                return;
+            }
+
+            await LoadDashboardAsync();
+            showSmarthostModal = false;
+            SetAction(result.Summary, false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            smarthostMessage = exception.Message;
+            smarthostMessageIsError = true;
+        }
+        finally
+        {
+            isSavingSmarthost = false;
         }
     }
 
