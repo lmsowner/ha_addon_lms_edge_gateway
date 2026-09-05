@@ -88,6 +88,13 @@ public sealed class MailRelayService(
 
     public string GenerateClientPassword() => clientService.GeneratePassword();
 
+    public Task<MailRelayHostnameSuggestion> SuggestMailHostnameAsync(
+        string cloudflareZoneId,
+        string sendingDomain,
+        string? preferredHostname = null,
+        CancellationToken cancellationToken = default) =>
+        provisioningService.SuggestMailHostnameAsync(cloudflareZoneId, sendingDomain, preferredHostname, cancellationToken);
+
     public Task<MailRelayDomainPreview> PreviewDomainAsync(
         MailRelayDomainRequest request,
         CancellationToken cancellationToken = default) =>

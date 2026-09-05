@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.17.33
+
+- Add domain checks Cloudflare for a free smtp, relay or mail hostname and creates that DNS-only A record when you keep the suggestion.
+
 ## 2026.09.05.17.22
 
 - Move the send log to the bottom and stop calling normal Postfix rejects an error. Widen the SMTP password field. Add domain no longer pre-fills the first Cloudflare zone or require a review click.

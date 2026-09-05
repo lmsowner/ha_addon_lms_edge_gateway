@@ -4594,7 +4594,8 @@ textarea {
     width: auto;
 }
 
-.mail-relay-form-grid > .mail-relay-password-field {
+.mail-relay-form-grid > .mail-relay-password-field,
+.mail-relay-form-grid > .mail-relay-hostname-field {
     grid-column: 1 / -1;
 }
 
