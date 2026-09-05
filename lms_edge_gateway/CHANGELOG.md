@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.17.42
+
+- Add domain starts from the Cloudflare zone. Sending domain, DKIM and mail hostname fill from that choice. No hardcoded domain placeholders.
+
 ## 2026.09.05.17.33
 
 - Add domain checks Cloudflare for a free smtp, relay or mail hostname and creates that DNS-only A record when you keep the suggestion.
