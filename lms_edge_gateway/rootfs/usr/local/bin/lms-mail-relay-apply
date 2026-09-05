@@ -64,7 +64,20 @@ for resolver_file in resolv.conf hosts host.conf nsswitch.conf services protocol
   fi
 done
 
-if [[ -f /etc/postfix/master.cf && -f "${CONFIG_ROOT}/master-lms.cf" ]]; then
+if [[ ! -f /etc/postfix/aliases ]]; then
+  printf 'root: root\n' > /etc/postfix/aliases
+fi
+newaliases >/dev/null 2>&1 || true
+
+if [[ ! -f /etc/postfix/master.cf ]]; then
+  if [[ -f /etc/postfix/master.cf.proto ]]; then
+    cp /etc/postfix/master.cf.proto /etc/postfix/master.cf
+  else
+    touch /etc/postfix/master.cf
+  fi
+fi
+
+if [[ -f "${CONFIG_ROOT}/master-lms.cf" ]]; then
   if grep -q "Managed by Linux Made Sane" /etc/postfix/master.cf; then
     sed -i '/# Managed by Linux Made Sane/,$d' /etc/postfix/master.cf
   fi
@@ -73,12 +86,27 @@ if [[ -f /etc/postfix/master.cf && -f "${CONFIG_ROOT}/master-lms.cf" ]]; then
   cat "${CONFIG_ROOT}/master-lms.cf" >> /etc/postfix/master.cf
 fi
 
-if command -v postfix >/dev/null 2>&1 && postfix status >/dev/null 2>&1; then
-  postfix reload >/dev/null
+if command -v rsyslogd >/dev/null 2>&1 && ! pgrep -x rsyslogd >/dev/null 2>&1; then
+  mkdir -p /var/log
+  if [[ ! -f /etc/rsyslog.conf ]] || ! grep -q 'mail.log' /etc/rsyslog.conf; then
+    printf 'mail.*                         -/var/log/mail.log\n' >> /etc/rsyslog.conf
+  fi
+  rsyslogd || true
 fi
 
-if command -v opendkim >/dev/null 2>&1 && [[ -f /run/opendkim/opendkim.pid ]]; then
-  kill -HUP "$(cat /run/opendkim/opendkim.pid)" >/dev/null 2>&1 || true
+if command -v opendkim >/dev/null 2>&1 && [[ -f /etc/opendkim.conf ]]; then
+  if [[ ! -f /run/opendkim/opendkim.pid ]] || ! kill -0 "$(cat /run/opendkim/opendkim.pid 2>/dev/null)" 2>/dev/null; then
+    opendkim -x /etc/opendkim.conf || opendkim || true
+  else
+    kill -HUP "$(cat /run/opendkim/opendkim.pid)" >/dev/null 2>&1 || true
+  fi
+fi
+
+postfix check
+if postfix status >/dev/null 2>&1; then
+  postfix reload
+else
+  postfix start
 fi
 
 bashio::log.info "Mail Relay configuration applied."

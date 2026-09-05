@@ -2052,6 +2052,20 @@ public sealed partial class MailRelayProvisioningService(
             "Apply Mail Relay configuration",
             cancellationToken,
             timeout: CommandTimeout);
+
+        var start = await hostCommand.RunAsync(
+            "postfix",
+            ["start"],
+            cancellationToken,
+            timeout: TimeSpan.FromSeconds(20));
+        if (!start.Succeeded &&
+            !IsMissingHostCommand(start) &&
+            !start.StandardError.Contains("already running", StringComparison.OrdinalIgnoreCase) &&
+            !start.StandardOutput.Contains("already running", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Postfix could not start: {FirstUsefulLine(start.StandardError, start.StandardOutput)}");
+        }
     }
 
     private async Task EnsureSaslUserAsync(
@@ -2085,9 +2099,9 @@ public sealed partial class MailRelayProvisioningService(
         }
     }
 
-    private static async Task WaitForListenerAsync(CancellationToken cancellationToken)
+    private async Task WaitForListenerAsync(CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 20; attempt++)
+        for (var attempt = 0; attempt < 40; attempt++)
         {
             try
             {
@@ -2102,7 +2116,22 @@ public sealed partial class MailRelayProvisioningService(
             await Task.Delay(500, cancellationToken);
         }
 
-        throw new InvalidOperationException("Mail Relay did not start listening on 127.0.0.1:587 after applying configuration.");
+        throw new InvalidOperationException(await DescribeListenerFailureAsync(cancellationToken));
+    }
+
+    private async Task<string> DescribeListenerFailureAsync(CancellationToken cancellationToken)
+    {
+        var status = await hostCommand.RunAsync("postfix", ["status"], cancellationToken, timeout: TimeSpan.FromSeconds(10));
+        var check = await hostCommand.RunAsync("postfix", ["check"], cancellationToken, timeout: TimeSpan.FromSeconds(15));
+        var logTail = string.Empty;
+        if (File.Exists(paths.MailLogPath))
+        {
+            var lines = (await File.ReadAllLinesAsync(paths.MailLogPath, cancellationToken)).TakeLast(8);
+            logTail = string.Join(" ", lines.Select(line => line.Trim()).Where(line => line.Length > 0));
+        }
+
+        return "Mail Relay did not start listening on 127.0.0.1:587 after applying configuration. " +
+               FirstUsefulLine(status.StandardError, status.StandardOutput, check.StandardError, check.StandardOutput, logTail);
     }
 
     private async Task TryStopMailRuntimeAsync(ICollection<string>? warnings, CancellationToken cancellationToken)
