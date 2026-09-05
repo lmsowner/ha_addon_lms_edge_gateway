@@ -283,8 +283,29 @@ public sealed record MailRelayTestResult(
     public IReadOnlyList<string> Logs => LogLines ?? [];
 }
 
+public enum MailRelayLogSeverity
+{
+    Info = 0,
+    Sent = 1,
+    Warning = 2,
+    Error = 3
+}
+
+public sealed record MailRelayLogEntry(
+    string Timestamp,
+    string Service,
+    string? QueueId,
+    string Detail,
+    MailRelayLogSeverity Severity);
+
 public sealed record MailRelayLogSnapshot(
     bool Available,
     string Path,
     string Summary,
-    IReadOnlyList<string> Lines);
+    IReadOnlyList<string> Lines,
+    IReadOnlyList<MailRelayLogEntry>? Entries = null,
+    IReadOnlyList<string>? QueueLines = null)
+{
+    public IReadOnlyList<MailRelayLogEntry> Events => Entries ?? [];
+    public IReadOnlyList<string> Queue => QueueLines ?? [];
+}

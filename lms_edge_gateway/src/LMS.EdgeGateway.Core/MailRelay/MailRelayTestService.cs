@@ -152,7 +152,11 @@ public sealed partial class MailRelayTestService(
         CancellationToken cancellationToken = default)
     {
         var logText = await ReadCombinedMailLogsAsync(cancellationToken);
-        var lines = new List<string>(SelectMailLogLines(logText, messageId, queueId, 120));
+        var entries = ParseLogEntries(logText, messageId, queueId, 160);
+        var lines = entries.Select(item => item.Timestamp.Length == 0
+                ? item.Detail
+                : $"{item.Timestamp} postfix/{item.Service}: {(string.IsNullOrWhiteSpace(item.QueueId) ? string.Empty : item.QueueId + ": ")}{item.Detail}".Trim())
+            .ToList();
 
         var queue = await hostCommand.RunAsync(
             "postqueue",
@@ -174,14 +178,14 @@ public sealed partial class MailRelayTestService(
 
         var path = File.Exists(paths.MailLogPath) ? paths.MailLogPath : paths.SystemMailLogPath;
         var available = File.Exists(paths.MailLogPath) || File.Exists(paths.SystemMailLogPath);
-        var summary = lines.Count == 0
+        var summary = entries.Count == 0 && queueLines.Length == 0
             ? available
                 ? "The send log is empty. Send a test, then refresh."
-                : "Postfix has not written a send log yet. Update the add-on and send the test again."
+                : "Postfix has not written a send log yet."
             : string.IsNullOrWhiteSpace(queueId) && string.IsNullOrWhiteSpace(messageId)
-                ? $"Latest send log and queue ({lines.Count} lines)."
-                : $"Send log for this test ({lines.Count} lines).";
-        return new MailRelayLogSnapshot(available || lines.Count > 0, path, summary, lines);
+                ? $"{entries.Count} Postfix events. Queue has {queueLines.Length} line(s)."
+                : $"{entries.Count} Postfix events for this send.";
+        return new MailRelayLogSnapshot(available || lines.Count > 0, path, summary, lines, entries, queueLines);
     }
 
     private async Task<string> ReadCombinedMailLogsAsync(CancellationToken cancellationToken)
@@ -466,6 +470,53 @@ public sealed partial class MailRelayTestService(
             log.Lines);
     }
 
+    internal static IReadOnlyList<MailRelayLogEntry> ParseLogEntries(
+        string logText,
+        string? messageId,
+        string? queueId,
+        int maxEntries)
+    {
+        var entries = new List<MailRelayLogEntry>();
+        foreach (var line in (logText ?? string.Empty).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var match = PostfixLogLineRegex().Match(line);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var entryQueueId = match.Groups["queueId"].Success ? match.Groups["queueId"].Value : null;
+            var detail = match.Groups["detail"].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(queueId) &&
+                !string.Equals(entryQueueId, queueId, StringComparison.OrdinalIgnoreCase) &&
+                !detail.Contains(queueId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(messageId) &&
+                !detail.Contains(messageId, StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(entryQueueId))
+            {
+                continue;
+            }
+
+            entries.Add(new MailRelayLogEntry(
+                match.Groups["timestamp"].Value,
+                match.Groups["service"].Value,
+                entryQueueId,
+                detail,
+                ClassifyLogDetail(detail)));
+        }
+
+        if (entries.Count <= maxEntries)
+        {
+            return entries;
+        }
+
+        return entries.Skip(entries.Count - maxEntries).ToArray();
+    }
+
     internal static IReadOnlyList<string> SelectMailLogLines(
         string logText,
         string? messageId,
@@ -523,6 +574,31 @@ public sealed partial class MailRelayTestService(
         detail.Contains("Name service error", StringComparison.OrdinalIgnoreCase) ||
         detail.Contains("Temporary failure in name resolution", StringComparison.OrdinalIgnoreCase);
 
+    private static MailRelayLogSeverity ClassifyLogDetail(string detail)
+    {
+        if (detail.Contains("status=sent", StringComparison.OrdinalIgnoreCase))
+        {
+            return MailRelayLogSeverity.Sent;
+        }
+
+        if (detail.Contains("status=bounced", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("fatal:", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("reject:", StringComparison.OrdinalIgnoreCase))
+        {
+            return MailRelayLogSeverity.Error;
+        }
+
+        if (detail.Contains("status=deferred", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("Connection timed out", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("Connection refused", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("warning:", StringComparison.OrdinalIgnoreCase))
+        {
+            return MailRelayLogSeverity.Warning;
+        }
+
+        return MailRelayLogSeverity.Info;
+    }
+
     private static bool IsPort25Failure(string detail) =>
         detail.Contains("Connection timed out", StringComparison.OrdinalIgnoreCase) ||
         detail.Contains("Connection refused", StringComparison.OrdinalIgnoreCase) ||
@@ -538,6 +614,9 @@ public sealed partial class MailRelayTestService(
 
     [GeneratedRegex(@"postfix/(?:cleanup|pickup)\[\d+\]:\s+(?<queueId>[A-F0-9]+):\s+message-id=<(?<messageId>[^>]+)>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex QueueMessageIdRegex();
+
+    [GeneratedRegex(@"^(?<timestamp>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\S+\s+postfix/(?<service>[A-Za-z0-9_-]+)(?:\[\d+\])?:\s+(?:(?<queueId>[A-F0-9]+):\s+)?(?<detail>.+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PostfixLogLineRegex();
 }
 
 internal sealed record MailRelayDeliveryEvidence(

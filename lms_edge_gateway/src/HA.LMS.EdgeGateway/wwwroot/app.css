@@ -4569,6 +4569,102 @@ textarea {
     white-space: pre-wrap;
 }
 
+.mail-relay-log-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-right: auto;
+}
+
+.mail-relay-log-filter {
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-pill);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 0.76rem;
+    font-weight: 650;
+    min-height: 1.9rem;
+    padding: 0.28rem 0.7rem;
+}
+
+.mail-relay-log-filter.active {
+    background: var(--color-success-soft);
+    border-color: var(--color-success-line);
+    color: var(--color-success);
+}
+
+.mail-relay-log-filter:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.mail-relay-log-list {
+    display: grid;
+    gap: 0.42rem;
+    margin-top: 0.35rem;
+    max-height: 22rem;
+    overflow: auto;
+}
+
+.mail-relay-log-row {
+    align-items: start;
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.45rem 0.75rem;
+    grid-template-columns: 6.6rem auto minmax(0, 1fr);
+    padding: 0.55rem 0.7rem;
+}
+
+.mail-relay-log-row.current {
+    box-shadow: inset 3px 0 0 var(--color-success);
+}
+
+.mail-relay-log-row.warning {
+    border-color: var(--color-warning-line);
+}
+
+.mail-relay-log-row.error {
+    border-color: var(--color-danger-line);
+}
+
+.mail-relay-log-row.sent {
+    border-color: var(--color-success-line);
+}
+
+.mail-relay-log-row time {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    padding-top: 0.18rem;
+    white-space: nowrap;
+}
+
+.mail-relay-log-row > div {
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+}
+
+.mail-relay-log-row code {
+    font-size: 0.72rem;
+    overflow-wrap: anywhere;
+}
+
+.mail-relay-log-row span {
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    line-height: 1.4;
+}
+
+.mail-relay-queue {
+    display: grid;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+}
+
 .mail-relay-modal {
     max-width: min(52rem, 100%);
 }
@@ -4589,7 +4685,8 @@ textarea {
     .mail-relay-row,
     .mail-relay-dns-row,
     .mail-relay-step,
-    .mail-relay-secret {
+    .mail-relay-secret,
+    .mail-relay-log-row {
         grid-template-columns: 1fr;
     }
 
