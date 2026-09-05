@@ -319,11 +319,15 @@
                 <div>
                     <p class="eyebrow">Legacy devices</p>
                     <h2>Port 25 listener</h2>
-                    <p class="meta-text">Optional unauthenticated port 25 for old LAN printers and scanners. Public 587 is never enabled.</p>
+                    <p class="meta-text">Optional unauthenticated port 25 for old LAN printers and scanners. It listens on all adapters; only the send-from allowlist may submit. Public 587 is never enabled.</p>
                 </div>
                 <LmsStatusPill Text="@(dashboard.Configuration!.AllowLegacyPort25 ? "Enabled" : "Off")"
                                Tone="@(dashboard.Configuration.AllowLegacyPort25 ? LmsStatusTone.Warning : LmsStatusTone.Neutral)" />
             </div>
+            @if (dashboard.Configuration.AllowLegacyPort25 && dashboard.Configuration.EffectiveLegacyAllowedNetworks.Count > 0)
+            {
+                <p class="meta-text">Allowed sources: @string.Join(", ", dashboard.Configuration.EffectiveLegacyAllowedNetworks)</p>
+            }
             <div class="toolbar-row">
                 <LmsButton Label="Configure legacy port 25" Icon="edit" OnClick="OpenLegacyModal" />
             </div>
@@ -583,7 +587,7 @@
                 <div>
                     <p class="eyebrow">Legacy devices</p>
                     <h2 id="mail-relay-legacy-title">Port 25 on the LAN</h2>
-                    <p class="meta-text">Public 587 is never enabled. Keep this listener on private addresses and a tight CIDR allowlist.</p>
+                    <p class="meta-text">Public 587 is never enabled. Port 25 listens on every adapter. Only the send-from allowlist may submit.</p>
                 </div>
                 <button class="edge-modal-close" type="button" aria-label="Close legacy settings" @onclick="CloseLegacyModal">x</button>
             </header>
@@ -597,14 +601,9 @@
                     <span>Enable legacy port 25</span>
                 </label>
                 <label class="ui-field">
-                    <span class="ui-field-label">Listen IPs</span>
-                    <textarea rows="4" @bind="legacyListenAddressesText" placeholder="192.168.1.10"></textarea>
-                    <span class="ui-field-helper">One IPv4 address per line. Use addresses that exist on this Home Assistant host.</span>
-                </label>
-                <label class="ui-field">
-                    <span class="ui-field-label">Allowed CIDRs</span>
-                    <textarea rows="4" @bind="legacyAllowedCidrsText" placeholder="192.168.1.0/24"></textarea>
-                    <span class="ui-field-helper">Only these networks may submit on port 25.</span>
+                    <span class="ui-field-label">Allowed send-from IPs</span>
+                    <textarea rows="6" @bind="legacyAllowedCidrsText" placeholder="192.168.1.10"></textarea>
+                    <span class="ui-field-helper">@LegacyAllowlistHelper</span>
                 </label>
             </div>
             <footer class="edge-modal-footer">
@@ -727,7 +726,6 @@
     private int publicIpIntervalMinutes = 15;
 
     private bool legacyEnabled;
-    private string legacyListenAddressesText = string.Empty;
     private string legacyAllowedCidrsText = string.Empty;
     private string legacyMessage = string.Empty;
     private bool legacyMessageIsError;
@@ -1276,12 +1274,28 @@
         }
     }
 
+    private IReadOnlyList<string> SuggestedLegacyAllowlist =>
+        dashboard?.Preflight.HostIpv4Addresses ?? [];
+
+    private string LegacyAllowlistHelper
+    {
+        get
+        {
+            var hosts = SuggestedLegacyAllowlist;
+            return hosts.Count == 0
+                ? "One IPv4 address or CIDR per line. Start with this machine, then add printers or scanners."
+                : $"Suggested from this machine: {string.Join(", ", hosts)}. Add printer or scanner IPs or CIDRs as needed.";
+        }
+    }
+
     private void OpenLegacyModal()
     {
         var configuration = dashboard?.Configuration;
         legacyEnabled = configuration?.AllowLegacyPort25 ?? false;
-        legacyListenAddressesText = string.Join(Environment.NewLine, configuration?.EffectiveLegacyListenAddresses ?? []);
-        legacyAllowedCidrsText = string.Join(Environment.NewLine, configuration?.EffectiveLegacyAllowedNetworks ?? []);
+        var existing = configuration?.EffectiveLegacyAllowedNetworks ?? [];
+        legacyAllowedCidrsText = string.Join(
+            Environment.NewLine,
+            existing.Count > 0 ? existing : SuggestedLegacyAllowlist);
         legacyMessage = string.Empty;
         showLegacyModal = true;
     }
@@ -1296,7 +1310,7 @@
         {
             var result = await MailRelayService.UpdateLegacySubmissionAsync(new MailRelayLegacySubmissionRequest(
                 legacyEnabled,
-                SplitLines(legacyListenAddressesText),
+                [],
                 SplitLines(legacyAllowedCidrsText)));
             legacyMessage = result.Summary;
             legacyMessageIsError = !result.Success;

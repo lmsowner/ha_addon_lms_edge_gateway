@@ -84,7 +84,7 @@ public sealed class MailRelayPreflightService(
             checks.Add(Check(MailRelayPreflightCheckKeys.DnsEdit, "DNS management",
                 MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", "Resolve Cloudflare access before testing DNS Edit."));
             AddHostChecksNotAvailable(checks, "Complete the Edge Gateway Cloudflare connection first.");
-            return BuildResult(selectedZone?.Id ?? string.Empty, zoneName, availableZones, string.Empty, string.Empty, checks, verifyDnsEdit, checkedAtUtc);
+            return await BuildResultAsync(selectedZone?.Id ?? string.Empty, zoneName, availableZones, string.Empty, string.Empty, checks, verifyDnsEdit, checkedAtUtc, cancellationToken);
         }
 
         try
@@ -104,7 +104,7 @@ public sealed class MailRelayPreflightService(
             checks.Add(Check(MailRelayPreflightCheckKeys.DnsEdit, "DNS management",
                 MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", "Select a zone with DNS access or update the Edge Gateway token scope."));
             AddHostChecksNotAvailable(checks, "Cloudflare DNS access must pass before host suitability is tested.");
-            return BuildResult(selectedZone.Id, zoneName, availableZones, string.Empty, string.Empty, checks, verifyDnsEdit, checkedAtUtc);
+            return await BuildResultAsync(selectedZone.Id, zoneName, availableZones, string.Empty, string.Empty, checks, verifyDnsEdit, checkedAtUtc, cancellationToken);
         }
 
         checks.Add(verifyDnsEdit
@@ -115,7 +115,7 @@ public sealed class MailRelayPreflightService(
         if (!verifyDnsEdit)
         {
             AddHostChecksNotRun(checks);
-            return BuildResult(selectedZone.Id, zoneName, availableZones, string.Empty, string.Empty, checks, false, checkedAtUtc);
+            return await BuildResultAsync(selectedZone.Id, zoneName, availableZones, string.Empty, string.Empty, checks, false, checkedAtUtc, cancellationToken);
         }
 
         var publicIpTask = DetectPublicIpv4Async(cancellationToken);
@@ -144,7 +144,7 @@ public sealed class MailRelayPreflightService(
                 ? checks.Single(item => item.Key == MailRelayPreflightCheckKeys.ReverseDns).Value
                 : string.Empty;
 
-        return BuildResult(
+        return await BuildResultAsync(
             selectedZone.Id,
             zoneName,
             availableZones,
@@ -152,7 +152,8 @@ public sealed class MailRelayPreflightService(
             reverseHostname,
             checks,
             true,
-            checkedAtUtc);
+            checkedAtUtc,
+            cancellationToken);
     }
 
     public async Task<MailRelayPublicIpv4DetectionResult> DetectPublicIpv4Async(CancellationToken cancellationToken)
@@ -414,6 +415,21 @@ public sealed class MailRelayPreflightService(
         checks.Add(Check(MailRelayPreflightCheckKeys.MailRuntime, "Mail runtime", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
     }
 
+    private async Task<MailRelayPreflightResult> BuildResultAsync(
+        string zoneId,
+        string zoneName,
+        IReadOnlyList<MailRelayCloudflareZoneOption> availableZones,
+        string publicIpAddress,
+        string reverseDnsHostname,
+        IReadOnlyList<MailRelayPreflightCheck> checks,
+        bool dnsEditWasTested,
+        DateTimeOffset checkedAtUtc,
+        CancellationToken cancellationToken) =>
+        BuildResult(zoneId, zoneName, availableZones, publicIpAddress, reverseDnsHostname, checks, dnsEditWasTested, checkedAtUtc) with
+        {
+            HostIpv4Addresses = await ReadHostIpv4AddressesAsync(cancellationToken)
+        };
+
     private static MailRelayPreflightResult BuildResult(
         string zoneId,
         string zoneName,
@@ -433,6 +449,28 @@ public sealed class MailRelayPreflightService(
             checks,
             dnsEditWasTested,
             checkedAtUtc);
+
+    private async Task<IReadOnlyList<string>> ReadHostIpv4AddressesAsync(CancellationToken cancellationToken)
+    {
+        var result = await hostCommand.RunAsync(
+            "hostname",
+            ["-I"],
+            cancellationToken,
+            timeout: TimeSpan.FromSeconds(8));
+        if (!result.Succeeded)
+        {
+            return [];
+        }
+
+        return result.StandardOutput
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(value => IPAddress.TryParse(value, out var ip) &&
+                            ip.AddressFamily == AddressFamily.InterNetwork &&
+                            !IPAddress.IsLoopback(ip))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+    }
 
     private static MailRelayPreflightCheck Check(
         string key,

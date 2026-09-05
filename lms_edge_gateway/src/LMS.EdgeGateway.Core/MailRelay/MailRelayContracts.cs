@@ -177,6 +177,7 @@ public sealed record MailRelayPreflightResult(
     bool DnsEditWasTested,
     DateTimeOffset CheckedAtUtc)
 {
+    public IReadOnlyList<string> HostIpv4Addresses { get; init; } = [];
     public MailRelayPreflightCheck GetCheck(string key) =>
         Checks.First(check => check.Key.Equals(key, StringComparison.Ordinal));
 
