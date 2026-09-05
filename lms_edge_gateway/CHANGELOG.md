@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.05.11.08
+
+- Preflight checks sit in compact columns instead of full-width rows.
+- Outbound TCP/25 is a warning, not a setup failure. Many home ISPs block it. Delivery to a destination server now requires STARTTLS (TLS 1.2+).
+
 ## 2026.09.05.10.58
 
 - Adds a Mail Relay tab: outbound-only SMTP on private 587 (optional restricted port 25), Cloudflare SPF/DKIM/DMARC preserve-and-merge, and public-IP DNS refresh every 15 minutes by default.

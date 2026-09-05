@@ -4418,7 +4418,12 @@ textarea {
     overflow-wrap: anywhere;
 }
 
-.mail-relay-check-list,
+.mail-relay-check-list {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .mail-relay-row-list,
 .mail-relay-dns-list,
 .mail-relay-step-list,
@@ -4427,7 +4432,30 @@ textarea {
     gap: 0.42rem;
 }
 
-.mail-relay-check,
+.mail-relay-check {
+    align-content: start;
+    display: grid;
+    gap: 0.32rem;
+    grid-template-columns: 1fr;
+    padding: 0.55rem 0.65rem;
+}
+
+.mail-relay-check header {
+    align-items: start;
+    display: flex;
+    gap: 0.45rem;
+    justify-content: space-between;
+}
+
+.mail-relay-check header > div,
+.mail-relay-row > div,
+.mail-relay-dns-row > div,
+.mail-relay-step > div {
+    display: grid;
+    gap: 0.16rem;
+    min-width: 0;
+}
+
 .mail-relay-row,
 .mail-relay-dns-row,
 .mail-relay-step {
@@ -4436,15 +4464,6 @@ textarea {
     gap: 0.45rem 0.75rem;
     grid-template-columns: minmax(0, 1fr) auto;
     padding: 0.58rem 0.72rem;
-}
-
-.mail-relay-check > div,
-.mail-relay-row > div,
-.mail-relay-dns-row > div,
-.mail-relay-step > div {
-    display: grid;
-    gap: 0.16rem;
-    min-width: 0;
 }
 
 .mail-relay-check span,
@@ -4456,10 +4475,6 @@ textarea {
     font-size: 0.76rem;
     line-height: 1.35;
     margin: 0;
-}
-
-.mail-relay-check p {
-    grid-column: 1 / -1;
 }
 
 .mail-relay-pill-row {
@@ -4515,7 +4530,8 @@ textarea {
 
 @media (max-width: 1100px) {
     .mail-relay-overview,
-    .mail-relay-form-grid {
+    .mail-relay-form-grid,
+    .mail-relay-check-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -4524,7 +4540,7 @@ textarea {
     .mail-relay-overview,
     .mail-relay-form-grid,
     .mail-relay-password-row,
-    .mail-relay-check,
+    .mail-relay-check-list,
     .mail-relay-row,
     .mail-relay-dns-row,
     .mail-relay-step,

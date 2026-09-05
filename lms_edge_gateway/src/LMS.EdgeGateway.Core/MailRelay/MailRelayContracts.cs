@@ -193,7 +193,6 @@ public sealed record MailRelayPreflightResult(
 
     public bool HostSuitable =>
         GetCheck(MailRelayPreflightCheckKeys.PublicIpv4).State == MailRelayPreflightCheckState.Pass &&
-        GetCheck(MailRelayPreflightCheckKeys.OutboundSmtp).State == MailRelayPreflightCheckState.Pass &&
         GetCheck(MailRelayPreflightCheckKeys.MailRuntime).State is MailRelayPreflightCheckState.Pass or MailRelayPreflightCheckState.Warning;
 
     public bool CanConfigure => CloudflareDnsReady && HostSuitable;
