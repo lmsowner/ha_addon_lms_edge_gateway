@@ -401,6 +401,7 @@
                 <p class="meta-text">
                     Mail Relay is outbound-only. It is not an inbound mailbox or MX. Postfix, OpenDKIM and SASL run inside this add-on.
                     Public TCP/587 is never opened. Authenticated STARTTLS on private 587 is the default; optional legacy port 25 listens on all adapters and is restricted by a send-from allowlist.
+                    Multiple sending domains are supported and can sit alongside Microsoft 365 or Google Workspace. LMS never changes MX.
                 </p>
             </div>
         </div>
@@ -409,6 +410,7 @@
             <div><strong>Public IP refresh</strong><span>Home WAN addresses change. Mail Relay checks Cloudflare's <code>cdn-cgi/trace</code> every 15 minutes by default and rewrites only LMS-owned A and SPF <code>ip4:</code> values.</span></div>
             <div><strong>PTR</strong><span>Reverse DNS stays with your ISP. A mismatch is a warning, not a blocker.</span></div>
             <div><strong>Outbound TCP/25</strong><span>Many home ISPs block port 25. Preflight treats that as a warning, not a setup failure. Delivery to a destination server requires STARTTLS (TLS 1.2+).</span></div>
+            <div><strong>Multiple domains</strong><span>Add extra sending domains after setup. Each can use its own Cloudflare zone. Microsoft 365 and other mailbox MX records are left alone; LMS only merges its SPF ip4 and DKIM selector.</span></div>
             <div><strong>Legacy LAN :25</strong><span>Optional for printers and scanners. Listens on every adapter. Only allowlisted source IPs can send, unauthenticated. This is not an inbound MX.</span></div>
         </div>
     </section>

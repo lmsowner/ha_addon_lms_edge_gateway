@@ -37,7 +37,7 @@ public sealed class MailRelayService(
             : configuration.Enabled
                 ? mxBlocked
                     ? $"Mail Relay is listening on {configuration.RelayHostname}:{configuration.SubmissionPort}, but this network cannot reach destination MX on TCP/25. Full LMS works because that host can. Outlook MX does not accept mail on 587."
-                    : $"Mail Relay is configured at {configuration.RelayHostname}:{configuration.SubmissionPort}. Internet delivery matches full LMS: recipient MX on TCP/25, then STARTTLS. Apps submit locally on 587."
+                    : $"Mail Relay is running at {configuration.RelayHostname}:{configuration.SubmissionPort}. Apps submit locally on 587. Additional sending domains can sit alongside Microsoft 365 or Google Workspace; MX is never changed."
                 : "Mail Relay configuration is saved but disabled.";
 
         return new MailRelayDashboardViewModel(
@@ -81,7 +81,33 @@ public sealed class MailRelayService(
         CancellationToken cancellationToken = default) =>
         clientService.SaveAsync(request, cancellationToken);
 
+    public Task<MailRelayClientSaveResult> DeleteClientAsync(
+        Guid clientId,
+        CancellationToken cancellationToken = default) =>
+        clientService.DeleteAsync(clientId, cancellationToken);
+
     public string GenerateClientPassword() => clientService.GeneratePassword();
+
+    public Task<MailRelayDomainPreview> PreviewDomainAsync(
+        MailRelayDomainRequest request,
+        CancellationToken cancellationToken = default) =>
+        provisioningService.PreviewDomainAsync(request, cancellationToken);
+
+    public Task<MailRelayDomainMutationResult> AddDomainAsync(
+        MailRelayDomainRequest request,
+        CancellationToken cancellationToken = default) =>
+        provisioningService.AddDomainAsync(request, cancellationToken);
+
+    public Task<MailRelayDomainDetail?> GetDomainDetailAsync(
+        Guid domainId,
+        CancellationToken cancellationToken = default) =>
+        provisioningService.GetDomainDetailAsync(domainId, cancellationToken);
+
+    public Task<MailRelayDomainMutationResult> DeleteDomainAsync(
+        Guid domainId,
+        bool removeManagedDns,
+        CancellationToken cancellationToken = default) =>
+        provisioningService.DeleteDomainAsync(domainId, removeManagedDns, cancellationToken);
 
     public Task<MailRelayTestResult> SendTestAsync(
         MailRelayTestRequest request,

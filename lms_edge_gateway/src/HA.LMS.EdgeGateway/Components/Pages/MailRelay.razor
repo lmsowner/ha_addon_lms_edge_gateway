@@ -17,11 +17,14 @@
                     This is not inbound MX and it is not the Security → Messaging client.
                 </p>
             </div>
-            <LmsButton Label="@(isRechecking ? "Checking..." : "Run preflight")"
-                       Icon="refresh"
-                       Busy="@isRechecking"
-                       Disabled="@isRechecking"
-                       OnClick="RecheckPreflightAsync" />
+            @if (!IsEnabled)
+            {
+                <LmsButton Label="@(isRechecking ? "Checking..." : "Run preflight")"
+                           Icon="refresh"
+                           Busy="@isRechecking"
+                           Disabled="@isRechecking"
+                           OnClick="RecheckPreflightAsync" />
+            }
         </div>
 
         @if (!string.IsNullOrWhiteSpace(actionMessage))
@@ -50,19 +53,6 @@
         else
         {
             <section class="surface-subcard mail-relay-overview">
-                <label class="ui-field">
-                    <span class="ui-field-label">
-                        Cloudflare zone
-                        <LmsFieldInfo Title="Cloudflare zone"
-                                      Body="Mail Relay writes LMS-owned A, SPF, DKIM and DMARC records on this zone. It never changes MX." />
-                    </span>
-                    <select value="@selectedZoneId" @onchange="OnZoneChangedAsync" disabled="@isRechecking">
-                        @foreach (var zone in dashboard.Preflight.AvailableZones)
-                        {
-                            <option value="@zone.ZoneId">@zone.ZoneName</option>
-                        }
-                    </select>
-                </label>
                 <div class="mail-relay-stat">
                     <span class="ui-field-label">Status</span>
                     <LmsStatusPill Text="@StatusLabel" Tone="@StatusTone" />
@@ -85,34 +75,47 @@
                 </div>
             </section>
 
-            <section class="surface-subcard">
-                <div class="table-header">
-                    <div>
-                        <p class="eyebrow">Preflight</p>
-                        <h3>Host and Cloudflare checks</h3>
-                    </div>
-                    <LmsStatusPill Text="@(dashboard.Preflight.CanConfigure ? "Ready" : "Needs attention")"
-                                   Tone="@(dashboard.Preflight.CanConfigure ? LmsStatusTone.Ready : LmsStatusTone.Warning)" />
-                </div>
-                <div class="mail-relay-check-list">
-                    @foreach (var check in dashboard.Preflight.Checks)
-                    {
-                        <article class="mail-relay-check">
-                            <header>
-                                <div>
-                                    <strong>@check.Label</strong>
-                                    <span>@check.Value</span>
-                                </div>
-                                <LmsStatusPill Text="@PreflightStateLabel(check.State)" Tone="@PreflightTone(check.State)" />
-                            </header>
-                            <p>@check.Detail</p>
-                        </article>
-                    }
-                </div>
-            </section>
-
             @if (!IsEnabled)
             {
+                <label class="ui-field mail-relay-zone-field">
+                    <span class="ui-field-label">
+                        Cloudflare zone
+                        <LmsFieldInfo Title="Cloudflare zone"
+                                      Body="Used only for first-time setup and when adding a sending domain. It is not the relay hostname." />
+                    </span>
+                    <select value="@selectedZoneId" @onchange="OnZoneChangedAsync" disabled="@isRechecking">
+                        @foreach (var zone in dashboard.Preflight.AvailableZones)
+                        {
+                            <option value="@zone.ZoneId">@zone.ZoneName</option>
+                        }
+                    </select>
+                </label>
+
+                <section class="surface-subcard">
+                    <div class="table-header">
+                        <div>
+                            <p class="eyebrow">Preflight</p>
+                            <h3>Host and Cloudflare checks</h3>
+                        </div>
+                        <LmsStatusPill Text="@(dashboard.Preflight.CanConfigure ? "Ready" : "Needs attention")"
+                                       Tone="@(dashboard.Preflight.CanConfigure ? LmsStatusTone.Ready : LmsStatusTone.Warning)" />
+                    </div>
+                    <div class="mail-relay-check-list">
+                        @foreach (var check in dashboard.Preflight.Checks)
+                        {
+                            <article class="mail-relay-check">
+                                <header>
+                                    <div>
+                                        <strong>@check.Label</strong>
+                                        <span>@check.Value</span>
+                                    </div>
+                                    <LmsStatusPill Text="@PreflightStateLabel(check.State)" Tone="@PreflightTone(check.State)" />
+                                </header>
+                                <p>@check.Detail</p>
+                            </article>
+                        }
+                    </div>
+                </section>
                 <div class="toolbar-row">
                     <LmsButton Label="Set up Mail Relay"
                                Icon="plus"
@@ -131,8 +134,9 @@
                 <div>
                     <p class="eyebrow">Sending domains</p>
                     <h2>SPF, DKIM and DMARC</h2>
-                    <p class="meta-text">LMS only rewrites LMS-owned A and SPF ip4: values. It checks DKIM, DMARC and PTR. It never changes MX.</p>
+                    <p class="meta-text">Each domain is a sending identity. Microsoft 365 and other mailbox providers stay in charge of inbound MX. LMS only merges its own SPF ip4 and DKIM selector.</p>
                 </div>
+                <LmsButton Label="Add domain" Icon="plus" Primary="true" OnClick="OpenAddDomainModal" />
             </div>
             @if (dashboard.Domains.Count == 0)
             {
@@ -143,15 +147,19 @@
                 <div class="mail-relay-row-list">
                     @foreach (var domain in dashboard.Domains)
                     {
-                        <div class="mail-relay-row">
+                        <div class="mail-relay-row mail-relay-config-row">
                             <div>
                                 <strong>@domain.DomainName</strong>
-                                <span>Selector <code>@domain.CurrentDkimSelector</code></span>
+                                <span>@ZoneNameFor(domain) · selector <code>@domain.CurrentDkimSelector</code>@(domain.Enabled ? string.Empty : " · pending")</span>
                             </div>
                             <div class="mail-relay-pill-row">
                                 <LmsStatusPill Text="@($"SPF {DnsStatusLabel(domain.SpfStatus)}")" Tone="@DnsTone(domain.SpfStatus)" />
                                 <LmsStatusPill Text="@($"DKIM {DnsStatusLabel(domain.DkimStatus)}")" Tone="@DnsTone(domain.DkimStatus)" />
                                 <LmsStatusPill Text="@($"DMARC {DnsStatusLabel(domain.DmarcStatus)}")" Tone="@DnsTone(domain.DmarcStatus)" />
+                            </div>
+                            <div class="mail-relay-row-actions">
+                                <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenDomainDetailAsync(domain))" />
+                                <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => OpenDeleteDomainModal(domain))" />
                             </div>
                         </div>
                     }
@@ -177,12 +185,15 @@
                 <div class="mail-relay-row-list">
                     @foreach (var client in dashboard.Clients)
                     {
-                        <div class="mail-relay-row">
+                        <div class="mail-relay-row mail-relay-config-row">
                             <div>
                                 <strong>@client.Name</strong>
                                 <span><code>@client.Username</code> · @string.Join(", ", client.AllowedSenderDomains)</span>
                             </div>
-                            <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenClientModal(client))" />
+                            <div class="mail-relay-row-actions">
+                                <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenClientModal(client))" />
+                                <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => OpenDeleteClientModal(client))" />
+                            </div>
                         </div>
                     }
                 </div>
@@ -362,6 +373,18 @@
                 <div class="edge-form-grid mail-relay-form-grid">
                     <label class="ui-field">
                         <span class="ui-field-label">
+                            Cloudflare zone
+                            <LmsFieldInfo Title="Cloudflare zone" Body="DNS for the first sending domain and the smtp hostname is written here. Other domains can use a different zone later." />
+                        </span>
+                        <select @bind="selectedZoneId" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning">
+                            @foreach (var zone in dashboard?.Preflight.AvailableZones ?? [])
+                            {
+                                <option value="@zone.ZoneId">@zone.ZoneName</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">
                             Relay hostname
                             <LmsFieldInfo Title="Relay hostname" Body="Defaults to smtp on the selected zone. This is the SMTP host applications use. It is not proxied through Cloudflare." />
                         </span>
@@ -394,6 +417,17 @@
 
                 @if (setupPreview is not null)
                 {
+                    @if (setupPreview.ExistingEmailConfiguration.HasExistingMail)
+                    {
+                        <div class="callout ready">
+                            <strong>@setupPreview.ExistingEmailConfiguration.ProviderLabel stays in place</strong>
+                            <p>@setupPreview.ExistingEmailConfiguration.CoexistenceSummary</p>
+                            @if (setupPreview.ExistingEmailConfiguration.MxRecords.Count > 0)
+                            {
+                                <p>MX left unchanged: @string.Join(", ", setupPreview.ExistingEmailConfiguration.MxRecords)</p>
+                            }
+                        </div>
+                    }
                     @if (setupPreview.Errors.Count > 0)
                     {
                         <div class="callout warning">
@@ -532,12 +566,247 @@
             </div>
             <footer class="edge-modal-footer">
                 <LmsButton Label="Cancel" Icon="close" OnClick="CloseClientModal" />
+                @if (clientId.HasValue)
+                {
+                    <LmsButton Label="Delete user" Icon="delete" Danger="true" Disabled="@isSavingClient" OnClick="@(() => OpenDeleteClientModal(dashboard?.Clients.FirstOrDefault(item => item.Id == clientId)))" />
+                }
                 <LmsButton Label="@(isSavingClient ? "Saving..." : "Save user")"
                            Icon="save"
                            Primary="true"
                            Busy="@isSavingClient"
                            Disabled="@isSavingClient"
                            OnClick="SaveClientAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showAddDomainModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-add-domain-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Sending domain</p>
+                    <h2 id="mail-relay-add-domain-title">Add another domain</h2>
+                    <p class="meta-text">Preflight runs for this zone only. Existing mailbox DNS such as Microsoft 365 is merged, never replaced.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close add domain" @onclick="CloseAddDomainModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (!string.IsNullOrWhiteSpace(domainMessage))
+                {
+                    <p class="callout @(domainMessageIsError ? "warning" : "ready")">@domainMessage</p>
+                }
+                <div class="edge-form-grid mail-relay-form-grid">
+                    <label class="ui-field">
+                        <span class="ui-field-label">Cloudflare zone</span>
+                        <select @bind="addDomainZoneId" @bind:after="ClearDomainPreview">
+                            @foreach (var zone in dashboard?.Preflight.AvailableZones ?? [])
+                            {
+                                <option value="@zone.ZoneId">@zone.ZoneName</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Sending domain</span>
+                        <input @bind="addDomainName" @bind:after="ClearDomainPreview" placeholder="example.com" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">DKIM selector</span>
+                        <input @bind="addDomainSelector" @bind:after="ClearDomainPreview" placeholder="lms" />
+                    </label>
+                </div>
+                @if (domainPreview is not null)
+                {
+                    @if (domainPreview.ExistingEmailConfiguration.HasExistingMail)
+                    {
+                        <div class="callout ready">
+                            <strong>@domainPreview.ExistingEmailConfiguration.ProviderLabel stays in place</strong>
+                            <p>@domainPreview.ExistingEmailConfiguration.CoexistenceSummary</p>
+                            @if (domainPreview.ExistingEmailConfiguration.MxRecords.Count > 0)
+                            {
+                                <p>MX left unchanged: @string.Join(", ", domainPreview.ExistingEmailConfiguration.MxRecords)</p>
+                            }
+                        </div>
+                    }
+                    @if (domainPreview.Errors.Count > 0)
+                    {
+                        <div class="callout warning">
+                            @foreach (var error in domainPreview.Errors)
+                            {
+                                <p>@error</p>
+                            }
+                        </div>
+                    }
+                    <div class="mail-relay-check-list">
+                        @foreach (var check in domainPreview.Preflight.Checks)
+                        {
+                            <article class="mail-relay-check">
+                                <header>
+                                    <div>
+                                        <strong>@check.Label</strong>
+                                        <span>@check.Value</span>
+                                    </div>
+                                    <LmsStatusPill Text="@PreflightStateLabel(check.State)" Tone="@PreflightTone(check.State)" />
+                                </header>
+                                <p>@check.Detail</p>
+                            </article>
+                        }
+                    </div>
+                    <div class="mail-relay-dns-list">
+                        @foreach (var change in domainPreview.DnsChanges)
+                        {
+                            <div class="mail-relay-dns-row">
+                                <div>
+                                    <strong>@change.Purpose</strong>
+                                    <span>@change.RecordType @change.RecordName</span>
+                                </div>
+                                <code>@change.ProposedValue</code>
+                                <LmsStatusPill Text="@change.Kind.ToString()" Tone="@ChangeKindTone(change.Kind)" />
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="CloseAddDomainModal" />
+                <LmsButton Label="@(isPreviewingDomain ? "Reviewing..." : "Review DNS")"
+                           Icon="refresh"
+                           Busy="@isPreviewingDomain"
+                           Disabled="@(isPreviewingDomain || isSavingDomain)"
+                           OnClick="PreviewAddDomainAsync" />
+                <LmsButton Label="@(isSavingDomain ? "Adding..." : "Add domain")"
+                           Icon="check"
+                           Primary="true"
+                           Busy="@isSavingDomain"
+                           Disabled="@(!CanAddDomain)"
+                           OnClick="AddDomainAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showDomainDetailModal && domainDetail is not null)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-domain-detail-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Sending domain</p>
+                    <h2 id="mail-relay-domain-detail-title">@domainDetail.Domain.DomainName</h2>
+                    <p class="meta-text">@domainDetail.ZoneName · selector @domainDetail.Domain.CurrentDkimSelector</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close domain" @onclick="CloseDomainDetailModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (domainDetail.ExistingEmail is not null)
+                {
+                    <div class="callout @(domainDetail.ExistingEmail.HasExistingMail ? "ready" : "")">
+                        <strong>@domainDetail.ExistingEmail.ProviderLabel</strong>
+                        <p>@domainDetail.ExistingEmail.CoexistenceSummary</p>
+                        @if (domainDetail.ExistingEmail.MxRecords.Count > 0)
+                        {
+                            <p>MX left unchanged: @string.Join(", ", domainDetail.ExistingEmail.MxRecords)</p>
+                        }
+                    </div>
+                }
+                <div class="mail-relay-pill-row">
+                    <LmsStatusPill Text="@($"SPF {DnsStatusLabel(domainDetail.Domain.SpfStatus)}")" Tone="@DnsTone(domainDetail.Domain.SpfStatus)" />
+                    <LmsStatusPill Text="@($"DKIM {DnsStatusLabel(domainDetail.Domain.DkimStatus)}")" Tone="@DnsTone(domainDetail.Domain.DkimStatus)" />
+                    <LmsStatusPill Text="@($"DMARC {DnsStatusLabel(domainDetail.Domain.DmarcStatus)}")" Tone="@DnsTone(domainDetail.Domain.DmarcStatus)" />
+                </div>
+                @if (domainDetail.DnsRecords.Count == 0)
+                {
+                    <p class="meta-text">No LMS-owned DNS records are tracked for this domain.</p>
+                }
+                else
+                {
+                    <div class="mail-relay-dns-list">
+                        @foreach (var record in domainDetail.DnsRecords)
+                        {
+                            <div class="mail-relay-dns-row">
+                                <div>
+                                    <strong>@record.Purpose</strong>
+                                    <span>@record.Type @record.Name</span>
+                                </div>
+                                <code>@record.CurrentValue</code>
+                                <LmsStatusPill Text="@(record.CreatedByLms ? "LMS" : "Shared")" Tone="@(record.CreatedByLms ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Close" Icon="close" OnClick="CloseDomainDetailModal" />
+                <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => OpenDeleteDomainModal(domainDetail.Domain))" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showDeleteDomainModal && deleteDomain is not null)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-delete-domain-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Sending domain</p>
+                    <h2 id="mail-relay-delete-domain-title">Remove @deleteDomain.DomainName</h2>
+                    <p class="meta-text">MX and other providers' DKIM or DMARC are never deleted. LMS only removes what it added.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close delete domain" @onclick="CloseDeleteDomainModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (!string.IsNullOrWhiteSpace(domainMessage))
+                {
+                    <p class="callout @(domainMessageIsError ? "warning" : "ready")">@domainMessage</p>
+                }
+                <label class="mail-relay-check-field">
+                    <input type="checkbox" @bind="deleteDomainRemoveDns" />
+                    <span>Remove the LMS SPF ip4 and LMS DKIM from Cloudflare. Leave Microsoft 365 and other existing records alone.</span>
+                </label>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="CloseDeleteDomainModal" />
+                <LmsButton Label="@(isSavingDomain ? "Removing..." : "Remove domain")"
+                           Icon="delete"
+                           Danger="true"
+                           Busy="@isSavingDomain"
+                           Disabled="@isSavingDomain"
+                           OnClick="DeleteDomainAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showDeleteClientModal && deleteClient is not null)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-delete-client-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">SMTP user</p>
+                    <h2 id="mail-relay-delete-client-title">Remove @deleteClient.Username</h2>
+                    <p class="meta-text">This deletes the SASL login. Sending domains and DNS are left alone.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close delete user" @onclick="CloseDeleteClientModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (!string.IsNullOrWhiteSpace(clientMessage))
+                {
+                    <p class="callout @(clientMessageIsError ? "warning" : "ready")">@clientMessage</p>
+                }
+                <p class="meta-text">@deleteClient.Name will no longer be able to submit mail.</p>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="CloseDeleteClientModal" />
+                <LmsButton Label="@(isSavingClient ? "Removing..." : "Remove user")"
+                           Icon="delete"
+                           Danger="true"
+                           Busy="@isSavingClient"
+                           Disabled="@isSavingClient"
+                           OnClick="DeleteClientAsync" />
             </footer>
         </section>
     </div>
@@ -701,6 +970,10 @@
     private bool showPublicIpModal;
     private bool showLegacyModal;
     private bool showRemovalModal;
+    private bool showAddDomainModal;
+    private bool showDomainDetailModal;
+    private bool showDeleteDomainModal;
+    private bool showDeleteClientModal;
 
     private string setupRelayHostname = string.Empty;
     private string setupSendingDomain = string.Empty;
@@ -709,6 +982,19 @@
     private string setupApplicationUsername = "homeassistant";
     private bool setupAllowTrustedLan = true;
     private string? generatedPassword;
+
+    private string addDomainZoneId = string.Empty;
+    private string addDomainName = string.Empty;
+    private string addDomainSelector = "lms";
+    private MailRelayDomainPreview? domainPreview;
+    private MailRelayDomainDetail? domainDetail;
+    private MailRelayDomain? deleteDomain;
+    private MailRelayClient? deleteClient;
+    private bool deleteDomainRemoveDns = true;
+    private bool isPreviewingDomain;
+    private bool isSavingDomain;
+    private string domainMessage = string.Empty;
+    private bool domainMessageIsError;
 
     private Guid? clientId;
     private string clientName = string.Empty;
@@ -753,6 +1039,10 @@
         !string.IsNullOrWhiteSpace(setupDkimSelector) &&
         !string.IsNullOrWhiteSpace(setupApplicationName) &&
         !string.IsNullOrWhiteSpace(setupApplicationUsername);
+    private bool CanAddDomain =>
+        !isPreviewingDomain &&
+        !isSavingDomain &&
+        domainPreview?.CanApply == true;
     private string TestCalloutClass =>
         testResult?.Status == MailRelayTestStatus.Sent ? "ready" : "warning";
     private string VisibleMailLogText
@@ -1112,6 +1402,219 @@
     }
 
     private void CloseClientModal() => showClientModal = false;
+
+    private void OpenAddDomainModal()
+    {
+        addDomainZoneId = FirstNonEmpty(selectedZoneId, dashboard?.Preflight.AvailableZones.FirstOrDefault()?.ZoneId);
+        addDomainName = dashboard?.Preflight.AvailableZones.FirstOrDefault(item => item.ZoneId.Equals(addDomainZoneId, StringComparison.Ordinal))?.ZoneName ?? string.Empty;
+        addDomainSelector = "lms";
+        domainPreview = null;
+        domainMessage = string.Empty;
+        showAddDomainModal = true;
+    }
+
+    private void CloseAddDomainModal() => showAddDomainModal = false;
+
+    private void ClearDomainPreview() => domainPreview = null;
+
+    private MailRelayDomainRequest BuildDomainRequest() =>
+        new(addDomainZoneId, addDomainName, addDomainSelector);
+
+    private async Task PreviewAddDomainAsync()
+    {
+        isPreviewingDomain = true;
+        domainMessage = string.Empty;
+        try
+        {
+            domainPreview = await MailRelayService.PreviewDomainAsync(BuildDomainRequest());
+            domainMessage = domainPreview.CanApply
+                ? "DNS review is ready. Existing mailbox records will be preserved."
+                : domainPreview.Errors.FirstOrDefault() ?? "Resolve the failed checks before adding this domain.";
+            domainMessageIsError = !domainPreview.CanApply;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            domainPreview = null;
+            domainMessage = exception.Message;
+            domainMessageIsError = true;
+        }
+        finally
+        {
+            isPreviewingDomain = false;
+        }
+    }
+
+    private async Task AddDomainAsync()
+    {
+        if (!CanAddDomain)
+        {
+            return;
+        }
+
+        isSavingDomain = true;
+        domainMessage = string.Empty;
+        try
+        {
+            var result = await MailRelayService.AddDomainAsync(BuildDomainRequest());
+            domainMessage = result.Summary;
+            domainMessageIsError = !result.Success;
+            if (!result.Success)
+            {
+                return;
+            }
+
+            await LoadDashboardAsync();
+            showAddDomainModal = false;
+            SetAction(result.Summary, false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            domainMessage = exception.Message;
+            domainMessageIsError = true;
+        }
+        finally
+        {
+            isSavingDomain = false;
+        }
+    }
+
+    private async Task OpenDomainDetailAsync(MailRelayDomain domain)
+    {
+        domainMessage = string.Empty;
+        try
+        {
+            domainDetail = await MailRelayService.GetDomainDetailAsync(domain.Id);
+            showDomainDetailModal = domainDetail is not null;
+            if (domainDetail is null)
+            {
+                SetAction("That sending domain no longer exists.", true);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            SetAction(exception.Message, true);
+        }
+    }
+
+    private void CloseDomainDetailModal()
+    {
+        showDomainDetailModal = false;
+        domainDetail = null;
+    }
+
+    private void OpenDeleteDomainModal(MailRelayDomain domain)
+    {
+        deleteDomain = domain;
+        deleteDomainRemoveDns = true;
+        domainMessage = string.Empty;
+        showDeleteDomainModal = true;
+        showDomainDetailModal = false;
+    }
+
+    private void CloseDeleteDomainModal()
+    {
+        showDeleteDomainModal = false;
+        deleteDomain = null;
+    }
+
+    private async Task DeleteDomainAsync()
+    {
+        if (deleteDomain is null)
+        {
+            return;
+        }
+
+        isSavingDomain = true;
+        domainMessage = string.Empty;
+        try
+        {
+            var result = await MailRelayService.DeleteDomainAsync(deleteDomain.Id, deleteDomainRemoveDns);
+            domainMessage = result.Summary;
+            domainMessageIsError = !result.Success;
+            if (!result.Success)
+            {
+                return;
+            }
+
+            await LoadDashboardAsync();
+            showDeleteDomainModal = false;
+            deleteDomain = null;
+            SetAction(result.Summary, false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            domainMessage = exception.Message;
+            domainMessageIsError = true;
+        }
+        finally
+        {
+            isSavingDomain = false;
+        }
+    }
+
+    private void OpenDeleteClientModal(MailRelayClient? client)
+    {
+        if (client is null)
+        {
+            return;
+        }
+
+        deleteClient = client;
+        clientMessage = string.Empty;
+        showDeleteClientModal = true;
+        showClientModal = false;
+    }
+
+    private void CloseDeleteClientModal()
+    {
+        showDeleteClientModal = false;
+        deleteClient = null;
+    }
+
+    private async Task DeleteClientAsync()
+    {
+        if (deleteClient is null)
+        {
+            return;
+        }
+
+        isSavingClient = true;
+        clientMessage = string.Empty;
+        try
+        {
+            var result = await MailRelayService.DeleteClientAsync(deleteClient.Id);
+            clientMessage = result.Summary;
+            clientMessageIsError = !result.Success;
+            if (!result.Success)
+            {
+                return;
+            }
+
+            if (testClientId.Equals(deleteClient.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                testClientId = string.Empty;
+                testFromAddress = string.Empty;
+            }
+
+            await LoadDashboardAsync();
+            showDeleteClientModal = false;
+            deleteClient = null;
+            SetAction(result.Summary, false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            clientMessage = exception.Message;
+            clientMessageIsError = true;
+        }
+        finally
+        {
+            isSavingClient = false;
+        }
+    }
+
+    private string ZoneNameFor(MailRelayDomain domain) =>
+        dashboard?.Preflight.AvailableZones.FirstOrDefault(item => item.ZoneId.Equals(domain.CloudflareZoneId, StringComparison.Ordinal))?.ZoneName
+        ?? domain.DomainName;
 
     private void GenerateClientPassword() => clientPassword = MailRelayService.GenerateClientPassword();
 

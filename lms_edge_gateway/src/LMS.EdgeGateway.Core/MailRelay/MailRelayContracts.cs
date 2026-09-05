@@ -68,7 +68,58 @@ public sealed record MailRelayExistingEmailConfiguration(
     IReadOnlyList<string> ExistingDkimRecords,
     string? ExistingDmarc,
     string? ExistingDmarcPolicy,
-    MailRelayDeliveryMode DeliveryMode);
+    MailRelayDeliveryMode DeliveryMode)
+{
+    public bool HasExistingMail => Provider != MailRelayExistingProvider.NoneDetected;
+
+    public string ProviderLabel => Provider switch
+    {
+        MailRelayExistingProvider.Microsoft365 => "Microsoft 365",
+        MailRelayExistingProvider.GoogleWorkspace => "Google Workspace",
+        MailRelayExistingProvider.ExistingMailProvider => "Existing mail service",
+        _ => "No existing mailbox provider"
+    };
+
+    public string CoexistenceSummary => Provider switch
+    {
+        MailRelayExistingProvider.Microsoft365 =>
+            "Microsoft 365 already handles inbound mail for this domain. LMS will not change MX. SPF keeps include:spf.protection.outlook.com and adds this relay's ip4. Existing Microsoft DKIM selectors stay. DMARC stays if present.",
+        MailRelayExistingProvider.GoogleWorkspace =>
+            "Google Workspace already handles inbound mail for this domain. LMS will not change MX. SPF keeps the Google include and adds this relay's ip4. Existing Google DKIM selectors stay. DMARC stays if present.",
+        MailRelayExistingProvider.ExistingMailProvider =>
+            "This domain already has mail DNS. LMS will not change MX. SPF is merged in place. Other people's DKIM and DMARC stay. Only an LMS selector is added if it is free.",
+        _ => "No existing mailbox provider was detected. LMS will create SPF, an LMS DKIM selector, and a monitoring DMARC policy only if they are missing."
+    };
+}
+
+public sealed record MailRelayDomainRequest(
+    string CloudflareZoneId,
+    string SendingDomain,
+    string DkimSelector);
+
+public sealed record MailRelayDomainPreview(
+    MailRelayDomainRequest Request,
+    MailRelayPreflightResult Preflight,
+    MailRelayExistingEmailConfiguration ExistingEmailConfiguration,
+    IReadOnlyList<MailRelaySetupChange> DnsChanges,
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<string> Errors)
+{
+    public bool CanApply => Errors.Count == 0 && Preflight.CloudflareDnsReady;
+}
+
+public sealed record MailRelayDomainDetail(
+    MailRelayDomain Domain,
+    string ZoneName,
+    MailRelayExistingEmailConfiguration? ExistingEmail,
+    IReadOnlyList<MailRelayDnsRecord> DnsRecords);
+
+public sealed record MailRelayDomainMutationResult(
+    bool Success,
+    MailRelayDomain? Domain,
+    IReadOnlyList<string> Changes,
+    IReadOnlyList<string> Warnings,
+    string Summary);
 
 public sealed record MailRelaySetupPreview(
     MailRelaySetupRequest Request,

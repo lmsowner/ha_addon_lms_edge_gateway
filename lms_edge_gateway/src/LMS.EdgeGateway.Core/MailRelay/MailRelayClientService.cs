@@ -167,6 +167,54 @@ public sealed class MailRelayClientService(
         }
     }
 
+    public async Task<MailRelayClientSaveResult> DeleteAsync(
+        Guid clientId,
+        CancellationToken cancellationToken = default)
+    {
+        var configuration = await store.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true)
+        {
+            return Failed("Mail Relay must be running before SMTP users can be removed.");
+        }
+
+        var clients = await store.ListClientsAsync(cancellationToken);
+        var existing = clients.FirstOrDefault(item => item.Id == clientId);
+        if (existing is null)
+        {
+            return Failed("That SMTP user no longer exists.");
+        }
+
+        var remaining = clients.Where(item => item.Id != clientId).ToArray();
+        var senderLoginMap = MailRelayProvisioningService.BuildPostfixSenderLoginMaps(remaining, configuration.RelayHostname);
+        try
+        {
+            Directory.CreateDirectory(paths.ConfigDirectory);
+            var mapPath = Path.Combine(paths.ConfigDirectory, "sender_login_maps");
+            await File.WriteAllTextAsync(mapPath, senderLoginMap.EndsWith('\n') ? senderLoginMap : senderLoginMap + "\n", cancellationToken);
+            await RunRequiredAsync("chmod", ["0644", mapPath], cancellationToken);
+            if (File.Exists(paths.ApplyScriptPath))
+            {
+                await RunRequiredAsync(paths.ApplyScriptPath, [], cancellationToken);
+            }
+
+            if (File.Exists(paths.SaslDatabasePath))
+            {
+                await hostCommand.RunAsync(
+                    "saslpasswd2",
+                    ["-d", "-f", paths.SaslDatabasePath, "-u", configuration.RelayHostname, existing.Username],
+                    cancellationToken,
+                    timeout: TimeSpan.FromSeconds(20));
+            }
+
+            await store.DeleteClientAsync(existing.Id, cancellationToken);
+            return new MailRelayClientSaveResult(true, null, false, $"SMTP user {existing.Username} was removed.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return Failed($"SMTP user could not be removed: {FirstUsefulLine(exception.Message)}");
+        }
+    }
+
     private static MailRelayClientSaveResult Failed(string message) => new(false, null, false, message);
 
     private static string FirstUsefulLine(params string[] values) => values
