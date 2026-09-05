@@ -904,7 +904,11 @@ public sealed partial class MailRelayProvisioningService(
                 cancellationToken);
             await InstallRuntimePolicyAsync(candidate, submissionNetwork.BindAddresses, domains, cancellationToken);
             await ApplyRuntimeConfigurationAsync(cancellationToken);
-            await hostCommand.RunAsync("postqueue", ["-f"], cancellationToken, timeout: TimeSpan.FromSeconds(10));
+            await hostCommand.RunAsync(
+                candidate.UseSmarthost ? "postqueue" : "postsuper",
+                candidate.UseSmarthost ? ["-f"] : ["-d", "ALL"],
+                cancellationToken,
+                timeout: TimeSpan.FromSeconds(10));
             await store.SaveConfigurationAsync(candidate, cancellationToken);
             return new(
                 true,
@@ -1821,6 +1825,7 @@ public sealed partial class MailRelayProvisioningService(
         {
             return """
                 relayhost =
+                default_transport = error:Outbound TCP/25 is disabled. Configure authenticated SMTP on 587.
                 smtp_sasl_auth_enable = no
                 smtp_tls_wrappermode = no
                 """;
@@ -1831,6 +1836,7 @@ public sealed partial class MailRelayProvisioningService(
         var wrapper = port == 465 ? "yes" : "no";
         return $"""
             relayhost = [{hostname}]:{port}
+            default_transport = smtp
             smtp_sasl_auth_enable = yes
             smtp_sasl_password_maps = texthash:/etc/postfix/sasl_passwd
             smtp_sasl_security_options = noanonymous

@@ -218,7 +218,7 @@
             </div>
             @if (!IsSmarthostEnabled)
             {
-                <p class="callout warning">Do not send a test until the smarthost on 587 is configured. Direct MX on port 25 will time out from this home network.</p>
+                <p class="callout warning">Do not send a test until the smarthost on 587 is configured. Outbound TCP/25 is disabled.</p>
             }
             <div class="edge-form-grid mail-relay-form-grid">
                 <label class="ui-field">
@@ -245,7 +245,7 @@
                            Icon="test"
                            Primary="true"
                            Busy="@isSendingTest"
-                           Disabled="@isSendingTest"
+                           Disabled="@(isSendingTest || !IsSmarthostEnabled)"
                            OnClick="SendTestAsync" />
             </div>
             @if (testResult is not null)
@@ -276,7 +276,7 @@
                 <div>
                     <p class="eyebrow">Postfix</p>
                     <h2>Send log</h2>
-                    <p class="meta-text">Pickup, cleanup, queue and MX delivery from this add-on. This is the same trail the full LMS Mail Relay shows.</p>
+                    <p class="meta-text">Raw Postfix mail.log and queue. This is the same trail the full LMS Mail Relay shows.</p>
                 </div>
                 <LmsStatusPill Text="@MailLogStatusLabel" Tone="@MailLogStatusTone" />
             </div>
@@ -295,42 +295,16 @@
                            OnClick="RefreshMailLogAsync" />
                 <LmsButton Label="Copy"
                            Icon="copy"
-                           Disabled="@(!VisibleMailLogEvents.Any() && VisibleMailLogQueue.Count == 0)"
+                           Disabled="@string.IsNullOrWhiteSpace(VisibleMailLogText)"
                            OnClick="CopyMailLogAsync" />
+                <LmsButton Label="@(isClearingQueue ? "Clearing..." : "Clear queue")"
+                           Icon="delete"
+                           Danger="true"
+                           Busy="@isClearingQueue"
+                           Disabled="@isClearingQueue"
+                           OnClick="ClearMailQueueAsync" />
             </div>
-            @if (mailLogFilter != "queue")
-            {
-                <div class="mail-relay-log-list">
-                    @if (!VisibleMailLogEvents.Any())
-                    {
-                        <p class="meta-text">No Postfix events for this filter yet. Send a test or refresh.</p>
-                    }
-                    else
-                    {
-                        @foreach (var entry in VisibleMailLogEvents)
-                        {
-                            <article class="mail-relay-log-row @MailLogSeverityClass(entry.Severity) @(IsCurrentTestEntry(entry) ? "current" : string.Empty)">
-                                <time>@(string.IsNullOrWhiteSpace(entry.Timestamp) ? "—" : entry.Timestamp)</time>
-                                <LmsStatusPill Text="@entry.Service" Tone="@MailLogSeverityTone(entry.Severity)" />
-                                <div>
-                                    @if (!string.IsNullOrWhiteSpace(entry.QueueId))
-                                    {
-                                        <code>@entry.QueueId</code>
-                                    }
-                                    <span>@entry.Detail</span>
-                                </div>
-                            </article>
-                        }
-                    }
-                </div>
-            }
-            @if (mailLogFilter is "all" or "queue" or "test")
-            {
-                <div class="mail-relay-queue">
-                    <p class="eyebrow">Queue</p>
-                    <pre class="mail-relay-log">@(VisibleMailLogQueue.Count > 0 ? string.Join('\n', VisibleMailLogQueue) : "Mail queue is empty.")</pre>
-                </div>
-            }
+            <pre class="mail-relay-log">@(string.IsNullOrWhiteSpace(VisibleMailLogText) ? "No Postfix lines for this filter yet. Send a test or refresh." : VisibleMailLogText)</pre>
         </section>
 
         <section class="surface-card edge-card">
@@ -777,6 +751,7 @@
     private MailRelayTestResult? testResult;
     private MailRelayLogSnapshot? mailLog;
     private bool isLoadingMailLog;
+    private bool isClearingQueue;
     private string mailLogFilter = "all";
     private CancellationTokenSource? pollCts;
 
@@ -876,26 +851,32 @@
                 return $"Outbound mail uses {configuration.SmarthostHostname}:{configuration.SmarthostPort} as {configuration.SmarthostUsername}.";
             }
 
-            return "Not configured. Test sends will keep timing out on destination MX port 25 from this home network.";
+            return "Not configured. Outbound TCP/25 is disabled. Configure authenticated SMTP on 587 before sending.";
         }
     }
-    private IEnumerable<MailRelayLogEntry> VisibleMailLogEvents
+    private string VisibleMailLogText
     {
         get
         {
-            var events = mailLog?.Events ?? [];
-            return mailLogFilter switch
+            if (mailLog is null)
             {
-                "test" when !string.IsNullOrWhiteSpace(testResult?.QueueId) =>
-                    events.Where(item => string.Equals(item.QueueId, testResult.QueueId, StringComparison.OrdinalIgnoreCase)),
-                "problems" => events.Where(item => item.Severity is MailRelayLogSeverity.Warning or MailRelayLogSeverity.Error),
-                "queue" => [],
-                _ => events
-            };
+                return string.Empty;
+            }
+
+            if (mailLogFilter == "queue")
+            {
+                return mailLog.Queue.Count > 0 ? string.Join('\n', mailLog.Queue) : "Mail queue is empty.";
+            }
+
+            var lines = (mailLog.Lines ?? []).Where(IsVisibleMailLogLine).ToArray();
+            if (mailLogFilter is "all" or "test" && mailLog.Queue.Count > 0)
+            {
+                return string.Join('\n', lines.Concat(["", "--- Postfix queue ---"]).Concat(mailLog.Queue));
+            }
+
+            return string.Join('\n', lines);
         }
     }
-    private IReadOnlyList<string> VisibleMailLogQueue =>
-        mailLogFilter == "problems" ? [] : mailLog?.Queue ?? [];
     private string MailLogStatusLabel =>
         mailLog is null ? "Not loaded"
         : mailLog.Events.Any(item => item.Severity == MailRelayLogSeverity.Error) ? "Errors"
@@ -1547,44 +1528,54 @@
 
     private async Task CopyMailLogAsync()
     {
-        var blocks = new List<string>();
-        blocks.AddRange(VisibleMailLogEvents.Select(item =>
-            $"{item.Timestamp} {item.Service} {(string.IsNullOrWhiteSpace(item.QueueId) ? string.Empty : item.QueueId + " ")}{item.Detail}".Trim()));
-        if (VisibleMailLogQueue.Count > 0)
-        {
-            blocks.Add(string.Empty);
-            blocks.Add("--- Postfix queue ---");
-            blocks.AddRange(VisibleMailLogQueue);
-        }
-
-        if (blocks.Count == 0)
+        if (string.IsNullOrWhiteSpace(VisibleMailLogText))
         {
             return;
         }
 
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", string.Join('\n', blocks));
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", VisibleMailLogText);
         SetAction("Send log copied.", false);
     }
 
-    private bool IsCurrentTestEntry(MailRelayLogEntry entry) =>
-        !string.IsNullOrWhiteSpace(testResult?.QueueId) &&
-        string.Equals(entry.QueueId, testResult.QueueId, StringComparison.OrdinalIgnoreCase);
-
-    private static string MailLogSeverityClass(MailRelayLogSeverity severity) => severity switch
+    private async Task ClearMailQueueAsync()
     {
-        MailRelayLogSeverity.Sent => "sent",
-        MailRelayLogSeverity.Warning => "warning",
-        MailRelayLogSeverity.Error => "error",
-        _ => "info"
-    };
+        isClearingQueue = true;
+        try
+        {
+            var result = await MailRelayService.ClearMailQueueAsync();
+            await RefreshMailLogAsync();
+            SetAction(result.Summary, !result.Success);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            SetAction($"Could not clear the queue: {exception.Message}", true);
+        }
+        finally
+        {
+            isClearingQueue = false;
+        }
+    }
 
-    private static LmsStatusTone MailLogSeverityTone(MailRelayLogSeverity severity) => severity switch
+    private bool IsVisibleMailLogLine(string line)
     {
-        MailRelayLogSeverity.Sent => LmsStatusTone.Ready,
-        MailRelayLogSeverity.Warning => LmsStatusTone.Warning,
-        MailRelayLogSeverity.Error => LmsStatusTone.Critical,
-        _ => LmsStatusTone.Neutral
-    };
+        if (mailLogFilter == "test")
+        {
+            return !string.IsNullOrWhiteSpace(testResult?.QueueId) &&
+                   line.Contains(testResult.QueueId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (mailLogFilter == "problems")
+        {
+            return line.Contains("deferred", StringComparison.OrdinalIgnoreCase) ||
+                   line.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+                   line.Contains("bounced", StringComparison.OrdinalIgnoreCase) ||
+                   line.Contains("reject", StringComparison.OrdinalIgnoreCase) ||
+                   line.Contains(":25", StringComparison.Ordinal) ||
+                   line.Contains("connect to", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return true;
+    }
 
     private async Task CopyClientPasswordAsync()
     {
