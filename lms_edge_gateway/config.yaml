@@ -1,5 +1,5 @@
 name: LMS Edge Gateway for Home Assistant
-version: "2026.09.05.10.58"
+version: "2026.09.05.11.08"
 slug: lms_edge_gateway
 description: "LMS Edge Gateway for Home Assistant: secure application publishing for Home Assistant and self-hosted services."
 url: https://github.com/lmsowner/ha_addon_lms_edge_gateway

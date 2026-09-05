@@ -328,10 +328,10 @@ public sealed class MailRelayPreflightService(
         var reachable = results.Count(result => result);
 
         return reachable > 0
-            ? Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound SMTP :25",
-                MailRelayPreflightCheckState.Pass, "PASS", $"Connected to {reachable} of {PublicMxTargets.Length} independent public MX targets on TCP/25.")
-            : Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound SMTP :25",
-                MailRelayPreflightCheckState.Failed, "BLOCKED", "No tested public MX target accepted a TCP/25 connection. The hosting provider may block outbound SMTP.");
+            ? Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25",
+                MailRelayPreflightCheckState.Pass, "OPEN", $"Connected to {reachable} of {PublicMxTargets.Length} public MX targets on TCP/25. Delivery still requires STARTTLS.")
+            : Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25",
+                MailRelayPreflightCheckState.Warning, "BLOCKED", "Many ISPs block outbound port 25. This does not block setup. Mail Relay uses STARTTLS when it can reach a destination; direct MX on :25 may not work from this network.");
     }
 
     private static async Task<bool> CanConnectAsync(
@@ -400,8 +400,8 @@ public sealed class MailRelayPreflightService(
             "NOT TESTED", "Run preflight to detect the public IPv4 address."));
         checks.Add(Check(MailRelayPreflightCheckKeys.ReverseDns, "Reverse DNS", MailRelayPreflightCheckState.NotRun,
             "NOT TESTED", "Run preflight to validate PTR and forward DNS."));
-        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound SMTP :25", MailRelayPreflightCheckState.NotRun,
-            "NOT TESTED", "Run preflight to connect to multiple public MX servers."));
+        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25", MailRelayPreflightCheckState.NotRun,
+            "NOT TESTED", "Run preflight to see whether this ISP still allows legacy MX on port 25. A block is only a warning."));
         checks.Add(Check(MailRelayPreflightCheckKeys.MailRuntime, "Mail runtime", MailRelayPreflightCheckState.NotRun,
             "NOT TESTED", "Run preflight to inspect Postfix, OpenDKIM and SASL."));
     }
@@ -410,7 +410,7 @@ public sealed class MailRelayPreflightService(
     {
         checks.Add(Check(MailRelayPreflightCheckKeys.PublicIpv4, "Public IPv4", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
         checks.Add(Check(MailRelayPreflightCheckKeys.ReverseDns, "Reverse DNS", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
-        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound SMTP :25", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
+        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
         checks.Add(Check(MailRelayPreflightCheckKeys.MailRuntime, "Mail runtime", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
     }
 

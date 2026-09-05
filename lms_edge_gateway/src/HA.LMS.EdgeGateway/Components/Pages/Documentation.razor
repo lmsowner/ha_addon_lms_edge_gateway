@@ -408,6 +408,7 @@
             <div><strong>Cloudflare DNS</strong><span>Creates or merges unproxied A for <code>smtp.yourzone</code>, SPF <code>ip4:</code> for this WAN, LMS DKIM, and DMARC <code>p=none</code> only if missing. Existing MX and other people's DKIM/DMARC are left alone.</span></div>
             <div><strong>Public IP refresh</strong><span>Home WAN addresses change. Mail Relay checks Cloudflare's <code>cdn-cgi/trace</code> every 15 minutes by default and rewrites only LMS-owned A and SPF <code>ip4:</code> values.</span></div>
             <div><strong>PTR</strong><span>Reverse DNS stays with your ISP. A mismatch is a warning, not a blocker.</span></div>
+            <div><strong>Outbound TCP/25</strong><span>Many home ISPs block port 25. Preflight treats that as a warning, not a setup failure. Delivery to a destination server requires STARTTLS (TLS 1.2+).</span></div>
         </div>
     </section>
 

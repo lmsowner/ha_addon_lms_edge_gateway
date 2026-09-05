@@ -39,7 +39,7 @@ public sealed partial class MailRelayProvisioningService(
         if (!preflight.HostSuitable)
         {
             errors.AddRange(preflight.Checks
-                .Where(item => item.Key is MailRelayPreflightCheckKeys.PublicIpv4 or MailRelayPreflightCheckKeys.OutboundSmtp or MailRelayPreflightCheckKeys.MailRuntime)
+                .Where(item => item.Key is MailRelayPreflightCheckKeys.PublicIpv4 or MailRelayPreflightCheckKeys.MailRuntime)
                 .Where(item => item.State is MailRelayPreflightCheckState.Failed or MailRelayPreflightCheckState.NotAvailable)
                 .Select(item => $"{item.Label}: {item.Detail}"));
         }
@@ -104,6 +104,11 @@ public sealed partial class MailRelayProvisioningService(
         if (preflight.GetCheck(MailRelayPreflightCheckKeys.ReverseDns).State != MailRelayPreflightCheckState.Pass)
         {
             warnings.Add($"Set the provider-managed PTR for {preflight.PublicIpAddress} to {normalized.RelayHostname}. Delivery can work before that, but reputation will be weaker.");
+        }
+
+        if (preflight.GetCheck(MailRelayPreflightCheckKeys.OutboundSmtp).State != MailRelayPreflightCheckState.Pass)
+        {
+            warnings.Add("Outbound TCP/25 looks blocked, which is common on home ISPs. Mail Relay still requires STARTTLS when it talks to a destination server. Direct MX delivery on port 25 may not work from this network.");
         }
 
         warnings.Add("The initial private submission certificate is LMS-generated. Applications on the Home Assistant LAN must trust that certificate, or use the relay from localhost.");
@@ -494,7 +499,7 @@ public sealed partial class MailRelayProvisioningService(
             }
 
             var normalized = preview.Request;
-            Report("preflight", MailRelaySetupStepState.Complete, "Cloudflare, public IPv4 and outbound TCP/25 passed.");
+            Report("preflight", MailRelaySetupStepState.Complete, "Cloudflare and public IPv4 passed. Outbound TCP/25 is advisory.");
 
             var now = DateTimeOffset.UtcNow;
             var configuration = await store.GetConfigurationAsync(cancellationToken) ?? MailRelayConfiguration.CreateDefault(now);
@@ -1693,7 +1698,9 @@ public sealed partial class MailRelayProvisioningService(
         smtpd_tls_key_file = /lms-config/tls/relay.key
         smtpd_tls_security_level = may
         smtpd_tls_auth_only = yes
-        smtp_tls_security_level = may
+        smtp_tls_security_level = encrypt
+        smtp_tls_mandatory_protocols = >=TLSv1.2
+        smtp_tls_mandatory_ciphers = high
         smtpd_sasl_auth_enable = yes
         smtpd_sasl_type = cyrus
         smtpd_sasl_path = smtpd

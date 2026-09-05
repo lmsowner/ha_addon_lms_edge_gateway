@@ -97,14 +97,16 @@
                 <div class="mail-relay-check-list">
                     @foreach (var check in dashboard.Preflight.Checks)
                     {
-                        <div class="mail-relay-check">
-                            <div>
-                                <strong>@check.Label</strong>
-                                <span>@check.Value</span>
-                            </div>
+                        <article class="mail-relay-check">
+                            <header>
+                                <div>
+                                    <strong>@check.Label</strong>
+                                    <span>@check.Value</span>
+                                </div>
+                                <LmsStatusPill Text="@PreflightStateLabel(check.State)" Tone="@PreflightTone(check.State)" />
+                            </header>
                             <p>@check.Detail</p>
-                            <LmsStatusPill Text="@PreflightStateLabel(check.State)" Tone="@PreflightTone(check.State)" />
-                        </div>
+                        </article>
                     }
                 </div>
             </section>
