@@ -1703,6 +1703,8 @@ public sealed partial class MailRelayProvisioningService(
         smtp_tls_security_level = encrypt
         smtp_tls_mandatory_protocols = >=TLSv1.2
         smtp_tls_mandatory_ciphers = high
+        smtp_connect_timeout = 15
+        smtp_helo_timeout = 15
         smtpd_sasl_auth_enable = yes
         smtpd_sasl_type = cyrus
         smtpd_sasl_path = smtpd
