@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.16.42
+
+- Mail Relay treats configured sending domains as compact rows with edit and delete. Preflight stays on first setup and when adding another domain. Extra domains can sit alongside Microsoft 365; MX is never changed.
+
 ## 2026.09.05.13.29
 
 - Legacy port 25 listens on all adapters. The send-from allowlist is the control, and the modal starts with this machine's current IPv4 addresses.

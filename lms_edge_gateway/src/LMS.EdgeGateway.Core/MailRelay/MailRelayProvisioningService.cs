@@ -111,6 +111,7 @@ public sealed partial class MailRelayProvisioningService(
             warnings.Add("Outbound TCP/25 looks blocked. Full LMS works because that host can reach destination MX on port 25, then STARTTLS. This Home Assistant network cannot. MX hosts such as Outlook do not accept mail on 587.");
         }
 
+        warnings.Add(existingEmailConfiguration.CoexistenceSummary);
         warnings.Add("The initial private submission certificate is LMS-generated. Applications on the Home Assistant LAN must trust that certificate, or use the relay from localhost.");
         return new MailRelaySetupPreview(normalized, preflight, changes, existingEmailConfiguration, warnings, errors.Distinct(StringComparer.Ordinal).ToArray());
     }
@@ -723,6 +724,336 @@ public sealed partial class MailRelayProvisioningService(
             }
 
             return new MailRelaySetupResult(false, string.Empty, string.Empty, 587, string.Empty, null, string.Empty, string.Empty, false, steps.ToArray(), exception.Message);
+        }
+    }
+
+    public async Task<MailRelayDomainPreview> PreviewDomainAsync(
+        MailRelayDomainRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var configuration = await store.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true)
+        {
+            return new(
+                NormalizeDomainRequest(request),
+                await preflightService.InspectAsync(false, request.CloudflareZoneId, cancellationToken),
+                new MailRelayExistingEmailConfiguration(
+                    request.SendingDomain, MailRelayExistingProvider.NoneDetected, [], null, string.Empty, 0, [], null, null, MailRelayDeliveryMode.DirectInternet),
+                [],
+                [],
+                ["Set up Mail Relay before adding another sending domain."]);
+        }
+
+        var normalized = NormalizeDomainRequest(request);
+        var errors = ValidateDomainRequest(normalized).ToList();
+        var preflight = await preflightService.InspectAsync(true, normalized.CloudflareZoneId, cancellationToken);
+        if (!preflight.CloudflareDnsReady)
+        {
+            errors.AddRange(preflight.Checks
+                .Where(item => item.Key is MailRelayPreflightCheckKeys.CloudflareAuthentication or
+                    MailRelayPreflightCheckKeys.CloudflareZone or MailRelayPreflightCheckKeys.DnsList or MailRelayPreflightCheckKeys.DnsEdit)
+                .Where(item => item.State is MailRelayPreflightCheckState.Failed or MailRelayPreflightCheckState.NotAvailable)
+                .Select(item => $"{item.Label}: {item.Detail}"));
+        }
+
+        if (!IsWithinZone(normalized.SendingDomain, preflight.CloudflareZoneName))
+        {
+            errors.Add($"Sending domain must be inside the selected Cloudflare zone {preflight.CloudflareZoneName}.");
+        }
+
+        var domains = await store.ListDomainsAsync(cancellationToken);
+        if (domains.Any(item => item.Enabled && item.DomainName.Equals(normalized.SendingDomain, StringComparison.OrdinalIgnoreCase)))
+        {
+            errors.Add($"{normalized.SendingDomain} is already a configured sending domain.");
+        }
+
+        var changes = new List<MailRelaySetupChange>();
+        MailRelayExistingEmailConfiguration existingEmail = new(
+            normalized.SendingDomain,
+            MailRelayExistingProvider.NoneDetected,
+            [],
+            null,
+            string.IsNullOrWhiteSpace(configuration.PublicIpAddress) ? string.Empty : $"v=spf1 ip4:{configuration.PublicIpAddress} -all",
+            0,
+            [],
+            null,
+            null,
+            MailRelayDeliveryMode.DirectInternet);
+        if (preflight.CloudflareDnsReady && errors.Count == 0)
+        {
+            var token = await GetCloudflareAsync(cancellationToken);
+            var records = await cloudflareDnsService.ListRecordsAsync(token, normalized.CloudflareZoneId, cancellationToken);
+            var publicIp = FirstNonEmpty(configuration.PublicIpAddress, preflight.PublicIpAddress);
+            var spf = AnalyzeSpf(records, normalized.SendingDomain, publicIp);
+            var savedDomain = domains.FirstOrDefault(item => item.DomainName.Equals(normalized.SendingDomain, StringComparison.OrdinalIgnoreCase));
+            var trackedRecords = savedDomain is null ? [] : await store.ListDnsRecordsAsync(savedDomain.Id, cancellationToken);
+            var selectedDkimName = $"{normalized.DkimSelector}._domainkey.{normalized.SendingDomain}";
+            var selectedDkimRecord = records.FirstOrDefault(item =>
+                item.Name.TrimEnd('.').Equals(selectedDkimName, StringComparison.OrdinalIgnoreCase) &&
+                (item.Type.Equals("TXT", StringComparison.OrdinalIgnoreCase) || item.Type.Equals("CNAME", StringComparison.OrdinalIgnoreCase)));
+            var selectedDkimIsManaged = selectedDkimRecord is not null &&
+                (trackedRecords.Any(item =>
+                     item.CloudflareRecordId.Equals(selectedDkimRecord.Id, StringComparison.Ordinal) &&
+                     item.CreatedByLms) ||
+                 selectedDkimRecord.Comment.Equals(ManagedDnsComment, StringComparison.OrdinalIgnoreCase));
+            existingEmail = BuildExistingEmailConfiguration(records, normalized.SendingDomain, spf);
+            changes.Add(BuildSpfChange(normalized.SendingDomain, spf));
+            changes.Add(BuildDkimChange(records, normalized.SendingDomain, normalized.DkimSelector, selectedDkimIsManaged));
+            changes.Add(BuildDmarcChange(records, normalized.SendingDomain));
+            errors.AddRange(changes.Where(item => item.Kind == MailRelaySetupChangeKind.Blocked).Select(item => item.Detail));
+        }
+
+        var warnings = new List<string> { existingEmail.CoexistenceSummary };
+        if (existingEmail.MxRecords.Count > 0)
+        {
+            warnings.Add($"MX left unchanged: {string.Join(", ", existingEmail.MxRecords)}.");
+        }
+
+        return new MailRelayDomainPreview(
+            normalized,
+            preflight,
+            existingEmail,
+            changes,
+            warnings,
+            errors.Distinct(StringComparer.Ordinal).ToArray());
+    }
+
+    public async Task<MailRelayDomainMutationResult> AddDomainAsync(
+        MailRelayDomainRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var configuration = await store.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true)
+        {
+            return FailedDomain("Set up Mail Relay before adding another sending domain.");
+        }
+
+        MailRelayDomainPreview preview;
+        try
+        {
+            preview = await PreviewDomainAsync(request, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return FailedDomain(exception.Message);
+        }
+
+        if (!preview.CanApply)
+        {
+            return FailedDomain(preview.Errors.FirstOrDefault() ?? "The additional domain is not ready to add.");
+        }
+
+        var normalized = preview.Request;
+        var now = DateTimeOffset.UtcNow;
+        var domains = await store.ListDomainsAsync(cancellationToken);
+        var domain = domains.FirstOrDefault(item => item.DomainName.Equals(normalized.SendingDomain, StringComparison.OrdinalIgnoreCase))
+                     ?? CreateDraftDomain(configuration.Id, ToSetupRequest(configuration, normalized), now);
+        domain = domain with { CloudflareZoneId = normalized.CloudflareZoneId, Enabled = true, UpdatedUtc = now };
+        var setupRequest = ToSetupRequest(configuration, normalized);
+        var dkim = await EnsureDkimMaterialAsync(configuration.Id, domain, setupRequest, now, cancellationToken);
+        domain = dkim.Domain with { CloudflareZoneId = normalized.CloudflareZoneId, Enabled = true, UpdatedUtc = now };
+
+        try
+        {
+            var apiToken = await GetCloudflareAsync(cancellationToken);
+            var records = await cloudflareDnsService.ListRecordsAsync(apiToken, normalized.CloudflareZoneId, cancellationToken);
+            var publicIp = FirstNonEmpty(configuration.PublicIpAddress, preview.Preflight.PublicIpAddress);
+            var spfAnalysis = AnalyzeSpf(records, normalized.SendingDomain, publicIp);
+            var selectedDkimName = $"{normalized.DkimSelector}._domainkey.{normalized.SendingDomain}";
+            var selectedDkimRecord = records.FirstOrDefault(item =>
+                item.Name.TrimEnd('.').Equals(selectedDkimName, StringComparison.OrdinalIgnoreCase) &&
+                (item.Type.Equals("TXT", StringComparison.OrdinalIgnoreCase) || item.Type.Equals("CNAME", StringComparison.OrdinalIgnoreCase)));
+            var trackedDnsRecords = await store.ListDnsRecordsAsync(domain.Id, cancellationToken);
+            var selectedDkimIsManaged = selectedDkimRecord is not null &&
+                                        (trackedDnsRecords.Any(item =>
+                                             item.CloudflareRecordId.Equals(selectedDkimRecord.Id, StringComparison.Ordinal) &&
+                                             item.CreatedByLms) ||
+                                         selectedDkimRecord.Comment.Equals(ManagedDnsComment, StringComparison.OrdinalIgnoreCase));
+            var currentPlans = new[]
+            {
+                BuildSpfChange(normalized.SendingDomain, spfAnalysis),
+                BuildDkimChange(records, normalized.SendingDomain, normalized.DkimSelector, selectedDkimIsManaged),
+                BuildDmarcChange(records, normalized.SendingDomain)
+            };
+            var blockedPlan = currentPlans.FirstOrDefault(item => item.Kind == MailRelaySetupChangeKind.Blocked);
+            if (blockedPlan is not null)
+            {
+                throw new InvalidOperationException($"DNS changed after review and is no longer safe to apply: {blockedPlan.Detail}");
+            }
+
+            if (!PlansMatch(preview.DnsChanges, currentPlans))
+            {
+                throw new InvalidOperationException("Mail DNS changed after it was reviewed. No DNS records were written; review the current preserve-and-merge plan again.");
+            }
+
+            var spfValue = spfAnalysis.ProposedValue;
+            var spfRecord = await UpsertRecordAsync(apiToken, normalized.CloudflareZoneId, records, "TXT", normalized.SendingDomain, spfValue, false, cancellationToken);
+            var dkimRecord = await UpsertRecordAsync(apiToken, normalized.CloudflareZoneId, records, "TXT", selectedDkimName, dkim.PublicDnsValue, false, cancellationToken);
+            var dmarcName = $"_dmarc.{normalized.SendingDomain}";
+            var existingDmarc = Find(records, "TXT", dmarcName).FirstOrDefault(item => item.Content.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase));
+            var dmarcRecord = existingDmarc ?? await UpsertRecordAsync(apiToken, normalized.CloudflareZoneId, records, "TXT", dmarcName, "v=DMARC1; p=none", false, cancellationToken);
+            var refreshedRecords = await cloudflareDnsService.ListRecordsAsync(apiToken, normalized.CloudflareZoneId, cancellationToken);
+            ValidatePreservedMailDns(
+                records,
+                refreshedRecords,
+                normalized.SendingDomain,
+                spfValue,
+                publicIp,
+                selectedDkimName,
+                dkim.PublicDnsValue,
+                dmarcName,
+                dmarcRecord.Content);
+
+            domain = domain with
+            {
+                DkimCloudflareRecordId = dkimRecord.Id,
+                SpfCloudflareRecordId = spfRecord.Id,
+                DmarcCloudflareRecordId = dmarcRecord.Id,
+                SpfStatus = MailRelayDnsStatus.Pending,
+                DkimStatus = MailRelayDnsStatus.Pending,
+                DmarcStatus = MailRelayDnsStatus.Pending,
+                UpdatedUtc = now
+            };
+            await store.SaveDomainAsync(domain, cancellationToken);
+            await SaveDnsOwnershipAsync(domain.Id, spfRecord, "SPF", records, now, cancellationToken);
+            await SaveDnsOwnershipAsync(domain.Id, dkimRecord, "DKIM", records, now, cancellationToken);
+            await SaveDnsOwnershipAsync(domain.Id, dmarcRecord, "DMARC", records, now, cancellationToken);
+
+            var allDomains = (await store.ListDomainsAsync(cancellationToken)).ToArray();
+            var clients = await store.ListClientsAsync(cancellationToken);
+            await RewriteRuntimeAsync(configuration, allDomains, clients, cancellationToken);
+
+            return new(
+                true,
+                domain,
+                [
+                    $"{normalized.SendingDomain} can now send through Mail Relay.",
+                    preview.ExistingEmailConfiguration.CoexistenceSummary
+                ],
+                [],
+                preview.ExistingEmailConfiguration.HasExistingMail
+                    ? $"{normalized.SendingDomain} was added alongside {preview.ExistingEmailConfiguration.ProviderLabel}. MX was not changed."
+                    : $"{normalized.SendingDomain} was added as a sending domain.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return FailedDomain($"The additional domain was not added: {FirstUsefulLine(exception.Message)}");
+        }
+    }
+
+    public async Task<MailRelayDomainDetail?> GetDomainDetailAsync(
+        Guid domainId,
+        CancellationToken cancellationToken = default)
+    {
+        var domain = (await store.ListDomainsAsync(cancellationToken)).FirstOrDefault(item => item.Id == domainId);
+        if (domain is null)
+        {
+            return null;
+        }
+
+        var dnsRecords = await store.ListDnsRecordsAsync(domain.Id, cancellationToken);
+        var zoneName = domain.DomainName;
+        MailRelayExistingEmailConfiguration? existingEmail = null;
+        try
+        {
+            var preflight = await preflightService.InspectAsync(false, domain.CloudflareZoneId, cancellationToken);
+            zoneName = FirstNonEmpty(preflight.AvailableZones.FirstOrDefault(item => item.ZoneId.Equals(domain.CloudflareZoneId, StringComparison.Ordinal))?.ZoneName, preflight.CloudflareZoneName, domain.DomainName);
+            if (!string.IsNullOrWhiteSpace(domain.CloudflareZoneId))
+            {
+                var token = await GetCloudflareAsync(cancellationToken);
+                var records = await cloudflareDnsService.ListRecordsAsync(token, domain.CloudflareZoneId, cancellationToken);
+                var configuration = await store.GetConfigurationAsync(cancellationToken);
+                var publicIp = FirstNonEmpty(configuration?.PublicIpAddress, preflight.PublicIpAddress);
+                var spf = AnalyzeSpf(records, domain.DomainName, publicIp);
+                existingEmail = BuildExistingEmailConfiguration(records, domain.DomainName, spf);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            existingEmail = null;
+            _ = exception;
+        }
+
+        return new MailRelayDomainDetail(domain, zoneName, existingEmail, dnsRecords);
+    }
+
+    public async Task<MailRelayDomainMutationResult> DeleteDomainAsync(
+        Guid domainId,
+        bool removeManagedDns,
+        CancellationToken cancellationToken = default)
+    {
+        var configuration = await store.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true)
+        {
+            return FailedDomain("Mail Relay is not running.");
+        }
+
+        var domains = await store.ListDomainsAsync(cancellationToken);
+        var domain = domains.FirstOrDefault(item => item.Id == domainId);
+        if (domain is null)
+        {
+            return FailedDomain("That sending domain no longer exists.");
+        }
+
+        if (domain.Enabled && domains.Count(item => item.Enabled) <= 1)
+        {
+            return FailedDomain("This is the last sending domain. Add another domain first, or use Remove Mail Relay to tear the whole relay down.");
+        }
+
+        var changes = new List<string>();
+        var warnings = new List<string>();
+        try
+        {
+            if (removeManagedDns && !string.IsNullOrWhiteSpace(domain.CloudflareZoneId))
+            {
+                var apiToken = await GetCloudflareAsync(cancellationToken);
+                await RemoveManagedDomainDnsAsync(apiToken, configuration, domain, changes, warnings, cancellationToken);
+            }
+            else
+            {
+                warnings.Add($"{domain.DomainName} DNS was left in Cloudflare.");
+            }
+
+            await DeleteSecretIfPresentAsync(domain.CurrentDkimPrivateKeySecretReference, cancellationToken);
+            await DeleteSecretIfPresentAsync(domain.PreviousDkimPrivateKeySecretReference, cancellationToken);
+
+            var remainingDomains = domains.Where(item => item.Id != domain.Id).ToArray();
+            var clients = await store.ListClientsAsync(cancellationToken);
+            var updatedClients = new List<MailRelayClient>();
+            foreach (var client in clients)
+            {
+                if (!client.AllowedSenderDomains.Contains(domain.DomainName, StringComparer.OrdinalIgnoreCase))
+                {
+                    updatedClients.Add(client);
+                    continue;
+                }
+
+                var remaining = client.AllowedSenderDomains
+                    .Where(item => !item.Equals(domain.DomainName, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                if (remaining.Length == 0)
+                {
+                    warnings.Add($"{client.Username} has no remaining sending domains. Edit that SMTP user before it can send.");
+                }
+
+                var updated = client with { AllowedSenderDomains = remaining, UpdatedUtc = DateTimeOffset.UtcNow };
+                await store.SaveClientAsync(updated, cancellationToken);
+                updatedClients.Add(updated);
+            }
+
+            await store.DeleteDomainAsync(domain.Id, cancellationToken);
+            await RewriteRuntimeAsync(configuration, remainingDomains, updatedClients, cancellationToken);
+            changes.Add($"{domain.DomainName} was removed from Mail Relay.");
+            return new(
+                true,
+                null,
+                changes,
+                warnings,
+                $"{domain.DomainName} was removed. Existing MX and other providers' DKIM or DMARC were not deleted.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new(false, domain, changes, warnings, $"The domain was not removed: {FirstUsefulLine(exception.Message)}");
         }
     }
 
@@ -2529,6 +2860,73 @@ public sealed partial class MailRelayProvisioningService(
             previous.RecordName.Equals(candidate.RecordName, StringComparison.OrdinalIgnoreCase) &&
             previous.ProposedValue.Equals(candidate.ProposedValue, StringComparison.Ordinal) &&
             previous.Kind == candidate.Kind));
+
+    private async Task RewriteRuntimeAsync(
+        MailRelayConfiguration configuration,
+        IReadOnlyList<MailRelayDomain> domains,
+        IReadOnlyList<MailRelayClient> clients,
+        CancellationToken cancellationToken)
+    {
+        var certificatePem = await secretStore.ResolveAsync(configuration.TlsCertificateSecretReference, cancellationToken);
+        var tlsKeyPem = await secretStore.ResolveAsync(configuration.TlsPrivateKeySecretReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(certificatePem) || string.IsNullOrWhiteSpace(tlsKeyPem))
+        {
+            throw new InvalidOperationException("Mail Relay TLS material is missing. Run setup again before changing sending domains.");
+        }
+
+        var dkimKeys = new Dictionary<Guid, string>();
+        foreach (var domain in domains.Where(item => item.Enabled))
+        {
+            if (string.IsNullOrWhiteSpace(domain.CurrentDkimPrivateKeySecretReference))
+            {
+                throw new InvalidOperationException($"The DKIM key for {domain.DomainName} is missing from LMS secret storage.");
+            }
+
+            var existingKey = await secretStore.ResolveAsync(domain.CurrentDkimPrivateKeySecretReference, cancellationToken);
+            if (string.IsNullOrWhiteSpace(existingKey))
+            {
+                throw new InvalidOperationException($"The DKIM key for {domain.DomainName} could not be resolved from LMS secret storage.");
+            }
+
+            dkimKeys[domain.Id] = existingKey;
+        }
+
+        var network = await InspectPrivateNetworkAsync(configuration.AllowTailscale, configuration.AllowTrustedLan, cancellationToken);
+        await WriteConfigurationFilesAsync(configuration, network.BindAddresses, certificatePem, tlsKeyPem, domains, clients, dkimKeys, cancellationToken);
+        RestrictConfigurationAccess();
+        await ApplyRuntimeConfigurationAsync(cancellationToken);
+    }
+
+    private static MailRelayDomainRequest NormalizeDomainRequest(MailRelayDomainRequest request) => request with
+    {
+        CloudflareZoneId = request.CloudflareZoneId.Trim(),
+        SendingDomain = request.SendingDomain.Trim().TrimEnd('.').ToLowerInvariant(),
+        DkimSelector = string.IsNullOrWhiteSpace(request.DkimSelector) ? "lms" : request.DkimSelector.Trim().ToLowerInvariant()
+    };
+
+    private static IEnumerable<string> ValidateDomainRequest(MailRelayDomainRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.CloudflareZoneId)) yield return "Choose a Cloudflare zone for this sending domain.";
+        if (Uri.CheckHostName(request.SendingDomain) != UriHostNameType.Dns) yield return "Enter a valid sending domain.";
+        if (!DnsLabelRegex().IsMatch(request.DkimSelector)) yield return "DKIM selector may contain letters, numbers and hyphens only.";
+    }
+
+    private static MailRelaySetupRequest ToSetupRequest(MailRelayConfiguration configuration, MailRelayDomainRequest request) =>
+        new(
+            request.CloudflareZoneId,
+            configuration.RelayHostname,
+            request.SendingDomain,
+            request.DkimSelector,
+            "Mail Relay",
+            "mailrelay",
+            configuration.AllowTailscale,
+            configuration.AllowTrustedLan);
+
+    private static MailRelayDomainMutationResult FailedDomain(string message) =>
+        new(false, null, [], [], message);
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
     private static MailRelaySetupRequest Normalize(MailRelaySetupRequest request) => request with
     {

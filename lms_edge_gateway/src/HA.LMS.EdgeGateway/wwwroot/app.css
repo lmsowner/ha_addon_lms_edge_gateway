@@ -4389,7 +4389,11 @@ textarea {
 .mail-relay-overview {
     display: grid;
     gap: 0.7rem;
-    grid-template-columns: minmax(14rem, 1.1fr) repeat(4, minmax(10rem, 1fr));
+    grid-template-columns: repeat(4, minmax(10rem, 1fr));
+}
+
+.mail-relay-zone-field {
+    max-width: 24rem;
 }
 
 .mail-relay-stat,
@@ -4463,6 +4467,18 @@ textarea {
     gap: 0.45rem 0.75rem;
     grid-template-columns: minmax(0, 1fr) auto;
     padding: 0.58rem 0.72rem;
+}
+
+.mail-relay-config-row {
+    align-items: center;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+}
+
+.mail-relay-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
 }
 
 .mail-relay-step {
@@ -4683,6 +4699,7 @@ textarea {
     .mail-relay-password-row,
     .mail-relay-check-list,
     .mail-relay-row,
+    .mail-relay-config-row,
     .mail-relay-dns-row,
     .mail-relay-step,
     .mail-relay-secret,

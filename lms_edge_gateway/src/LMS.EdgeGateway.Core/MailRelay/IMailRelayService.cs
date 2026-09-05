@@ -9,7 +9,12 @@ public interface IMailRelayService
     Task<MailRelayProvisioningJobSnapshot?> GetSetupJobAsync(Guid jobId, CancellationToken cancellationToken = default);
     Task<MailRelayProvisioningJobSnapshot?> GetLatestSetupJobAsync(CancellationToken cancellationToken = default);
     Task<MailRelayClientSaveResult> SaveClientAsync(MailRelayClientSaveRequest request, CancellationToken cancellationToken = default);
+    Task<MailRelayClientSaveResult> DeleteClientAsync(Guid clientId, CancellationToken cancellationToken = default);
     string GenerateClientPassword();
+    Task<MailRelayDomainPreview> PreviewDomainAsync(MailRelayDomainRequest request, CancellationToken cancellationToken = default);
+    Task<MailRelayDomainMutationResult> AddDomainAsync(MailRelayDomainRequest request, CancellationToken cancellationToken = default);
+    Task<MailRelayDomainDetail?> GetDomainDetailAsync(Guid domainId, CancellationToken cancellationToken = default);
+    Task<MailRelayDomainMutationResult> DeleteDomainAsync(Guid domainId, bool removeManagedDns, CancellationToken cancellationToken = default);
     Task<MailRelayTestResult> SendTestAsync(MailRelayTestRequest request, CancellationToken cancellationToken = default);
     Task<MailRelayLogSnapshot> GetMailLogAsync(string? queueId = null, string? messageId = null, CancellationToken cancellationToken = default);
     Task<MailRelayQueueResult> ClearMailQueueAsync(CancellationToken cancellationToken = default);
@@ -35,6 +40,10 @@ public interface IMailRelayProvisioningService
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default);
     Task<MailRelayPublicIpSyncResult> SynchronizePublicIpAsync(string detectedPublicIp, CancellationToken cancellationToken = default);
+    Task<MailRelayDomainPreview> PreviewDomainAsync(MailRelayDomainRequest request, CancellationToken cancellationToken = default);
+    Task<MailRelayDomainMutationResult> AddDomainAsync(MailRelayDomainRequest request, CancellationToken cancellationToken = default);
+    Task<MailRelayDomainDetail?> GetDomainDetailAsync(Guid domainId, CancellationToken cancellationToken = default);
+    Task<MailRelayDomainMutationResult> DeleteDomainAsync(Guid domainId, bool removeManagedDns, CancellationToken cancellationToken = default);
 }
 
 public interface IMailRelayProvisioningQueue
@@ -57,6 +66,7 @@ public interface IMailRelayClientService
 {
     string GeneratePassword();
     Task<MailRelayClientSaveResult> SaveAsync(MailRelayClientSaveRequest request, CancellationToken cancellationToken = default);
+    Task<MailRelayClientSaveResult> DeleteAsync(Guid clientId, CancellationToken cancellationToken = default);
 }
 
 public interface IMailRelayTestService
