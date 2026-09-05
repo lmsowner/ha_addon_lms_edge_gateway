@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.12.47
+
+- Send log is a plain mail.log dump. Clear queue deletes deferred TCP/25 retries. Outbound port 25 is disabled unless a 587/465 smarthost is configured.
+
 ## 2026.09.05.12.36
 
 - Mail Relay can send through authenticated SMTP on 587 or 465 (smarthost). Home ISPs block outbound TCP/25, so direct MX delivery from this host will not work.

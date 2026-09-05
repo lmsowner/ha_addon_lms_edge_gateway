@@ -12,6 +12,7 @@ public interface IMailRelayService
     string GenerateClientPassword();
     Task<MailRelayTestResult> SendTestAsync(MailRelayTestRequest request, CancellationToken cancellationToken = default);
     Task<MailRelayLogSnapshot> GetMailLogAsync(string? queueId = null, string? messageId = null, CancellationToken cancellationToken = default);
+    Task<MailRelayQueueResult> ClearMailQueueAsync(CancellationToken cancellationToken = default);
     Task<MailRelayLegacySubmissionResult> UpdateLegacySubmissionAsync(MailRelayLegacySubmissionRequest request, CancellationToken cancellationToken = default);
     Task<MailRelaySmarthostResult> UpdateSmarthostAsync(MailRelaySmarthostRequest request, CancellationToken cancellationToken = default);
     Task<MailRelayRemovalResult> RemoveMailRelayAsync(MailRelayRemovalRequest request, CancellationToken cancellationToken = default);
@@ -67,6 +68,7 @@ public interface IMailRelayTestService
 {
     Task<MailRelayTestResult> SendAsync(MailRelayTestRequest request, CancellationToken cancellationToken = default);
     Task<MailRelayLogSnapshot> GetLogAsync(string? queueId = null, string? messageId = null, CancellationToken cancellationToken = default);
+    Task<MailRelayQueueResult> ClearQueueAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IMailRelayHostCommand

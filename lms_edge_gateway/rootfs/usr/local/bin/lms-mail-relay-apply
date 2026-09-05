@@ -122,6 +122,15 @@ ensure_main_cf_param /etc/postfix/main.cf smtp_connect_timeout "15"
 ensure_main_cf_param "${CONFIG_ROOT}/main.cf" smtp_helo_timeout "15"
 ensure_main_cf_param /etc/postfix/main.cf smtp_helo_timeout "15"
 
+# Home ISPs block outbound TCP/25. Do not talk to destination MX hosts unless a 587/465 smarthost is set.
+if grep -qE '^relayhost[[:space:]]*=[[:space:]]*\[.+\]:[0-9]+' /etc/postfix/main.cf; then
+  ensure_main_cf_param "${CONFIG_ROOT}/main.cf" default_transport "smtp"
+  ensure_main_cf_param /etc/postfix/main.cf default_transport "smtp"
+else
+  ensure_main_cf_param "${CONFIG_ROOT}/main.cf" default_transport "error:Outbound TCP/25 is disabled. Configure authenticated SMTP on 587."
+  ensure_main_cf_param /etc/postfix/main.cf default_transport "error:Outbound TCP/25 is disabled. Configure authenticated SMTP on 587."
+fi
+
 # Keep the outbound SMTP client out of the Postfix chroot so MX lookups work in the add-on.
 if grep -qE '^[#]*smtp[[:space:]]+unix[[:space:]]' /etc/postfix/master.cf; then
   sed -i -E 's/^[#]*smtp[[:space:]]+unix[[:space:]].*/smtp      unix  -       -       n       -       -       smtp/' /etc/postfix/master.cf
@@ -151,6 +160,10 @@ else
   postfix start
 fi
 
-postqueue -f >/dev/null 2>&1 || true
+if grep -qE '^relayhost[[:space:]]*=[[:space:]]*\[.+\]:[0-9]+' /etc/postfix/main.cf; then
+  postqueue -f >/dev/null 2>&1 || true
+else
+  postsuper -d ALL >/dev/null 2>&1 || true
+fi
 
 bashio::log.info "Mail Relay configuration applied."

@@ -24,6 +24,16 @@ public sealed partial class MailRelayTestService(
             return await FailedAsync(request, client, testedAt, "Mail Relay is not running. Finish or retry relay setup first.", cancellationToken);
         }
 
+        if (!configuration.UseSmarthost || string.IsNullOrWhiteSpace(configuration.SmarthostHostname))
+        {
+            return await FailedAsync(
+                request,
+                client,
+                testedAt,
+                "Configure authenticated SMTP on 587 first. Outbound TCP/25 is disabled on this host.",
+                cancellationToken);
+        }
+
         if (client is null || !client.Enabled)
         {
             return await FailedAsync(request, client, testedAt, "Choose an enabled Mail Relay application.", cancellationToken);
@@ -121,10 +131,10 @@ public sealed partial class MailRelayTestService(
         {
             MailRelayTestStatus.Sent => "The selected user policy passed, Postfix accepted the message, and the destination mail server accepted delivery.",
             MailRelayTestStatus.Deferred when IsResolverFailure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but the relay could not resolve the recipient domain.",
-            MailRelayTestStatus.Deferred when IsPort25Failure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but this host cannot reach the destination MX on TCP/25. That is common on home ISPs. The message stays queued and Postfix will retry.",
-            MailRelayTestStatus.Deferred => "The selected user policy and relay are working, but Internet delivery was deferred. The diagnostic below is the reason returned by Postfix or the destination server.",
+            MailRelayTestStatus.Deferred when IsPort25Failure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but delivery still tried TCP/25. Clear the queue and confirm the smarthost is saved.",
+            MailRelayTestStatus.Deferred => "The selected user policy and relay are working, but the smarthost deferred delivery. The diagnostic below is the reason returned by Postfix or the provider.",
             MailRelayTestStatus.Bounced => "The selected user policy and relay accepted the message, but downstream delivery bounced.",
-            _ => "The selected user policy passed and Postfix accepted the message. It is still trying to reach the destination MX on TCP/25."
+            _ => "The selected user policy passed and Postfix accepted the message. It is still trying the configured smarthost."
         };
 
         return await ResultAsync(
@@ -152,10 +162,10 @@ public sealed partial class MailRelayTestService(
         CancellationToken cancellationToken = default)
     {
         var logText = await ReadCombinedMailLogsAsync(cancellationToken);
-        var entries = ParseLogEntries(logText, messageId, queueId, 160);
-        var lines = entries.Select(item => item.Timestamp.Length == 0
-                ? item.Detail
-                : $"{item.Timestamp} postfix/{item.Service}: {(string.IsNullOrWhiteSpace(item.QueueId) ? string.Empty : item.QueueId + ": ")}{item.Detail}".Trim())
+        var entries = ParseLogEntries(logText, messageId, queueId, 200);
+        var lines = (logText ?? string.Empty)
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .TakeLast(200)
             .ToList();
 
         var queue = await hostCommand.RunAsync(
@@ -165,27 +175,36 @@ public sealed partial class MailRelayTestService(
             timeout: TimeSpan.FromSeconds(10));
         var queueLines = (queue.StandardOutput ?? string.Empty)
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (queueLines.Length > 0)
-        {
-            if (lines.Count > 0)
-            {
-                lines.Add(string.Empty);
-            }
-
-            lines.Add("--- Postfix queue ---");
-            lines.AddRange(queueLines);
-        }
 
         var path = File.Exists(paths.MailLogPath) ? paths.MailLogPath : paths.SystemMailLogPath;
         var available = File.Exists(paths.MailLogPath) || File.Exists(paths.SystemMailLogPath);
-        var summary = entries.Count == 0 && queueLines.Length == 0
+        var summary = lines.Count == 0 && queueLines.Length == 0
             ? available
                 ? "The send log is empty. Send a test, then refresh."
                 : "Postfix has not written a send log yet."
             : string.IsNullOrWhiteSpace(queueId) && string.IsNullOrWhiteSpace(messageId)
-                ? $"{entries.Count} Postfix events. Queue has {queueLines.Length} line(s)."
-                : $"{entries.Count} Postfix events for this send.";
+                ? $"{lines.Count} mail.log line(s). Queue has {queueLines.Length} line(s)."
+                : $"{lines.Count} mail.log line(s) for this send.";
         return new MailRelayLogSnapshot(available || lines.Count > 0, path, summary, lines, entries, queueLines);
+    }
+
+    public async Task<MailRelayQueueResult> ClearQueueAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await hostCommand.RunAsync(
+            "postsuper",
+            ["-d", "ALL"],
+            cancellationToken,
+            timeout: TimeSpan.FromSeconds(15));
+        if (result.ExitCode != 0)
+        {
+            return new(
+                false,
+                FirstUsefulLine(
+                    FirstUsefulLine(result.StandardError, result.StandardOutput),
+                    "Could not clear the Postfix queue."));
+        }
+
+        return new(true, "The Postfix queue is empty. Deferred TCP/25 retries will not run again.");
     }
 
     private async Task<string> ReadCombinedMailLogsAsync(CancellationToken cancellationToken)

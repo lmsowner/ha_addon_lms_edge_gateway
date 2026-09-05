@@ -35,7 +35,7 @@ public sealed class MailRelayService(
                 : "Complete the required preflight checks before configuring Mail Relay."
             : configuration.Enabled
                 ? needsSmarthost
-                    ? $"Mail Relay is listening on {configuration.RelayHostname}:{configuration.SubmissionPort}, but outbound delivery still uses destination MX on TCP/25. Home ISPs usually block that. Configure authenticated SMTP on 587."
+                    ? $"Mail Relay is listening on {configuration.RelayHostname}:{configuration.SubmissionPort}. Outbound TCP/25 is disabled. Configure authenticated SMTP on 587."
                     : $"Mail Relay is configured at {configuration.RelayHostname}:{configuration.SubmissionPort}."
                 : "Mail Relay configuration is saved but disabled.";
 
@@ -86,6 +86,9 @@ public sealed class MailRelayService(
         MailRelayTestRequest request,
         CancellationToken cancellationToken = default) =>
         testService.SendAsync(request, cancellationToken);
+
+    public Task<MailRelayQueueResult> ClearMailQueueAsync(CancellationToken cancellationToken = default) =>
+        testService.ClearQueueAsync(cancellationToken);
 
     public Task<MailRelayLogSnapshot> GetMailLogAsync(
         string? queueId = null,

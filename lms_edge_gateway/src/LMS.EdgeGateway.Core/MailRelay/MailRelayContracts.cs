@@ -310,6 +310,8 @@ public sealed record MailRelayLogEntry(
     string Detail,
     MailRelayLogSeverity Severity);
 
+public sealed record MailRelayQueueResult(bool Success, string Summary);
+
 public sealed record MailRelayLogSnapshot(
     bool Available,
     string Path,
