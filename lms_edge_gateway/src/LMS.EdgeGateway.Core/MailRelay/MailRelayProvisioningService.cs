@@ -108,7 +108,7 @@ public sealed partial class MailRelayProvisioningService(
 
         if (preflight.GetCheck(MailRelayPreflightCheckKeys.OutboundSmtp).State != MailRelayPreflightCheckState.Pass)
         {
-            warnings.Add("Outbound TCP/587 looks blocked. Mail Relay delivers straight to the recipient MX with STARTTLS on 587. Port 25 is LAN-only.");
+            warnings.Add("Outbound TCP/25 looks blocked. Full LMS works because that host can reach destination MX on port 25, then STARTTLS. This Home Assistant network cannot. MX hosts such as Outlook do not accept mail on 587.");
         }
 
         warnings.Add("The initial private submission certificate is LMS-generated. Applications on the Home Assistant LAN must trust that certificate, or use the relay from localhost.");
@@ -499,7 +499,7 @@ public sealed partial class MailRelayProvisioningService(
             }
 
             var normalized = preview.Request;
-            Report("preflight", MailRelaySetupStepState.Complete, "Cloudflare and public IPv4 passed. Internet delivery uses STARTTLS on 587.");
+            Report("preflight", MailRelaySetupStepState.Complete, "Cloudflare and public IPv4 passed. Internet delivery matches full LMS: MX lookup, TCP/25, then STARTTLS.");
 
             var now = DateTimeOffset.UtcNow;
             var configuration = await store.GetConfigurationAsync(cancellationToken) ?? MailRelayConfiguration.CreateDefault(now);
@@ -1708,10 +1708,10 @@ public sealed partial class MailRelayProvisioningService(
         smtpd_tls_key_file = /lms-config/tls/relay.key
         smtpd_tls_security_level = may
         smtpd_tls_auth_only = yes
-        smtp_tls_security_level = encrypt
+        smtp_tls_security_level = may
         smtp_tls_mandatory_protocols = >=TLSv1.2
         smtp_tls_mandatory_ciphers = high
-        smtp_tcp_port = 587
+        smtp_tcp_port = smtp
         smtp_connect_timeout = 15
         smtp_helo_timeout = 15
         relayhost =

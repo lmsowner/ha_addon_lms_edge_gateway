@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.13.09
+
+- Mail Relay outbound delivery matches full LMS again: recipient MX on TCP/25, then STARTTLS. 587 is only for local submission. This Home Assistant network still cannot open MX:25.
+
 ## 2026.09.05.13.01
 
 - Pin outbound SMTP to TCP/587 in postconf and master.cf, set compatibility_level to 3.11, and drop deferred jobs that were already queued for port 25.

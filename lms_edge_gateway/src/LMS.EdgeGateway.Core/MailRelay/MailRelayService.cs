@@ -20,10 +20,14 @@ public sealed class MailRelayService(
 
         var configuration = await configurationTask;
         var preflight = await preflightTask;
+        var mxBlocked = preflight.GetCheck(MailRelayPreflightCheckKeys.OutboundSmtp).State
+            is MailRelayPreflightCheckState.Warning or MailRelayPreflightCheckState.Failed;
         var status = configuration is null
             ? MailRelayOperationalStatus.NotConfigured
             : configuration.Enabled
-                ? MailRelayOperationalStatus.Healthy
+                ? mxBlocked
+                    ? MailRelayOperationalStatus.Warning
+                    : MailRelayOperationalStatus.Healthy
                 : MailRelayOperationalStatus.NotConfigured;
 
         var summary = configuration is null
@@ -31,7 +35,9 @@ public sealed class MailRelayService(
                 ? "This Home Assistant host is suitable. Mail Relay has not been configured yet."
                 : "Complete the required preflight checks before configuring Mail Relay."
             : configuration.Enabled
-                ? $"Mail Relay is configured at {configuration.RelayHostname}:{configuration.SubmissionPort}. Internet delivery uses STARTTLS on 587 to the recipient MX. Port 25 is LAN-only."
+                ? mxBlocked
+                    ? $"Mail Relay is listening on {configuration.RelayHostname}:{configuration.SubmissionPort}, but this network cannot reach destination MX on TCP/25. Full LMS works because that host can. Outlook MX does not accept mail on 587."
+                    : $"Mail Relay is configured at {configuration.RelayHostname}:{configuration.SubmissionPort}. Internet delivery matches full LMS: recipient MX on TCP/25, then STARTTLS. Apps submit locally on 587."
                 : "Mail Relay configuration is saved but disabled.";
 
         return new MailRelayDashboardViewModel(

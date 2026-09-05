@@ -13,8 +13,8 @@
                 <p class="eyebrow">Mail Relay</p>
                 <h2>Outbound SMTP for Home Assistant</h2>
                 <p class="meta-text">
-                    LMS Mail Relay is outbound-only SMTP for applications on this host. It looks up the recipient MX and delivers with STARTTLS on 587.
-                    Internet port 25 is never used. LAN port 25 is optional for legacy devices. This is not inbound MX and it is not the Security → Messaging client.
+                    LMS Mail Relay is outbound-only SMTP for applications on this host. It matches full LMS: apps submit on private 587, then Postfix looks up the recipient MX on TCP/25 and upgrades with STARTTLS.
+                    This is not inbound MX and it is not the Security → Messaging client.
                 </p>
             </div>
             <LmsButton Label="@(isRechecking ? "Checking..." : "Run preflight")"
@@ -194,9 +194,16 @@
                 <div>
                     <p class="eyebrow">Test email</p>
                     <h2>Send through Mail Relay</h2>
-                    <p class="meta-text">This tests the local SMTP user, then delivers to the recipient MX with STARTTLS on 587. Internet port 25 is never used. This is not the Messaging client on the Security tab.</p>
+                    <p class="meta-text">This tests the local SMTP user, then the same MX path full LMS uses. This is not the Messaging client on the Security tab.</p>
                 </div>
             </div>
+            @if (OutboundMxBlocked)
+            {
+                <p class="callout warning">
+                    Full LMS can send because that host can open destination MX on TCP/25. This Home Assistant network cannot, and Outlook MX does not accept mail on 587.
+                    Point Home Assistant at your working LMS Mail Relay on 587, or run Mail Relay on a host that is allowed to make outbound MX connections.
+                </p>
+            }
             <div class="edge-form-grid mail-relay-form-grid">
                 <label class="ui-field">
                     <span class="ui-field-label">SMTP user</span>
@@ -735,6 +742,9 @@
 
     private bool HasCloudflareZones => dashboard?.Preflight.AvailableZones.Count > 0;
     private bool IsEnabled => dashboard?.Configuration?.Enabled == true;
+    private bool OutboundMxBlocked =>
+        dashboard?.Preflight.GetCheck(MailRelayPreflightCheckKeys.OutboundSmtp).State
+            is MailRelayPreflightCheckState.Warning or MailRelayPreflightCheckState.Failed;
     private bool IsSetupRunning =>
         isStartingSetup ||
         setupJob is { IsTerminal: false };
