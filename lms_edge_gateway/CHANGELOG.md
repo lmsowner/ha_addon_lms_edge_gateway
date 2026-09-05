@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.12.27
+
+- Mail Relay has a Postfix send-log card with filters, queue view and copy.
+
 ## 2026.09.05.12.24
 
 - Wait for a real MX response on test send, un-chroot the outbound SMTP client, and say when TCP/25 is blocked instead of stopping at Queued.
