@@ -95,18 +95,22 @@ if id -u postfix >/dev/null 2>&1; then
 fi
 chmod 0644 "${MAIL_LOG}" || true
 
-ensure_maillog_file() {
+ensure_main_cf_param() {
   local file="$1"
+  local key="$2"
+  local value="$3"
   [[ -f "${file}" ]] || return 0
-  if grep -q '^maillog_file[[:space:]]*=' "${file}"; then
-    sed -i "s|^maillog_file[[:space:]]*=.*|maillog_file = ${MAIL_LOG}|" "${file}"
+  if grep -q "^${key}[[:space:]]*=" "${file}"; then
+    sed -i "s|^${key}[[:space:]]*=.*|${key} = ${value}|" "${file}"
   else
-    printf '\nmaillog_file = %s\n' "${MAIL_LOG}" >> "${file}"
+    printf '\n%s = %s\n' "${key}" "${value}" >> "${file}"
   fi
 }
 
-ensure_maillog_file "${CONFIG_ROOT}/main.cf"
-ensure_maillog_file /etc/postfix/main.cf
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" maillog_file_prefixes "/var, /dev/stdout, /data"
+ensure_main_cf_param /etc/postfix/main.cf maillog_file_prefixes "/var, /dev/stdout, /data"
+ensure_main_cf_param "${CONFIG_ROOT}/main.cf" maillog_file "${MAIL_LOG}"
+ensure_main_cf_param /etc/postfix/main.cf maillog_file "${MAIL_LOG}"
 
 if command -v rsyslogd >/dev/null 2>&1 && ! pgrep -x rsyslogd >/dev/null 2>&1; then
   if [[ ! -f /etc/rsyslog.conf ]] || ! grep -q 'mail.log' /etc/rsyslog.conf; then

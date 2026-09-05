@@ -1684,6 +1684,7 @@ public sealed partial class MailRelayProvisioningService(
         # Do not edit manually
         compatibility_level = 3.6
         myhostname = {{relayHostname}}
+        maillog_file_prefixes = /var, /dev/stdout, /data
         maillog_file = {{paths.MailLogPath}}
         myorigin = $myhostname
         mydestination = localhost
