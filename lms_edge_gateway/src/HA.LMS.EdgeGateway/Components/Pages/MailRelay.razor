@@ -251,14 +251,11 @@
                     </div>
                 </div>
             }
-            @if (mailLog is not null)
-            {
-                <p class="meta-text">@mailLog.Summary</p>
-                @if (mailLog.Lines.Count > 0)
-                {
-                    <pre class="mail-relay-log">@string.Join('\n', mailLog.Lines)</pre>
-                }
-            }
+            <div class="mail-relay-test-result">
+                <p class="eyebrow">Send log</p>
+                <p class="meta-text">@(mailLog?.Summary ?? "Send a test or refresh to load Postfix delivery lines.")</p>
+                <pre class="mail-relay-log">@(mailLog is { Lines.Count: > 0 } ? string.Join('\n', mailLog.Lines) : "No send log yet.")</pre>
+            </div>
         </section>
 
         <section class="surface-card edge-card">
