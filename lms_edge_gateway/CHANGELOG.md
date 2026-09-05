@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.11.46
+
+- Start setup reviews DNS itself. The extra Preview button is gone.
+
 ## 2026.09.05.11.37
 
 - Starts Postfix and OpenDKIM during first Mail Relay setup instead of only reloading a daemon that was not running yet.

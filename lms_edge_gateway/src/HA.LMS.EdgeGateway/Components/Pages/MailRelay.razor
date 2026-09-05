@@ -291,7 +291,7 @@
                 <div>
                     <p class="eyebrow">Set up Mail Relay</p>
                     <h2 id="mail-relay-setup-title">Create the outbound SMTP relay</h2>
-                    <p class="meta-text">Preview the DNS plan, then start setup. LMS will poll progress until the job finishes.</p>
+                    <p class="meta-text">Start setup when the fields look right. LMS reviews DNS, then installs the relay and shows progress here.</p>
                 </div>
                 <button class="edge-modal-close" type="button" aria-label="Close setup" @onclick="CloseSetupModal">x</button>
             </header>
@@ -398,16 +398,11 @@
             </div>
             <footer class="edge-modal-footer">
                 <LmsButton Label="Close" Icon="close" OnClick="CloseSetupModal" />
-                <LmsButton Label="@(isPreviewing ? "Previewing..." : "Preview")"
-                           Icon="search"
-                           Busy="@isPreviewing"
-                           Disabled="@(isPreviewing || IsSetupRunning)"
-                           OnClick="PreviewSetupAsync" />
                 <LmsButton Label="@(IsSetupRunning ? "Setting up..." : "Start setup")"
                            Icon="check"
                            Primary="true"
                            Busy="@IsSetupRunning"
-                           Disabled="@(setupPreview?.CanInstall != true || IsSetupRunning)"
+                           Disabled="@(!CanStartSetup)"
                            OnClick="StartSetupAsync" />
             </footer>
         </section>
@@ -628,7 +623,6 @@
     private string actionMessage = string.Empty;
     private bool actionIsError;
     private bool isRechecking;
-    private bool isPreviewing;
     private bool isStartingSetup;
     private bool isSavingClient;
     private bool isSendingTest;
@@ -685,6 +679,13 @@
     private bool IsSetupRunning =>
         isStartingSetup ||
         setupJob is { IsTerminal: false };
+    private bool CanStartSetup =>
+        !IsSetupRunning &&
+        !string.IsNullOrWhiteSpace(setupRelayHostname) &&
+        !string.IsNullOrWhiteSpace(setupSendingDomain) &&
+        !string.IsNullOrWhiteSpace(setupDkimSelector) &&
+        !string.IsNullOrWhiteSpace(setupApplicationName) &&
+        !string.IsNullOrWhiteSpace(setupApplicationUsername);
     private string RelayHostname =>
         !string.IsNullOrWhiteSpace(dashboard?.Configuration?.RelayHostname)
             ? dashboard!.Configuration!.RelayHostname
@@ -859,32 +860,9 @@
 
     private void ClearSetupPreview() => setupPreview = null;
 
-    private async Task PreviewSetupAsync()
-    {
-        isPreviewing = true;
-        actionMessage = string.Empty;
-        try
-        {
-            setupPreview = await MailRelayService.PreviewSetupAsync(BuildSetupRequest());
-            if (dashboard is not null)
-            {
-                dashboard = dashboard with { Preflight = setupPreview.Preflight };
-            }
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            setupPreview = null;
-            SetAction($"Could not preview Mail Relay: {exception.Message}", true);
-        }
-        finally
-        {
-            isPreviewing = false;
-        }
-    }
-
     private async Task StartSetupAsync()
     {
-        if (setupPreview?.CanInstall != true)
+        if (!CanStartSetup)
         {
             return;
         }
@@ -894,6 +872,18 @@
         actionMessage = string.Empty;
         try
         {
+            setupPreview = await MailRelayService.PreviewSetupAsync(BuildSetupRequest());
+            if (dashboard is not null)
+            {
+                dashboard = dashboard with { Preflight = setupPreview.Preflight };
+            }
+
+            if (!setupPreview.CanInstall)
+            {
+                SetAction(setupPreview.Errors.FirstOrDefault() ?? "Mail Relay is not ready to install yet.", true);
+                return;
+            }
+
             setupJob = await MailRelayService.StartSetupAsync(BuildSetupRequest());
             BeginPolling(setupJob.Id);
         }
