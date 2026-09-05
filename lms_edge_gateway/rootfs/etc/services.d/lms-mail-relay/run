@@ -6,23 +6,13 @@ CONFIG_ROOT=/data/lms-edge-gateway/mail-relay/config
 
 while [[ ! -f "${CONFIG_ROOT}/main.cf" ]]; do
   bashio::log.info "Mail Relay is waiting for first-time setup."
-  sleep 30
+  sleep 2
 done
 
 /usr/local/bin/lms-mail-relay-apply
 
-if command -v rsyslogd >/dev/null 2>&1; then
-  mkdir -p /var/log
-  if [[ ! -f /etc/rsyslog.conf ]] || ! grep -q 'mail.log' /etc/rsyslog.conf; then
-    cat >> /etc/rsyslog.conf <<'RSYS'
-mail.*                         -/var/log/mail.log
-RSYS
-  fi
-  rsyslogd || true
-fi
-
-if command -v opendkim >/dev/null 2>&1; then
-  opendkim -x /etc/opendkim.conf || opendkim || true
+if postfix status >/dev/null 2>&1; then
+  exec tail -F /var/log/mail.log /var/log/messages
 fi
 
 if postfix 2>&1 | grep -q start-fg; then

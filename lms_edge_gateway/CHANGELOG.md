@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.11.37
+
+- Starts Postfix and OpenDKIM during first Mail Relay setup instead of only reloading a daemon that was not running yet.
+
 ## 2026.09.05.11.08
 
 - Preflight checks sit in compact columns instead of full-width rows.
