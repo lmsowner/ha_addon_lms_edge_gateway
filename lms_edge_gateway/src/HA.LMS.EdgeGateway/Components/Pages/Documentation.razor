@@ -79,6 +79,10 @@
                 <span>Know the scheme, host/IP, port, and any path prefix for each app you want to publish.</span>
             </article>
             <article>
+                <strong>Mail Relay (optional)</strong>
+                <span>Outbound SMTP for LAN apps, with Cloudflare SPF/DKIM/DMARC and automatic public-IP DNS refresh. Separate from Security → Messaging.</span>
+            </article>
+            <article>
                 <strong>Admin account</strong>
                 <span>Create at least one LMS user, enroll authenticator OTP, then save a passkey from the public HTTPS route.</span>
             </article>
@@ -381,6 +385,30 @@
             Recommended flow: choose a provider, save the settings, send a successful test to yourself, then create LMS users.
             That gives each user a cleaner setup path and gives you email OTP as a fallback when a passkey is not yet enrolled.
         </p>
+        <p class="callout">
+            Messaging is an <strong>outbound client</strong> used by Edge Gateway itself (account setup, email OTP, IP approval).
+            Mail Relay is a separate <strong>outbound SMTP server</strong> on private TCP/587 for applications on your LAN.
+            Do not point Messaging at a public smart-host unless you intend Edge Gateway to send through that provider.
+            After Mail Relay is running, you can optionally point Messaging SMTP at <code>127.0.0.1:587</code> using a Mail Relay username.
+        </p>
+    </section>
+
+    <section class="surface-card edge-card docs-section" id="mail-relay">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Mail Relay</p>
+                <h2>Outbound SMTP from a home IP</h2>
+                <p class="meta-text">
+                    Mail Relay is outbound-only. It is not an inbound mailbox or MX. Postfix, OpenDKIM and SASL run inside this add-on.
+                    Public TCP/587 is never opened. Authenticated STARTTLS on private 587 is the default; restricted legacy port 25 is optional.
+                </p>
+            </div>
+        </div>
+        <div class="docs-definition-list compact">
+            <div><strong>Cloudflare DNS</strong><span>Creates or merges unproxied A for <code>smtp.yourzone</code>, SPF <code>ip4:</code> for this WAN, LMS DKIM, and DMARC <code>p=none</code> only if missing. Existing MX and other people's DKIM/DMARC are left alone.</span></div>
+            <div><strong>Public IP refresh</strong><span>Home WAN addresses change. Mail Relay checks Cloudflare's <code>cdn-cgi/trace</code> every 15 minutes by default and rewrites only LMS-owned A and SPF <code>ip4:</code> values.</span></div>
+            <div><strong>PTR</strong><span>Reverse DNS stays with your ISP. A mismatch is a warning, not a blocker.</span></div>
+        </div>
     </section>
 
     <section class="surface-card edge-card docs-section" id="scenarios">

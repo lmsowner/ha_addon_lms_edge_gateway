@@ -34,7 +34,7 @@ else
 @code {
     private CloudflareApiTokenState? tokenState;
     private EdgeGatewayRuntimeStatus? status;
-    private const string FallbackProductVersion = "2026.08.19.07.48";
+    private const string FallbackProductVersion = "2026.09.05.10.58";
 
     protected override async Task OnInitializedAsync()
     {
@@ -47,6 +47,7 @@ else
         new($"Published Apps ({status?.Configuration.Applications.Count ?? 0})", "/", string.Empty, "Apps and hosts exposed through Edge Gateway"),
         new("Setup", "/cloudflare", string.Empty, "Cloudflare token, zones, relay namespace, and runtime readiness"),
         new("Domain Services", "/domain-services", string.Empty, ".well-known files, JSON metadata, and verification services"),
+        new("Mail Relay", "/mail-relay", string.Empty, "Outbound SMTP for home applications, with Cloudflare DNS and public IP refresh"),
         new("Documentation", "/documentation", string.Empty, "End-to-end setup, routing, authentication, and operating guide"),
         new("Security/Users", "/security", string.Empty, "LMS accounts, MFA, passkeys, and email messaging"),
         new("Diagnostics", "/diagnostics", string.Empty, "Route checks and access log"),

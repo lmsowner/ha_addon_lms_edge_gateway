@@ -4369,3 +4369,171 @@ textarea {
         white-space: normal;
     }
 }
+
+/* Mail Relay */
+
+.mail-relay-page {
+    gap: 0.85rem;
+}
+
+.mail-relay-page .edge-card {
+    display: grid;
+    gap: 0.72rem;
+}
+
+.mail-relay-page h3 {
+    font-size: 1.02rem;
+    margin: 0;
+}
+
+.mail-relay-overview {
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: minmax(14rem, 1.1fr) repeat(4, minmax(10rem, 1fr));
+}
+
+.mail-relay-stat,
+.mail-relay-check,
+.mail-relay-row,
+.mail-relay-dns-row,
+.mail-relay-step {
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    min-width: 0;
+}
+
+.mail-relay-stat {
+    display: grid;
+    gap: 0.28rem;
+    padding: 0.62rem 0.72rem;
+}
+
+.mail-relay-stat strong,
+.mail-relay-check strong,
+.mail-relay-row strong,
+.mail-relay-dns-row strong,
+.mail-relay-step strong {
+    font-size: 0.88rem;
+    overflow-wrap: anywhere;
+}
+
+.mail-relay-check-list,
+.mail-relay-row-list,
+.mail-relay-dns-list,
+.mail-relay-step-list,
+.mail-relay-domain-picks {
+    display: grid;
+    gap: 0.42rem;
+}
+
+.mail-relay-check,
+.mail-relay-row,
+.mail-relay-dns-row,
+.mail-relay-step {
+    align-items: start;
+    display: grid;
+    gap: 0.45rem 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 0.58rem 0.72rem;
+}
+
+.mail-relay-check > div,
+.mail-relay-row > div,
+.mail-relay-dns-row > div,
+.mail-relay-step > div {
+    display: grid;
+    gap: 0.16rem;
+    min-width: 0;
+}
+
+.mail-relay-check span,
+.mail-relay-row span,
+.mail-relay-dns-row span,
+.mail-relay-step span,
+.mail-relay-check p {
+    color: var(--color-text-muted);
+    font-size: 0.76rem;
+    line-height: 1.35;
+    margin: 0;
+}
+
+.mail-relay-check p {
+    grid-column: 1 / -1;
+}
+
+.mail-relay-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
+}
+
+.mail-relay-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mail-relay-check-field {
+    align-items: center;
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-button);
+    display: flex;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.45rem 0.68rem;
+}
+
+.mail-relay-check-field input {
+    box-shadow: none;
+    min-height: auto;
+    width: auto;
+}
+
+.mail-relay-password-row {
+    align-items: center;
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.mail-relay-secret {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+}
+
+.mail-relay-secret code,
+.mail-relay-dns-row code {
+    overflow-wrap: anywhere;
+}
+
+.mail-relay-modal {
+    max-width: min(52rem, 100%);
+}
+
+@media (max-width: 1100px) {
+    .mail-relay-overview,
+    .mail-relay-form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .mail-relay-overview,
+    .mail-relay-form-grid,
+    .mail-relay-password-row,
+    .mail-relay-check,
+    .mail-relay-row,
+    .mail-relay-dns-row,
+    .mail-relay-step,
+    .mail-relay-secret {
+        grid-template-columns: 1fr;
+    }
+
+    .mail-relay-pill-row,
+    .mail-relay-secret {
+        justify-content: flex-start;
+    }
+}

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.05.10.58
+
+- Adds a Mail Relay tab: outbound-only SMTP on private 587 (optional restricted port 25), Cloudflare SPF/DKIM/DMARC preserve-and-merge, and public-IP DNS refresh every 15 minutes by default.
+- Postfix, OpenDKIM and SASL run inside the add-on. This is not inbound MX and it is not the Security → Messaging outbound client.
+
 ## 2026.08.19.07.48
 
 - Keeps field help and multi-select menus inside the dialog, near the control, with a readable width instead of a clipped text column.

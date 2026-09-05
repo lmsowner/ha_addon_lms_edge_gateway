@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-mkdir -p /data/lms-edge-gateway /data/caddy /data/cloudflared /data/logs
+mkdir -p /data/lms-edge-gateway /data/lms-edge-gateway/mail-relay /data/caddy /data/cloudflared /data/logs /var/lib/lms /run/opendkim
 
 if [[ ! -f /data/caddy/Caddyfile ]]; then
   cat > /data/caddy/Caddyfile <<'CADDY'

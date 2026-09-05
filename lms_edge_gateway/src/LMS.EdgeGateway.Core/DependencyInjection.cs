@@ -46,6 +46,21 @@ public static class DependencyInjection
         services.AddScoped<IEdgeGatewayEmailDeliveryService, EdgeGatewayEmailDeliveryService>();
         services.AddScoped<IEmailSender>(provider => provider.GetRequiredService<IEdgeGatewayEmailDeliveryService>());
         services.AddScoped<IEdgeGatewaySecurityService, EdgeGatewaySecurityService>();
+        services.AddSingleton<MailRelayPaths>();
+        services.AddSingleton<IMailRelayStore, JsonMailRelayStore>();
+        services.AddSingleton<IMailRelaySecretStore, MailRelaySecretStore>();
+        services.AddSingleton<IMailRelayHostCommand, MailRelayHostCommand>();
+        services.AddSingleton<MailRelayProvisioningQueue>();
+        services.AddSingleton<IMailRelayProvisioningQueue>(provider => provider.GetRequiredService<MailRelayProvisioningQueue>());
+        services.AddHostedService(provider => provider.GetRequiredService<MailRelayProvisioningQueue>());
+        services.AddSingleton<MailRelayPublicIpMonitorService>();
+        services.AddSingleton<IMailRelayPublicIpMonitorService>(provider => provider.GetRequiredService<MailRelayPublicIpMonitorService>());
+        services.AddHostedService(provider => provider.GetRequiredService<MailRelayPublicIpMonitorService>());
+        services.AddScoped<IMailRelayPreflightService, MailRelayPreflightService>();
+        services.AddScoped<IMailRelayProvisioningService, MailRelayProvisioningService>();
+        services.AddScoped<IMailRelayClientService, MailRelayClientService>();
+        services.AddScoped<IMailRelayTestService, MailRelayTestService>();
+        services.AddScoped<IMailRelayService, MailRelayService>();
         services.AddHttpClient<IWellKnownServiceManager, WellKnownServiceManager>()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {
