@@ -149,24 +149,53 @@ public sealed partial class MailRelayTestService(
         string? messageId = null,
         CancellationToken cancellationToken = default)
     {
-        var path = paths.MailLogPath;
-        if (!File.Exists(path))
+        var logText = await ReadCombinedMailLogsAsync(cancellationToken);
+        var lines = new List<string>(SelectMailLogLines(logText, messageId, queueId, 120));
+
+        var queue = await hostCommand.RunAsync(
+            "postqueue",
+            ["-p"],
+            cancellationToken,
+            timeout: TimeSpan.FromSeconds(10));
+        var queueLines = (queue.StandardOutput ?? string.Empty)
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (queueLines.Length > 0)
         {
-            return new MailRelayLogSnapshot(
-                false,
-                path,
-                "Postfix has not written /var/log/mail.log yet. Send a test, or check that rsyslog is running in the add-on.",
-                []);
+            if (lines.Count > 0)
+            {
+                lines.Add(string.Empty);
+            }
+
+            lines.Add("--- Postfix queue ---");
+            lines.AddRange(queueLines);
         }
 
-        var text = await ReadMailLogTailAsync(path, cancellationToken);
-        var lines = SelectMailLogLines(text, messageId, queueId, 120);
+        var path = File.Exists(paths.MailLogPath) ? paths.MailLogPath : paths.SystemMailLogPath;
+        var available = File.Exists(paths.MailLogPath) || File.Exists(paths.SystemMailLogPath);
         var summary = lines.Count == 0
-            ? "The mail log exists but has no matching lines yet."
+            ? available
+                ? "The send log is empty. Send a test, then refresh."
+                : "Postfix has not written a send log yet. Update the add-on and send the test again."
             : string.IsNullOrWhiteSpace(queueId) && string.IsNullOrWhiteSpace(messageId)
-                ? $"Latest {lines.Count} lines from {path}."
-                : $"{lines.Count} mail log lines for this send.";
-        return new MailRelayLogSnapshot(true, path, summary, lines);
+                ? $"Latest send log and queue ({lines.Count} lines)."
+                : $"Send log for this test ({lines.Count} lines).";
+        return new MailRelayLogSnapshot(available || lines.Count > 0, path, summary, lines);
+    }
+
+    private async Task<string> ReadCombinedMailLogsAsync(CancellationToken cancellationToken)
+    {
+        var chunks = new List<string>();
+        foreach (var path in new[] { paths.MailLogPath, paths.SystemMailLogPath, paths.MessagesLogPath })
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            chunks.Add(await ReadMailLogTailAsync(path, cancellationToken));
+        }
+
+        return string.Join('\n', chunks);
     }
 
     private async Task<string?> FindQueueIdAsync(string messageId, CancellationToken cancellationToken)
@@ -179,9 +208,7 @@ public sealed partial class MailRelayTestService(
                 await Task.Delay(delay, cancellationToken);
             }
 
-            var logs = File.Exists(paths.MailLogPath)
-                ? await File.ReadAllTextAsync(paths.MailLogPath, cancellationToken)
-                : string.Empty;
+            var logs = await ReadCombinedMailLogsAsync(cancellationToken);
             var queueId = ParseQueueIdForMessage(logs, messageId);
             if (!string.IsNullOrWhiteSpace(queueId))
             {
@@ -210,9 +237,7 @@ public sealed partial class MailRelayTestService(
                 await Task.Delay(delay, cancellationToken);
             }
 
-            var logs = File.Exists(paths.MailLogPath)
-                ? await File.ReadAllTextAsync(paths.MailLogPath, cancellationToken)
-                : string.Empty;
+            var logs = await ReadCombinedMailLogsAsync(cancellationToken);
             var logEvidence = ParseLogEvidence(logs);
             if (logEvidence?.Status is MailRelayTestStatus.Sent or MailRelayTestStatus.Bounced)
             {

@@ -1679,11 +1679,12 @@ public sealed partial class MailRelayProvisioningService(
         }
     }
 
-    private static string BuildMainCf(string relayHostname) => $$"""
+    private string BuildMainCf(string relayHostname) => $$"""
         # Managed by Linux Made Sane
         # Do not edit manually
         compatibility_level = 3.6
         myhostname = {{relayHostname}}
+        maillog_file = {{paths.MailLogPath}}
         myorigin = $myhostname
         mydestination = localhost
         relay_domains =

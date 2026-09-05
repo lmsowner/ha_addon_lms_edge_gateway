@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.12.12
+
+- Postfix now writes a send log under the Test email card. The log was missing because rsyslog never created /var/log/mail.log.
+
 ## 2026.09.05.12.03
 
 - Setup step badges stay pill-sized, so long DNS details no longer crush Complete.

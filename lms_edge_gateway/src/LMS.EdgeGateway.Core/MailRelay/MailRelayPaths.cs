@@ -21,5 +21,7 @@ public sealed class MailRelayPaths(IOptions<EdgeGatewayCoreOptions> options)
     public string ConfigDirectory => Path.Combine(Root, "config");
     public string ApplyScriptPath => "/usr/local/bin/lms-mail-relay-apply";
     public string SaslDatabasePath => "/var/lib/lms/sasldb2";
-    public string MailLogPath => "/var/log/mail.log";
+    public string MailLogPath => Path.Combine(Root, "mail.log");
+    public string SystemMailLogPath => "/var/log/mail.log";
+    public string MessagesLogPath => "/var/log/messages";
 }
