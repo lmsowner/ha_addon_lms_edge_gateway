@@ -4376,6 +4376,54 @@ textarea {
     gap: 0.85rem;
 }
 
+.mail-relay-panel-grid {
+    align-items: start;
+    display: grid;
+    gap: 0.85rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mail-relay-panel-grid > .edge-card {
+    min-width: 0;
+}
+
+.mail-relay-log-panel {
+    grid-column: 1 / -1;
+}
+
+.mail-relay-log-toggle {
+    align-items: start;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    padding: 0;
+    text-align: left;
+    width: 100%;
+}
+
+.mail-relay-log-toggle h2,
+.mail-relay-log-toggle .eyebrow,
+.mail-relay-log-toggle .meta-text {
+    margin: 0;
+}
+
+.mail-relay-log-toggle-meta {
+    align-items: center;
+    display: flex;
+    flex-shrink: 0;
+    gap: 0.5rem;
+}
+
+.mail-relay-log-toggle-meta span:not(.lms-status-pill) {
+    color: var(--color-text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 .mail-relay-page .edge-card {
     display: grid;
     gap: 0.72rem;
@@ -4471,7 +4519,12 @@ textarea {
 
 .mail-relay-config-row {
     align-items: center;
-    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.mail-relay-config-row .mail-relay-pill-row {
+    justify-content: flex-start;
+    margin-top: 0.28rem;
 }
 
 .mail-relay-row-actions {
@@ -4518,6 +4571,10 @@ textarea {
 
 .mail-relay-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mail-relay-panel-grid .mail-relay-form-grid {
+    grid-template-columns: 1fr;
 }
 
 .mail-relay-check-field {
@@ -4690,6 +4747,12 @@ textarea {
     .mail-relay-form-grid,
     .mail-relay-check-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 980px) {
+    .mail-relay-panel-grid {
+        grid-template-columns: 1fr;
     }
 }
 

@@ -129,231 +129,237 @@
 
     @if (IsEnabled && dashboard is not null)
     {
-        <section class="surface-card edge-card">
-            <div class="table-header">
-                <div>
-                    <p class="eyebrow">Sending domains</p>
-                    <h2>SPF, DKIM and DMARC</h2>
-                    <p class="meta-text">Each domain is a sending identity. Microsoft 365 and other mailbox providers stay in charge of inbound MX. LMS only merges its own SPF ip4 and DKIM selector.</p>
+        <div class="mail-relay-panel-grid">
+            <section class="surface-card edge-card">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Sending domains</p>
+                        <h2>SPF, DKIM and DMARC</h2>
+                        <p class="meta-text">Microsoft 365 and other mailbox MX stay. LMS only merges its SPF ip4 and DKIM selector.</p>
+                    </div>
+                    <LmsButton Label="Add domain" Icon="plus" Primary="true" OnClick="OpenAddDomainModal" />
                 </div>
-                <LmsButton Label="Add domain" Icon="plus" Primary="true" OnClick="OpenAddDomainModal" />
-            </div>
-            @if (dashboard.Domains.Count == 0)
-            {
-                <p class="meta-text">No sending domains are configured yet.</p>
-            }
-            else
-            {
-                <div class="mail-relay-row-list">
-                    @foreach (var domain in dashboard.Domains)
-                    {
-                        <div class="mail-relay-row mail-relay-config-row">
-                            <div>
-                                <strong>@domain.DomainName</strong>
-                                <span>@ZoneNameFor(domain) · selector <code>@domain.CurrentDkimSelector</code>@(domain.Enabled ? string.Empty : " · pending")</span>
-                            </div>
-                            <div class="mail-relay-pill-row">
-                                <LmsStatusPill Text="@($"SPF {DnsStatusLabel(domain.SpfStatus)}")" Tone="@DnsTone(domain.SpfStatus)" />
-                                <LmsStatusPill Text="@($"DKIM {DnsStatusLabel(domain.DkimStatus)}")" Tone="@DnsTone(domain.DkimStatus)" />
-                                <LmsStatusPill Text="@($"DMARC {DnsStatusLabel(domain.DmarcStatus)}")" Tone="@DnsTone(domain.DmarcStatus)" />
-                            </div>
-                            <div class="mail-relay-row-actions">
-                                <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenDomainDetailAsync(domain))" />
-                                <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => OpenDeleteDomainModal(domain))" />
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </section>
-
-        <section class="surface-card edge-card">
-            <div class="table-header">
-                <div>
-                    <p class="eyebrow">SMTP users</p>
-                    <h2>Application credentials</h2>
-                    <p class="meta-text">Each user may send only from the domains you allow. Usernames cannot be renamed after they are created.</p>
-                </div>
-                <LmsButton Label="Add SMTP user" Icon="plus" Primary="true" OnClick="@(() => OpenClientModal(null))" />
-            </div>
-            @if (dashboard.Clients.Count == 0)
-            {
-                <p class="meta-text">No SMTP users yet. Add one for Home Assistant or another local application.</p>
-            }
-            else
-            {
-                <div class="mail-relay-row-list">
-                    @foreach (var client in dashboard.Clients)
-                    {
-                        <div class="mail-relay-row mail-relay-config-row">
-                            <div>
-                                <strong>@client.Name</strong>
-                                <span><code>@client.Username</code> · @string.Join(", ", client.AllowedSenderDomains)</span>
-                            </div>
-                            <div class="mail-relay-row-actions">
-                                <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenClientModal(client))" />
-                                <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => OpenDeleteClientModal(client))" />
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </section>
-
-        <section class="surface-card edge-card">
-            <div class="table-header">
-                <div>
-                    <p class="eyebrow">Test email</p>
-                    <h2>Send through Mail Relay</h2>
-                    <p class="meta-text">This tests the local SMTP user, then the same MX path full LMS uses. This is not the Messaging client on the Security tab.</p>
-                </div>
-            </div>
-            @if (OutboundMxBlocked)
-            {
-                <p class="callout warning">
-                    Full LMS can send because that host can open destination MX on TCP/25. This Home Assistant network cannot, and Outlook MX does not accept mail on 587.
-                    Point Home Assistant at your working LMS Mail Relay on 587, or run Mail Relay on a host that is allowed to make outbound MX connections.
-                </p>
-            }
-            <div class="edge-form-grid mail-relay-form-grid">
-                <label class="ui-field">
-                    <span class="ui-field-label">SMTP user</span>
-                    <select @bind="testClientId" @bind:after="OnTestClientChanged">
-                        <option value="">Select a user</option>
-                        @foreach (var client in dashboard.Clients)
+                @if (dashboard.Domains.Count == 0)
+                {
+                    <p class="meta-text">No sending domains are configured yet.</p>
+                }
+                else
+                {
+                    <div class="mail-relay-row-list">
+                        @foreach (var domain in dashboard.Domains)
                         {
-                            <option value="@client.Id">@client.Name (@client.Username)</option>
-                        }
-                    </select>
-                </label>
-                <label class="ui-field">
-                    <span class="ui-field-label">From</span>
-                    <input type="email" @bind="testFromAddress" placeholder="homeassistant@example.com" />
-                </label>
-                <label class="ui-field">
-                    <span class="ui-field-label">Recipient</span>
-                    <input type="email" @bind="testRecipientAddress" placeholder="you@example.com" />
-                </label>
-            </div>
-            <div class="toolbar-row">
-                <LmsButton Label="@(isSendingTest ? "Sending..." : "Send test")"
-                           Icon="test"
-                           Primary="true"
-                           Busy="@isSendingTest"
-                           Disabled="@isSendingTest"
-                           OnClick="SendTestAsync" />
-            </div>
-            @if (testResult is not null)
-            {
-                <div class="mail-relay-test-result">
-                    <p class="callout @(TestCalloutClass)">@testResult.Summary</p>
-                    <div class="mail-relay-test-meta">
-                        <span>Status: @testResult.Status</span>
-                        @if (!string.IsNullOrWhiteSpace(testResult.QueueId))
-                        {
-                            <span>Queue ID: <code>@testResult.QueueId</code></span>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(testResult.DestinationServer))
-                        {
-                            <span>Destination: <code>@testResult.DestinationServer</code></span>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(testResult.SmtpResponse))
-                        {
-                            <span>SMTP: @testResult.SmtpResponse</span>
+                            <div class="mail-relay-row mail-relay-config-row">
+                                <div>
+                                    <strong>@domain.DomainName</strong>
+                                    <span>@ZoneNameFor(domain) · <code>@domain.CurrentDkimSelector</code>@(domain.Enabled ? string.Empty : " · pending")</span>
+                                    <div class="mail-relay-pill-row">
+                                        <LmsStatusPill Text="@($"SPF {DnsStatusLabel(domain.SpfStatus)}")" Tone="@DnsTone(domain.SpfStatus)" />
+                                        <LmsStatusPill Text="@($"DKIM {DnsStatusLabel(domain.DkimStatus)}")" Tone="@DnsTone(domain.DkimStatus)" />
+                                        <LmsStatusPill Text="@($"DMARC {DnsStatusLabel(domain.DmarcStatus)}")" Tone="@DnsTone(domain.DmarcStatus)" />
+                                    </div>
+                                </div>
+                                <div class="mail-relay-row-actions">
+                                    <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenDomainDetailAsync(domain))" />
+                                    <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => OpenDeleteDomainModal(domain))" />
+                                </div>
+                            </div>
                         }
                     </div>
-                </div>
-            }
-        </section>
+                }
+            </section>
 
-        <section class="surface-card edge-card">
-            <div class="table-header">
-                <div>
-                    <p class="eyebrow">Postfix</p>
-                    <h2>Send log</h2>
-                    <p class="meta-text">Raw Postfix mail.log and queue. This is the same trail the full LMS Mail Relay shows.</p>
+            <section class="surface-card edge-card">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">SMTP users</p>
+                        <h2>Application credentials</h2>
+                        <p class="meta-text">Each user may send only from the domains you allow. Usernames cannot be renamed.</p>
+                    </div>
+                    <LmsButton Label="Add SMTP user" Icon="plus" Primary="true" OnClick="@(() => OpenClientModal(null))" />
                 </div>
-                <LmsStatusPill Text="@MailLogStatusLabel" Tone="@MailLogStatusTone" />
-            </div>
-            <p class="meta-text">@(mailLog?.Summary ?? "Refresh to load the latest Postfix lines.")</p>
-            <div class="toolbar-row">
-                <div class="mail-relay-log-filters" role="tablist" aria-label="Send log filter">
-                    <button type="button" class="mail-relay-log-filter @(mailLogFilter == "all" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "all"'>All</button>
-                    <button type="button" class="mail-relay-log-filter @(mailLogFilter == "test" ? "active" : string.Empty)" disabled="@string.IsNullOrWhiteSpace(testResult?.QueueId)" @onclick='() => mailLogFilter = "test"'>This test</button>
-                    <button type="button" class="mail-relay-log-filter @(mailLogFilter == "problems" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "problems"'>Problems</button>
-                    <button type="button" class="mail-relay-log-filter @(mailLogFilter == "queue" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "queue"'>Queue</button>
-                </div>
-                <LmsButton Label="@(isLoadingMailLog ? "Reading..." : "Refresh")"
-                           Icon="refresh"
-                           Busy="@isLoadingMailLog"
-                           Disabled="@isLoadingMailLog"
-                           OnClick="RefreshMailLogAsync" />
-                <LmsButton Label="Copy"
-                           Icon="copy"
-                           Disabled="@string.IsNullOrWhiteSpace(VisibleMailLogText)"
-                           OnClick="CopyMailLogAsync" />
-                <LmsButton Label="@(isClearingQueue ? "Clearing..." : "Clear queue")"
-                           Icon="delete"
-                           Danger="true"
-                           Busy="@isClearingQueue"
-                           Disabled="@isClearingQueue"
-                           OnClick="ClearMailQueueAsync" />
-            </div>
-            <pre class="mail-relay-log">@(string.IsNullOrWhiteSpace(VisibleMailLogText) ? "No Postfix lines for this filter yet. Send a test or refresh." : VisibleMailLogText)</pre>
-        </section>
+                @if (dashboard.Clients.Count == 0)
+                {
+                    <p class="meta-text">No SMTP users yet. Add one for Home Assistant or another local application.</p>
+                }
+                else
+                {
+                    <div class="mail-relay-row-list">
+                        @foreach (var client in dashboard.Clients)
+                        {
+                            <div class="mail-relay-row mail-relay-config-row">
+                                <div>
+                                    <strong>@client.Name</strong>
+                                    <span><code>@client.Username</code> · @string.Join(", ", client.AllowedSenderDomains)</span>
+                                </div>
+                                <div class="mail-relay-row-actions">
+                                    <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenClientModal(client))" />
+                                    <LmsButton Label="Delete" Icon="delete" Danger="true" OnClick="@(() => OpenDeleteClientModal(client))" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
 
-        <section class="surface-card edge-card">
-            <div class="table-header">
-                <div>
-                    <p class="eyebrow">Public IP protection</p>
-                    <h2>Keep LMS DNS aligned</h2>
-                    <p class="meta-text">
-                        Public IP monitoring is on by default every 15 minutes because home IPs change.
-                        LMS only rewrites LMS-owned A and SPF ip4: records, then checks DKIM, DMARC and PTR. It never touches MX.
+            <section class="surface-card edge-card">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Test email</p>
+                        <h2>Send through Mail Relay</h2>
+                        <p class="meta-text">Uses a local SMTP user, then the same MX path as full LMS. Not the Security → Messaging client.</p>
+                    </div>
+                </div>
+                @if (OutboundMxBlocked)
+                {
+                    <p class="callout warning">
+                        This network cannot open destination MX on TCP/25. Outlook MX does not accept mail on 587.
                     </p>
+                }
+                <div class="edge-form-grid mail-relay-form-grid">
+                    <label class="ui-field">
+                        <span class="ui-field-label">SMTP user</span>
+                        <select @bind="testClientId" @bind:after="OnTestClientChanged">
+                            <option value="">Select a user</option>
+                            @foreach (var client in dashboard.Clients)
+                            {
+                                <option value="@client.Id">@client.Name (@client.Username)</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">From</span>
+                        <input type="email" @bind="testFromAddress" placeholder="homeassistant@example.com" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Recipient</span>
+                        <input type="email" @bind="testRecipientAddress" placeholder="you@example.com" />
+                    </label>
                 </div>
-                <LmsStatusPill Text="@PublicIpMonitorLabel" Tone="@PublicIpMonitorTone" />
-            </div>
-            <p class="meta-text">@PublicIpMonitorDetail</p>
-            <div class="toolbar-row">
-                <LmsButton Label="@(isCheckingPublicIp ? "Checking..." : "Check now")"
-                           Icon="refresh"
-                           Busy="@isCheckingPublicIp"
-                           Disabled="@isCheckingPublicIp"
-                           OnClick="CheckPublicIpNowAsync" />
-                <LmsButton Label="Configure" Icon="edit" OnClick="OpenPublicIpModal" />
-            </div>
-        </section>
+                <div class="toolbar-row">
+                    <LmsButton Label="@(isSendingTest ? "Sending..." : "Send test")"
+                               Icon="test"
+                               Primary="true"
+                               Busy="@isSendingTest"
+                               Disabled="@isSendingTest"
+                               OnClick="SendTestAsync" />
+                </div>
+                @if (testResult is not null)
+                {
+                    <div class="mail-relay-test-result">
+                        <p class="callout @(TestCalloutClass)">@testResult.Summary</p>
+                        <div class="mail-relay-test-meta">
+                            <span>Status: @testResult.Status</span>
+                            @if (!string.IsNullOrWhiteSpace(testResult.QueueId))
+                            {
+                                <span>Queue ID: <code>@testResult.QueueId</code></span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(testResult.DestinationServer))
+                            {
+                                <span>Destination: <code>@testResult.DestinationServer</code></span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(testResult.SmtpResponse))
+                            {
+                                <span>SMTP: @testResult.SmtpResponse</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
 
-        <section class="surface-card edge-card">
-            <div class="table-header">
-                <div>
-                    <p class="eyebrow">Legacy devices</p>
-                    <h2>Port 25 listener</h2>
-                    <p class="meta-text">Optional unauthenticated port 25 for old LAN printers and scanners. It listens on all adapters; only the send-from allowlist may submit. Public 587 is never enabled.</p>
+            <section class="surface-card edge-card">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Public IP protection</p>
+                        <h2>Keep LMS DNS aligned</h2>
+                        <p class="meta-text">Checks the home address every 15 minutes by default. Only LMS-owned A and SPF ip4: records are rewritten. MX is never touched.</p>
+                    </div>
+                    <LmsStatusPill Text="@PublicIpMonitorLabel" Tone="@PublicIpMonitorTone" />
                 </div>
-                <LmsStatusPill Text="@(dashboard.Configuration!.AllowLegacyPort25 ? "Enabled" : "Off")"
-                               Tone="@(dashboard.Configuration.AllowLegacyPort25 ? LmsStatusTone.Warning : LmsStatusTone.Neutral)" />
-            </div>
-            @if (dashboard.Configuration.AllowLegacyPort25 && dashboard.Configuration.EffectiveLegacyAllowedNetworks.Count > 0)
-            {
-                <p class="meta-text">Allowed sources: @string.Join(", ", dashboard.Configuration.EffectiveLegacyAllowedNetworks)</p>
-            }
-            <div class="toolbar-row">
-                <LmsButton Label="Configure legacy port 25" Icon="edit" OnClick="OpenLegacyModal" />
-            </div>
-        </section>
+                <p class="meta-text">@PublicIpMonitorDetail</p>
+                <div class="toolbar-row">
+                    <LmsButton Label="@(isCheckingPublicIp ? "Checking..." : "Check now")"
+                               Icon="refresh"
+                               Busy="@isCheckingPublicIp"
+                               Disabled="@isCheckingPublicIp"
+                               OnClick="CheckPublicIpNowAsync" />
+                    <LmsButton Label="Configure" Icon="edit" OnClick="OpenPublicIpModal" />
+                </div>
+            </section>
 
-        <section class="surface-card edge-card">
-            <div class="table-header">
-                <div>
-                    <p class="eyebrow">Maintenance</p>
-                    <h2>Remove Mail Relay</h2>
-                    <p class="meta-text">Choose exactly what LMS should tear down. DNS MX records are never removed because LMS never owns them.</p>
+            <section class="surface-card edge-card mail-relay-log-panel">
+                <button type="button"
+                        class="mail-relay-log-toggle"
+                        aria-expanded="@mailLogExpanded"
+                        @onclick="ToggleMailLogAsync">
+                    <div>
+                        <p class="eyebrow">Postfix</p>
+                        <h2>Send log</h2>
+                        <p class="meta-text">@(mailLogExpanded ? (mailLog?.Summary ?? "Raw mail.log and queue.") : "Hidden until you need it. Open after a test to see Postfix output.")</p>
+                    </div>
+                    <div class="mail-relay-log-toggle-meta">
+                        <LmsStatusPill Text="@MailLogStatusLabel" Tone="@MailLogStatusTone" />
+                        <span>@(mailLogExpanded ? "Hide" : "Show")</span>
+                    </div>
+                </button>
+                @if (mailLogExpanded)
+                {
+                    <div class="toolbar-row">
+                        <div class="mail-relay-log-filters" role="tablist" aria-label="Send log filter">
+                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "all" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "all"'>All</button>
+                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "test" ? "active" : string.Empty)" disabled="@string.IsNullOrWhiteSpace(testResult?.QueueId)" @onclick='() => mailLogFilter = "test"'>This test</button>
+                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "problems" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "problems"'>Problems</button>
+                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "queue" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "queue"'>Queue</button>
+                        </div>
+                        <LmsButton Label="@(isLoadingMailLog ? "Reading..." : "Refresh")"
+                                   Icon="refresh"
+                                   Busy="@isLoadingMailLog"
+                                   Disabled="@isLoadingMailLog"
+                                   OnClick="RefreshMailLogAsync" />
+                        <LmsButton Label="Copy"
+                                   Icon="copy"
+                                   Disabled="@string.IsNullOrWhiteSpace(VisibleMailLogText)"
+                                   OnClick="CopyMailLogAsync" />
+                        <LmsButton Label="@(isClearingQueue ? "Clearing..." : "Clear queue")"
+                                   Icon="delete"
+                                   Danger="true"
+                                   Busy="@isClearingQueue"
+                                   Disabled="@isClearingQueue"
+                                   OnClick="ClearMailQueueAsync" />
+                    </div>
+                    <pre class="mail-relay-log">@(string.IsNullOrWhiteSpace(VisibleMailLogText) ? "No Postfix lines for this filter yet. Send a test or refresh." : VisibleMailLogText)</pre>
+                }
+            </section>
+
+            <section class="surface-card edge-card">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Legacy devices</p>
+                        <h2>Port 25 listener</h2>
+                        <p class="meta-text">Unauthenticated LAN :25 on all adapters. Only the send-from allowlist may submit.</p>
+                    </div>
+                    <LmsStatusPill Text="@(dashboard.Configuration!.AllowLegacyPort25 ? "Enabled" : "Off")"
+                                   Tone="@(dashboard.Configuration.AllowLegacyPort25 ? LmsStatusTone.Warning : LmsStatusTone.Neutral)" />
                 </div>
-            </div>
-            <LmsButton Label="Remove Mail Relay" Icon="delete" Danger="true" OnClick="OpenRemovalModal" />
-        </section>
+                @if (dashboard.Configuration.AllowLegacyPort25 && dashboard.Configuration.EffectiveLegacyAllowedNetworks.Count > 0)
+                {
+                    <p class="meta-text">Allowed sources: @string.Join(", ", dashboard.Configuration.EffectiveLegacyAllowedNetworks)</p>
+                }
+                <div class="toolbar-row">
+                    <LmsButton Label="Configure" Icon="edit" OnClick="OpenLegacyModal" />
+                </div>
+            </section>
+
+            <section class="surface-card edge-card">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Maintenance</p>
+                        <h2>Remove Mail Relay</h2>
+                        <p class="meta-text">Tear down the relay. MX records stay because LMS never owns them.</p>
+                    </div>
+                </div>
+                <LmsButton Label="Remove Mail Relay" Icon="delete" Danger="true" OnClick="OpenRemovalModal" />
+            </section>
+        </div>
     }
 </div>
 
@@ -948,6 +954,7 @@
     private MailRelayProvisioningJobSnapshot? setupJob;
     private MailRelayTestResult? testResult;
     private MailRelayLogSnapshot? mailLog;
+    private bool mailLogExpanded;
     private bool isLoadingMailLog;
     private bool isClearingQueue;
     private string mailLogFilter = "all";
@@ -1194,7 +1201,7 @@
             OnTestClientChanged();
         }
 
-        if (dashboard.Configuration?.Enabled == true && mailLog is null)
+        if (dashboard.Configuration?.Enabled == true && mailLogExpanded && mailLog is null)
         {
             await RefreshMailLogAsync();
         }
@@ -1691,6 +1698,7 @@
         try
         {
             testResult = await MailRelayService.SendTestAsync(new MailRelayTestRequest(id, testFromAddress, testRecipientAddress));
+            mailLogExpanded = true;
             await RefreshMailLogAsync();
             if (!string.IsNullOrWhiteSpace(testResult.QueueId))
             {
@@ -1707,6 +1715,15 @@
         finally
         {
             isSendingTest = false;
+        }
+    }
+
+    private async Task ToggleMailLogAsync()
+    {
+        mailLogExpanded = !mailLogExpanded;
+        if (mailLogExpanded && mailLog is null)
+        {
+            await RefreshMailLogAsync();
         }
     }
 

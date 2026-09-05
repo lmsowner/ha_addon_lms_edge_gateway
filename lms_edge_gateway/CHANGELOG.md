@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.17.11
+
+- Mail Relay uses a two-column layout for domains, users, test, public IP, legacy and remove. The send log is collapsed until you open it or send a test.
+
 ## 2026.09.05.16.42
 
 - Mail Relay treats configured sending domains as compact rows with edit and delete. Preflight stays on first setup and when adding another domain. Extra domains can sit alongside Microsoft 365; MX is never changed.
