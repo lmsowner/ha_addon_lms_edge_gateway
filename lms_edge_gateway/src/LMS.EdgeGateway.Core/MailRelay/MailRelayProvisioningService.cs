@@ -755,24 +755,11 @@ public sealed partial class MailRelayProvisioningService(
 
         try
         {
-            progress?.Report("Checking the selected listen addresses and source allowlist…");
-            if (normalized.Enabled)
-            {
-                var localAddresses = await ReadLocalIpv4AddressesAsync(cancellationToken);
-                var unavailable = normalized.ListenAddresses
-                    .Where(address => !localAddresses.Contains(address, StringComparer.Ordinal))
-                    .ToArray();
-                if (unavailable.Length > 0)
-                {
-                    throw new InvalidOperationException(
-                        $"These listen addresses are not assigned to this machine: {string.Join(", ", unavailable)}. Available IPv4 addresses: {string.Join(", ", localAddresses)}.");
-                }
-            }
-
+            progress?.Report("Checking the source allowlist…");
             var candidate = configuration with
             {
                 AllowLegacyPort25 = normalized.Enabled,
-                LegacyListenAddresses = normalized.Enabled ? normalized.ListenAddresses : [],
+                LegacyListenAddresses = [],
                 LegacyAllowedNetworks = normalized.Enabled ? normalized.AllowedNetworks : [],
                 UpdatedUtc = DateTimeOffset.UtcNow
             };
@@ -802,10 +789,7 @@ public sealed partial class MailRelayProvisioningService(
             if (candidate.AllowLegacyPort25)
             {
                 await VerifyLegacyPolicyAsync(candidate, cancellationToken);
-                foreach (var address in candidate.EffectiveLegacyListenAddresses)
-                {
-                    await VerifyListenerAsync(address, cancellationToken);
-                }
+                await VerifyListenerAsync("127.0.0.1", cancellationToken);
             }
 
             await store.SaveConfigurationAsync(candidate, cancellationToken);
@@ -816,7 +800,7 @@ public sealed partial class MailRelayProvisioningService(
                 true,
                 candidate,
                 candidate.AllowLegacyPort25
-                    ? $"Unauthenticated TCP/25 is listening on {string.Join(", ", candidate.EffectiveLegacyListenAddresses)} and accepts only {string.Join(", ", candidate.EffectiveLegacyAllowedNetworks)}."
+                    ? $"Unauthenticated TCP/25 is listening on all adapters and accepts only {string.Join(", ", candidate.EffectiveLegacyAllowedNetworks)}."
                     : "Unauthenticated TCP/25 has been disabled.");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -1451,35 +1435,16 @@ public sealed partial class MailRelayProvisioningService(
             return new(false, [], []);
         }
 
-        if (request.ListenAddresses.Count is < 1 or > 16)
-        {
-            throw new InvalidOperationException("Choose between 1 and 16 exact listen addresses for legacy TCP/25.");
-        }
         if (request.AllowedNetworks.Count is < 1 or > 128)
         {
             throw new InvalidOperationException("Add between 1 and 128 allowed device IP addresses or CIDR networks.");
         }
 
-        var listenAddresses = request.ListenAddresses
-            .Select(NormalizeLegacyListenAddress)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
         var allowedNetworks = request.AllowedNetworks
             .Select(NormalizeLegacyAllowedNetwork)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        return new(true, listenAddresses, allowedNetworks);
-    }
-
-    private static string NormalizeLegacyListenAddress(string value)
-    {
-        var normalized = NormalizeLegacyIpv4Network(value, requireSingleAddress: true, out _, out _);
-        if (normalized == "0.0.0.0")
-        {
-            throw new InvalidOperationException("The all-interface address 0.0.0.0 is not allowed. Choose one or more explicit NIC addresses.");
-        }
-
-        return normalized;
+        return new(true, [], allowedNetworks);
     }
 
     private static string NormalizeLegacyAllowedNetwork(string value)
@@ -1770,19 +1735,16 @@ public sealed partial class MailRelayProvisioningService(
         if (configuration.AllowLegacyPort25)
         {
             var networks = string.Join(',', configuration.EffectiveLegacyAllowedNetworks);
-            foreach (var address in configuration.EffectiveLegacyListenAddresses.Distinct(StringComparer.Ordinal))
-            {
-                builder.AppendLine($"{address}:25 inet n - n - 20 smtpd");
-                builder.AppendLine("  -o syslog_name=postfix/legacy");
-                builder.AppendLine("  -o smtpd_tls_security_level=none");
-                builder.AppendLine("  -o smtpd_tls_auth_only=no");
-                builder.AppendLine("  -o smtpd_sasl_auth_enable=no");
-                builder.AppendLine($"  -o mynetworks={networks}");
-                builder.AppendLine("  -o smtpd_client_restrictions=check_client_access,cidr:/etc/postfix/legacy_clients.cidr,reject");
-                builder.AppendLine("  -o smtpd_sender_restrictions=check_sender_access,pcre:/etc/postfix/legacy_senders.pcre,reject");
-                builder.AppendLine("  -o smtpd_relay_restrictions=permit_mynetworks,reject");
-                builder.AppendLine("  -o smtpd_recipient_restrictions=permit_mynetworks,reject");
-            }
+            builder.AppendLine("25 inet n - n - 20 smtpd");
+            builder.AppendLine("  -o syslog_name=postfix/legacy");
+            builder.AppendLine("  -o smtpd_tls_security_level=none");
+            builder.AppendLine("  -o smtpd_tls_auth_only=no");
+            builder.AppendLine("  -o smtpd_sasl_auth_enable=no");
+            builder.AppendLine($"  -o mynetworks={networks}");
+            builder.AppendLine("  -o smtpd_client_restrictions=check_client_access,cidr:/etc/postfix/legacy_clients.cidr,reject");
+            builder.AppendLine("  -o smtpd_sender_restrictions=check_sender_access,pcre:/etc/postfix/legacy_senders.pcre,reject");
+            builder.AppendLine("  -o smtpd_relay_restrictions=permit_mynetworks,reject");
+            builder.AppendLine("  -o smtpd_recipient_restrictions=permit_mynetworks,reject");
         }
 
         return builder.ToString();
@@ -2060,7 +2022,7 @@ public sealed partial class MailRelayProvisioningService(
         IReadOnlyList<string> submissionAddresses,
         MailRelayConfiguration configuration) =>
         configuration.AllowLegacyPort25
-            ? $"Authenticated TCP/587 is listening on {string.Join(", ", submissionAddresses)}. Restricted legacy TCP/25 is listening on {string.Join(", ", configuration.EffectiveLegacyListenAddresses)}."
+            ? $"Authenticated TCP/587 is listening on {string.Join(", ", submissionAddresses)}. Restricted legacy TCP/25 is listening on all adapters and accepts only {string.Join(", ", configuration.EffectiveLegacyAllowedNetworks)}."
             : $"Authenticated SMTP submission is listening only on {string.Join(", ", submissionAddresses)}:587.";
 
     private async Task ApplyRuntimeConfigurationAsync(CancellationToken cancellationToken)

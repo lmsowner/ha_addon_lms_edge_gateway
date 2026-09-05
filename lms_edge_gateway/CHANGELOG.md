@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.13.29
+
+- Legacy port 25 listens on all adapters. The send-from allowlist is the control, and the modal starts with this machine's current IPv4 addresses.
+
 ## 2026.09.05.13.09
 
 - Mail Relay outbound delivery matches full LMS again: recipient MX on TCP/25, then STARTTLS. 587 is only for local submission. This Home Assistant network still cannot open MX:25.
