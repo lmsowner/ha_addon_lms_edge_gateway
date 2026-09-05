@@ -1690,7 +1690,7 @@ public sealed partial class MailRelayProvisioningService(
     private string BuildMainCf(MailRelayConfiguration configuration) => $$"""
         # Managed by Linux Made Sane
         # Do not edit manually
-        compatibility_level = 3.6
+        compatibility_level = 3.11
         myhostname = {{configuration.RelayHostname}}
         maillog_file_prefixes = /var, /dev/stdout, /data
         maillog_file = {{paths.MailLogPath}}
