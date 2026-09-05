@@ -24,16 +24,6 @@ public sealed partial class MailRelayTestService(
             return await FailedAsync(request, client, testedAt, "Mail Relay is not running. Finish or retry relay setup first.", cancellationToken);
         }
 
-        if (!configuration.UseSmarthost || string.IsNullOrWhiteSpace(configuration.SmarthostHostname))
-        {
-            return await FailedAsync(
-                request,
-                client,
-                testedAt,
-                "Configure authenticated SMTP on 587 first. Outbound TCP/25 is disabled on this host.",
-                cancellationToken);
-        }
-
         if (client is null || !client.Enabled)
         {
             return await FailedAsync(request, client, testedAt, "Choose an enabled Mail Relay application.", cancellationToken);
@@ -131,10 +121,10 @@ public sealed partial class MailRelayTestService(
         {
             MailRelayTestStatus.Sent => "The selected user policy passed, Postfix accepted the message, and the destination mail server accepted delivery.",
             MailRelayTestStatus.Deferred when IsResolverFailure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but the relay could not resolve the recipient domain.",
-            MailRelayTestStatus.Deferred when IsPort25Failure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but delivery still tried TCP/25. Clear the queue and confirm the smarthost is saved.",
-            MailRelayTestStatus.Deferred => "The selected user policy and relay are working, but the smarthost deferred delivery. The diagnostic below is the reason returned by Postfix or the provider.",
+            MailRelayTestStatus.Deferred when IsPort25Failure(delivery.Detail) => "The selected user policy passed and Postfix accepted the message, but delivery still used TCP/25. Clear the queue so the next attempt uses STARTTLS on 587.",
+            MailRelayTestStatus.Deferred => "The selected user policy and relay are working, but the destination deferred STARTTLS on 587. The diagnostic below is the reason returned by Postfix or the receiving host.",
             MailRelayTestStatus.Bounced => "The selected user policy and relay accepted the message, but downstream delivery bounced.",
-            _ => "The selected user policy passed and Postfix accepted the message. It is still trying the configured smarthost."
+            _ => "The selected user policy passed and Postfix accepted the message. It is still trying the recipient MX on 587."
         };
 
         return await ResultAsync(
@@ -204,7 +194,7 @@ public sealed partial class MailRelayTestService(
                     "Could not clear the Postfix queue."));
         }
 
-        return new(true, "The Postfix queue is empty. Deferred TCP/25 retries will not run again.");
+        return new(true, "The Postfix queue is empty.");
     }
 
     private async Task<string> ReadCombinedMailLogsAsync(CancellationToken cancellationToken)
@@ -312,7 +302,7 @@ public sealed partial class MailRelayTestService(
         return lastEvidence ?? new MailRelayDeliveryEvidence(
             MailRelayTestStatus.Queued,
             null,
-            "Postfix is still trying to deliver. No MX response was logged during the test window. Home ISPs often block outbound TCP/25.");
+            "Postfix is still trying to deliver. No MX response was logged during the test window. Internet delivery uses STARTTLS on 587.");
     }
 
     internal static MailRelayDeliveryEvidence? ParseLogEvidence(string output, string? queueId = null)

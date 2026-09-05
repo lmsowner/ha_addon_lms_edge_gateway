@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.12.55
+
+- Mail Relay delivers straight to the recipient MX with STARTTLS on 587. The smarthost is gone. Internet port 25 is never used; LAN port 25 stays optional for legacy devices.
+
 ## 2026.09.05.12.47
 
 - Send log is a plain mail.log dump. Clear queue deletes deferred TCP/25 retries. Outbound port 25 is disabled unless a 587/465 smarthost is configured.

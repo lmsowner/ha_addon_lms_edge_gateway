@@ -12,9 +12,9 @@ public sealed class MailRelayPreflightService(
 {
     private static readonly string[] PublicMxTargets =
     [
-        "gmail-smtp-in.l.google.com",
-        "outlook-com.olc.protection.outlook.com",
-        "mta5.am0.yahoodns.net"
+        "smtp.gmail.com",
+        "smtp.office365.com",
+        "smtp.mail.yahoo.com"
     ];
 
     public async Task<MailRelayPreflightResult> InspectAsync(
@@ -323,15 +323,15 @@ public sealed class MailRelayPreflightService(
 
     private static async Task<MailRelayPreflightCheck> TestOutboundSmtpAsync(CancellationToken cancellationToken)
     {
-        var attempts = PublicMxTargets.Select(target => CanConnectAsync(target, 25, cancellationToken)).ToArray();
+        var attempts = PublicMxTargets.Select(target => CanConnectAsync(target, 587, cancellationToken)).ToArray();
         var results = await Task.WhenAll(attempts);
         var reachable = results.Count(result => result);
 
         return reachable > 0
-            ? Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25",
-                MailRelayPreflightCheckState.Pass, "OPEN", $"Connected to {reachable} of {PublicMxTargets.Length} public MX targets on TCP/25. Delivery still requires STARTTLS.")
-            : Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25",
-                MailRelayPreflightCheckState.Warning, "BLOCKED", "Many ISPs block outbound port 25. This does not block setup. Mail Relay uses STARTTLS when it can reach a destination; direct MX on :25 may not work from this network.");
+            ? Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/587",
+                MailRelayPreflightCheckState.Pass, "OPEN", $"Connected to {reachable} of {PublicMxTargets.Length} public mail hosts on TCP/587. Delivery uses STARTTLS to the recipient MX.")
+            : Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/587",
+                MailRelayPreflightCheckState.Warning, "BLOCKED", "This host could not reach public mail hosts on TCP/587. Mail Relay never uses internet port 25.");
     }
 
     private static async Task<bool> CanConnectAsync(
@@ -400,8 +400,8 @@ public sealed class MailRelayPreflightService(
             "NOT TESTED", "Run preflight to detect the public IPv4 address."));
         checks.Add(Check(MailRelayPreflightCheckKeys.ReverseDns, "Reverse DNS", MailRelayPreflightCheckState.NotRun,
             "NOT TESTED", "Run preflight to validate PTR and forward DNS."));
-        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25", MailRelayPreflightCheckState.NotRun,
-            "NOT TESTED", "Run preflight to see whether this ISP still allows legacy MX on port 25. A block is only a warning."));
+        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/587", MailRelayPreflightCheckState.NotRun,
+            "NOT TESTED", "Run preflight to see whether this host can reach destination mail on TCP/587."));
         checks.Add(Check(MailRelayPreflightCheckKeys.MailRuntime, "Mail runtime", MailRelayPreflightCheckState.NotRun,
             "NOT TESTED", "Run preflight to inspect Postfix, OpenDKIM and SASL."));
     }
@@ -410,7 +410,7 @@ public sealed class MailRelayPreflightService(
     {
         checks.Add(Check(MailRelayPreflightCheckKeys.PublicIpv4, "Public IPv4", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
         checks.Add(Check(MailRelayPreflightCheckKeys.ReverseDns, "Reverse DNS", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
-        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/25", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
+        checks.Add(Check(MailRelayPreflightCheckKeys.OutboundSmtp, "Outbound TCP/587", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
         checks.Add(Check(MailRelayPreflightCheckKeys.MailRuntime, "Mail runtime", MailRelayPreflightCheckState.NotAvailable, "NOT AVAILABLE", detail));
     }
 
