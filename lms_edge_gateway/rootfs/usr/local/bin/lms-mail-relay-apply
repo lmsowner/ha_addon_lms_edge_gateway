@@ -1,0 +1,84 @@
+#!/usr/bin/with-contenv bashio
+
+set -euo pipefail
+
+CONFIG_ROOT="${LMS_MAIL_RELAY_CONFIG:-/data/lms-edge-gateway/mail-relay/config}"
+LMS_CONFIG_LINK=/lms-config
+
+if [[ ! -f "${CONFIG_ROOT}/main.cf" ]]; then
+  bashio::log.info "Mail Relay configuration is not present yet."
+  exit 0
+fi
+
+mkdir -p /etc/postfix/sasl /etc/sasl2 /run/opendkim/keys /var/lib/lms /var/spool/postfix/etc /var/log
+ln -sfn "${CONFIG_ROOT}" "${LMS_CONFIG_LINK}"
+
+cp "${CONFIG_ROOT}/main.cf" /etc/postfix/main.cf
+if [[ -f "${CONFIG_ROOT}/smtpd.conf" ]]; then
+  cp "${CONFIG_ROOT}/smtpd.conf" /etc/postfix/sasl/smtpd.conf
+  cp "${CONFIG_ROOT}/smtpd.conf" /etc/sasl2/smtpd.conf
+fi
+[[ -f "${CONFIG_ROOT}/sender_login_maps" ]] && cp "${CONFIG_ROOT}/sender_login_maps" /etc/postfix/sender_login_maps
+[[ -f "${CONFIG_ROOT}/legacy_clients.cidr" ]] && cp "${CONFIG_ROOT}/legacy_clients.cidr" /etc/postfix/legacy_clients.cidr
+[[ -f "${CONFIG_ROOT}/legacy_senders.pcre" ]] && cp "${CONFIG_ROOT}/legacy_senders.pcre" /etc/postfix/legacy_senders.pcre
+[[ -f "${CONFIG_ROOT}/header_checks.pcre" ]] && cp "${CONFIG_ROOT}/header_checks.pcre" /etc/postfix/header_checks.pcre
+[[ -f "${CONFIG_ROOT}/opendkim.conf" ]] && cp "${CONFIG_ROOT}/opendkim.conf" /etc/opendkim.conf
+
+if [[ -d "${CONFIG_ROOT}/dkim" ]]; then
+  mkdir -p /run/opendkim/keys
+  cp -R "${CONFIG_ROOT}/dkim/." /run/opendkim/keys/
+fi
+if [[ -d "${CONFIG_ROOT}/opendkim" ]]; then
+  [[ -f "${CONFIG_ROOT}/opendkim/KeyTable" ]] && cp "${CONFIG_ROOT}/opendkim/KeyTable" /run/opendkim/KeyTable
+  [[ -f "${CONFIG_ROOT}/opendkim/SigningTable" ]] && cp "${CONFIG_ROOT}/opendkim/SigningTable" /run/opendkim/SigningTable
+  [[ -f "${CONFIG_ROOT}/opendkim/TrustedHosts" ]] && cp "${CONFIG_ROOT}/opendkim/TrustedHosts" /run/opendkim/TrustedHosts
+fi
+
+chmod 0644 /etc/postfix/sender_login_maps /etc/postfix/legacy_clients.cidr /etc/postfix/legacy_senders.pcre /etc/postfix/header_checks.pcre 2>/dev/null || true
+if id -u opendkim >/dev/null 2>&1; then
+  chown -R opendkim:opendkim /run/opendkim
+fi
+chmod -R go-rwx /run/opendkim/keys 2>/dev/null || true
+
+if [[ -f /var/lib/lms/sasldb2 ]]; then
+  if getent group cyrus >/dev/null 2>&1; then
+    chown root:cyrus /var/lib/lms/sasldb2 || true
+  elif getent group sasl >/dev/null 2>&1; then
+    chown root:sasl /var/lib/lms/sasldb2 || true
+  fi
+  chmod 0640 /var/lib/lms/sasldb2 || true
+fi
+
+if id -u postfix >/dev/null 2>&1; then
+  if getent group cyrus >/dev/null 2>&1; then
+    addgroup postfix cyrus >/dev/null 2>&1 || true
+  elif getent group sasl >/dev/null 2>&1; then
+    addgroup postfix sasl >/dev/null 2>&1 || true
+  fi
+fi
+
+for resolver_file in resolv.conf hosts host.conf nsswitch.conf services protocols; do
+  if [[ -e "/etc/${resolver_file}" ]]; then
+    cp -L "/etc/${resolver_file}" "/var/spool/postfix/etc/${resolver_file}"
+    chmod 0644 "/var/spool/postfix/etc/${resolver_file}"
+  fi
+done
+
+if [[ -f /etc/postfix/master.cf && -f "${CONFIG_ROOT}/master-lms.cf" ]]; then
+  if grep -q "Managed by Linux Made Sane" /etc/postfix/master.cf; then
+    sed -i '/# Managed by Linux Made Sane/,$d' /etc/postfix/master.cf
+  fi
+  sed -i '/^smtp[[:space:]]\+inet[[:space:]]/s/^/#/' /etc/postfix/master.cf || true
+  sed -i '/^submission[[:space:]]\+inet[[:space:]]/s/^/#/' /etc/postfix/master.cf || true
+  cat "${CONFIG_ROOT}/master-lms.cf" >> /etc/postfix/master.cf
+fi
+
+if command -v postfix >/dev/null 2>&1 && postfix status >/dev/null 2>&1; then
+  postfix reload >/dev/null
+fi
+
+if command -v opendkim >/dev/null 2>&1 && [[ -f /run/opendkim/opendkim.pid ]]; then
+  kill -HUP "$(cat /run/opendkim/opendkim.pid)" >/dev/null 2>&1 || true
+fi
+
+bashio::log.info "Mail Relay configuration applied."

@@ -1,5 +1,5 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
-ARG BUILD_VERSION=2026.08.19.07.48
+ARG BUILD_VERSION=2026.09.05.10.58
 ARG BUILD_ARCH=amd64
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
@@ -21,7 +21,7 @@ RUN \
       /p:UseAppHost=true
 
 FROM ${BUILD_FROM}
-ARG BUILD_VERSION=2026.08.19.07.48
+ARG BUILD_VERSION=2026.09.05.10.58
 ARG BUILD_ARCH=amd64
 
 LABEL \
@@ -47,12 +47,18 @@ ENV \
 
 RUN \
   apk add --no-cache \
+    bind-tools \
     ca-certificates \
     caddy \
     curl \
+    cyrus-sasl \
     jq \
     libstdc++ \
+    opendkim \
+    postfix \
+    postfix-pcre \
     procps \
+    rsyslog \
   && case "${BUILD_ARCH}" in \
       amd64) export CLOUDFLARED_ARCH=amd64 ;; \
       aarch64) export CLOUDFLARED_ARCH=arm64 ;; \
@@ -66,8 +72,10 @@ COPY rootfs/ /
 
 RUN \
   chmod 0755 /etc/cont-init.d/00-lms-edge-gateway \
+  && chmod 0755 /usr/local/bin/lms-mail-relay-apply \
   && chmod 0755 /etc/services.d/lms-edge-gateway/run \
   && chmod 0755 /etc/services.d/caddy/run \
-  && chmod 0755 /etc/services.d/cloudflared/run
+  && chmod 0755 /etc/services.d/cloudflared/run \
+  && chmod 0755 /etc/services.d/lms-mail-relay/run
 
 EXPOSE 5000 18080

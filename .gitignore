@@ -1,4 +1,6 @@
 bin/
+!lms_edge_gateway/rootfs/usr/local/bin/
+!lms_edge_gateway/rootfs/usr/local/bin/**
 obj/
 .idea/
 .vs/

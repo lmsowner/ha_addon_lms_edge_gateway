@@ -1,0 +1,1331 @@
+@page "/mail-relay"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IMailRelayService MailRelayService
+@inject IJSRuntime JS
+
+<PageTitle>Mail Relay | LMS Edge Gateway</PageTitle>
+
+<div class="page-shell edge-gateway-page mail-relay-page">
+    <section class="surface-card edge-card">
+        <div class="table-header">
+            <div>
+                <p class="eyebrow">Mail Relay</p>
+                <h2>Outbound SMTP for Home Assistant</h2>
+                <p class="meta-text">
+                    LMS Mail Relay is outbound-only SMTP for applications on this host. It is not inbound MX and it is not Cloudflare-proxied mail.
+                    Messaging on the Security tab is a different outbound client for LMS account emails.
+                </p>
+            </div>
+            <LmsButton Label="@(isRechecking ? "Checking..." : "Run preflight")"
+                       Icon="refresh"
+                       Busy="@isRechecking"
+                       Disabled="@isRechecking"
+                       OnClick="RecheckPreflightAsync" />
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(actionMessage))
+        {
+            <p class="callout @(actionIsError ? "warning" : "ready")">@actionMessage</p>
+        }
+
+        @if (dashboard is null)
+        {
+            <section class="surface-card edge-loading-card" aria-busy="true">
+                <span class="edge-loading-progress">
+                    <span class="edge-loading-progress-fill"></span>
+                </span>
+                <p class="meta-text">Loading Mail Relay.</p>
+            </section>
+        }
+        else if (!HasCloudflareZones)
+        {
+            <p class="callout warning">
+                Finish the Setup tab first so Edge Gateway has a Cloudflare zone. Mail Relay can only manage DNS for a zone that token can already see.
+            </p>
+            <div class="toolbar-row">
+                <LmsButton Label="Open Setup" Icon="info" Primary="true" Href="/cloudflare" />
+            </div>
+        }
+        else
+        {
+            <section class="surface-subcard mail-relay-overview">
+                <label class="ui-field">
+                    <span class="ui-field-label">
+                        Cloudflare zone
+                        <LmsFieldInfo Title="Cloudflare zone"
+                                      Body="Mail Relay writes LMS-owned A, SPF, DKIM and DMARC records on this zone. It never changes MX." />
+                    </span>
+                    <select value="@selectedZoneId" @onchange="OnZoneChangedAsync" disabled="@isRechecking">
+                        @foreach (var zone in dashboard.Preflight.AvailableZones)
+                        {
+                            <option value="@zone.ZoneId">@zone.ZoneName</option>
+                        }
+                    </select>
+                </label>
+                <div class="mail-relay-stat">
+                    <span class="ui-field-label">Status</span>
+                    <LmsStatusPill Text="@StatusLabel" Tone="@StatusTone" />
+                    <span class="ui-field-helper">@dashboard.StatusSummary</span>
+                </div>
+                <div class="mail-relay-stat">
+                    <span class="ui-field-label">Relay hostname</span>
+                    <strong>@(string.IsNullOrWhiteSpace(RelayHostname) ? "Not set" : RelayHostname)</strong>
+                    <span class="ui-field-helper">Submission stays on this host. Public 587 is never enabled.</span>
+                </div>
+                <div class="mail-relay-stat">
+                    <span class="ui-field-label">Submission</span>
+                    <strong>@SubmissionModeLabel</strong>
+                    <span class="ui-field-helper">Trusted LAN uses the Home Assistant host_network path.</span>
+                </div>
+                <div class="mail-relay-stat">
+                    <span class="ui-field-label">Public IP</span>
+                    <strong>@(string.IsNullOrWhiteSpace(PublicIpLabel) ? "Unknown" : PublicIpLabel)</strong>
+                    <span class="ui-field-helper">Home IPs change, so LMS watches this by default.</span>
+                </div>
+            </section>
+
+            <section class="surface-subcard">
+                <div class="table-header">
+                    <div>
+                        <p class="eyebrow">Preflight</p>
+                        <h3>Host and Cloudflare checks</h3>
+                    </div>
+                    <LmsStatusPill Text="@(dashboard.Preflight.CanConfigure ? "Ready" : "Needs attention")"
+                                   Tone="@(dashboard.Preflight.CanConfigure ? LmsStatusTone.Ready : LmsStatusTone.Warning)" />
+                </div>
+                <div class="mail-relay-check-list">
+                    @foreach (var check in dashboard.Preflight.Checks)
+                    {
+                        <div class="mail-relay-check">
+                            <div>
+                                <strong>@check.Label</strong>
+                                <span>@check.Value</span>
+                            </div>
+                            <p>@check.Detail</p>
+                            <LmsStatusPill Text="@PreflightStateLabel(check.State)" Tone="@PreflightTone(check.State)" />
+                        </div>
+                    }
+                </div>
+            </section>
+
+            @if (!IsEnabled)
+            {
+                <div class="toolbar-row">
+                    <LmsButton Label="Set up Mail Relay"
+                               Icon="plus"
+                               Primary="true"
+                               Disabled="@IsSetupRunning"
+                               OnClick="OpenSetupModal" />
+                </div>
+            }
+        }
+    </section>
+
+    @if (IsEnabled && dashboard is not null)
+    {
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Sending domains</p>
+                    <h2>SPF, DKIM and DMARC</h2>
+                    <p class="meta-text">LMS only rewrites LMS-owned A and SPF ip4: values. It checks DKIM, DMARC and PTR. It never changes MX.</p>
+                </div>
+            </div>
+            @if (dashboard.Domains.Count == 0)
+            {
+                <p class="meta-text">No sending domains are configured yet.</p>
+            }
+            else
+            {
+                <div class="mail-relay-row-list">
+                    @foreach (var domain in dashboard.Domains)
+                    {
+                        <div class="mail-relay-row">
+                            <div>
+                                <strong>@domain.DomainName</strong>
+                                <span>Selector <code>@domain.CurrentDkimSelector</code></span>
+                            </div>
+                            <div class="mail-relay-pill-row">
+                                <LmsStatusPill Text="@($"SPF {DnsStatusLabel(domain.SpfStatus)}")" Tone="@DnsTone(domain.SpfStatus)" />
+                                <LmsStatusPill Text="@($"DKIM {DnsStatusLabel(domain.DkimStatus)}")" Tone="@DnsTone(domain.DkimStatus)" />
+                                <LmsStatusPill Text="@($"DMARC {DnsStatusLabel(domain.DmarcStatus)}")" Tone="@DnsTone(domain.DmarcStatus)" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">SMTP users</p>
+                    <h2>Application credentials</h2>
+                    <p class="meta-text">Each user may send only from the domains you allow. Usernames cannot be renamed after they are created.</p>
+                </div>
+                <LmsButton Label="Add SMTP user" Icon="plus" Primary="true" OnClick="@(() => OpenClientModal(null))" />
+            </div>
+            @if (dashboard.Clients.Count == 0)
+            {
+                <p class="meta-text">No SMTP users yet. Add one for Home Assistant or another local application.</p>
+            }
+            else
+            {
+                <div class="mail-relay-row-list">
+                    @foreach (var client in dashboard.Clients)
+                    {
+                        <div class="mail-relay-row">
+                            <div>
+                                <strong>@client.Name</strong>
+                                <span><code>@client.Username</code> · @string.Join(", ", client.AllowedSenderDomains)</span>
+                            </div>
+                            <LmsButton Label="Edit" Icon="edit" OnClick="@(() => OpenClientModal(client))" />
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Test email</p>
+                    <h2>Send through Mail Relay</h2>
+                    <p class="meta-text">This tests the local SMTP user. It is not the Messaging client on the Security tab.</p>
+                </div>
+            </div>
+            <div class="edge-form-grid mail-relay-form-grid">
+                <label class="ui-field">
+                    <span class="ui-field-label">SMTP user</span>
+                    <select @bind="testClientId" @bind:after="OnTestClientChanged">
+                        <option value="">Select a user</option>
+                        @foreach (var client in dashboard.Clients)
+                        {
+                            <option value="@client.Id">@client.Name (@client.Username)</option>
+                        }
+                    </select>
+                </label>
+                <label class="ui-field">
+                    <span class="ui-field-label">From</span>
+                    <input type="email" @bind="testFromAddress" placeholder="homeassistant@example.com" />
+                </label>
+                <label class="ui-field">
+                    <span class="ui-field-label">Recipient</span>
+                    <input type="email" @bind="testRecipientAddress" placeholder="you@example.com" />
+                </label>
+            </div>
+            <div class="toolbar-row">
+                <LmsButton Label="@(isSendingTest ? "Sending..." : "Send test")"
+                           Icon="test"
+                           Primary="true"
+                           Busy="@isSendingTest"
+                           Disabled="@isSendingTest"
+                           OnClick="SendTestAsync" />
+            </div>
+            @if (testResult is not null)
+            {
+                <p class="callout @(testResult.Passed ? "ready" : "warning")">@testResult.Summary</p>
+                <p class="ui-field-helper">SMTP: @testResult.SmtpResponse</p>
+            }
+        </section>
+
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Public IP protection</p>
+                    <h2>Keep LMS DNS aligned</h2>
+                    <p class="meta-text">
+                        Public IP monitoring is on by default every 15 minutes because home IPs change.
+                        LMS only rewrites LMS-owned A and SPF ip4: records, then checks DKIM, DMARC and PTR. It never touches MX.
+                    </p>
+                </div>
+                <LmsStatusPill Text="@PublicIpMonitorLabel" Tone="@PublicIpMonitorTone" />
+            </div>
+            <p class="meta-text">@PublicIpMonitorDetail</p>
+            <div class="toolbar-row">
+                <LmsButton Label="@(isCheckingPublicIp ? "Checking..." : "Check now")"
+                           Icon="refresh"
+                           Busy="@isCheckingPublicIp"
+                           Disabled="@isCheckingPublicIp"
+                           OnClick="CheckPublicIpNowAsync" />
+                <LmsButton Label="Configure" Icon="edit" OnClick="OpenPublicIpModal" />
+            </div>
+        </section>
+
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Legacy devices</p>
+                    <h2>Port 25 listener</h2>
+                    <p class="meta-text">Optional unauthenticated port 25 for old LAN printers and scanners. Public 587 is never enabled.</p>
+                </div>
+                <LmsStatusPill Text="@(dashboard.Configuration!.AllowLegacyPort25 ? "Enabled" : "Off")"
+                               Tone="@(dashboard.Configuration.AllowLegacyPort25 ? LmsStatusTone.Warning : LmsStatusTone.Neutral)" />
+            </div>
+            <div class="toolbar-row">
+                <LmsButton Label="Configure legacy port 25" Icon="edit" OnClick="OpenLegacyModal" />
+            </div>
+        </section>
+
+        <section class="surface-card edge-card">
+            <div class="table-header">
+                <div>
+                    <p class="eyebrow">Maintenance</p>
+                    <h2>Remove Mail Relay</h2>
+                    <p class="meta-text">Choose exactly what LMS should tear down. DNS MX records are never removed because LMS never owns them.</p>
+                </div>
+            </div>
+            <LmsButton Label="Remove Mail Relay" Icon="delete" Danger="true" OnClick="OpenRemovalModal" />
+        </section>
+    }
+</div>
+
+@if (showSetupModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-setup-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Set up Mail Relay</p>
+                    <h2 id="mail-relay-setup-title">Create the outbound SMTP relay</h2>
+                    <p class="meta-text">Preview the DNS plan, then start setup. LMS will poll progress until the job finishes.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close setup" @onclick="CloseSetupModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                <div class="edge-form-grid mail-relay-form-grid">
+                    <label class="ui-field">
+                        <span class="ui-field-label">
+                            Relay hostname
+                            <LmsFieldInfo Title="Relay hostname" Body="Defaults to smtp on the selected zone. This is the SMTP host applications use. It is not proxied through Cloudflare." />
+                        </span>
+                        <input @bind="setupRelayHostname" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" placeholder="smtp.example.com" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Sending domain</span>
+                        <input @bind="setupSendingDomain" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" placeholder="example.com" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">DKIM selector</span>
+                        <input @bind="setupDkimSelector" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" placeholder="lms" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Application name</span>
+                        <input @bind="setupApplicationName" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" placeholder="Home Assistant" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">SMTP username</span>
+                        <input @bind="setupApplicationUsername" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" placeholder="homeassistant" />
+                    </label>
+                    <label class="mail-relay-check-field">
+                        <input type="checkbox" @bind="setupAllowTrustedLan" @bind:after="ClearSetupPreview" disabled="@IsSetupRunning" />
+                        <span>
+                            Allow trusted LAN
+                            <LmsFieldInfo Title="Trusted LAN" Body="This is the Home Assistant path. Mail Relay listens on the add-on host_network. There is no Tailscale option here." />
+                        </span>
+                    </label>
+                </div>
+
+                @if (setupPreview is not null)
+                {
+                    @if (setupPreview.Errors.Count > 0)
+                    {
+                        <div class="callout warning">
+                            @foreach (var error in setupPreview.Errors)
+                            {
+                                <p>@error</p>
+                            }
+                        </div>
+                    }
+                    @if (setupPreview.Warnings.Count > 0)
+                    {
+                        <div class="callout warning">
+                            @foreach (var warning in setupPreview.Warnings)
+                            {
+                                <p>@warning</p>
+                            }
+                        </div>
+                    }
+                    <div class="mail-relay-dns-list">
+                        @foreach (var change in setupPreview.DnsChanges)
+                        {
+                            <div class="mail-relay-dns-row">
+                                <div>
+                                    <strong>@change.Purpose</strong>
+                                    <span>@change.RecordType @change.RecordName</span>
+                                </div>
+                                <code>@change.ProposedValue</code>
+                                <LmsStatusPill Text="@change.Kind.ToString()" Tone="@ChangeKindTone(change.Kind)" />
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (setupJob is not null)
+                {
+                    <div class="mail-relay-step-list">
+                        @foreach (var step in setupJob.Steps)
+                        {
+                            <div class="mail-relay-step">
+                                <LmsStatusPill Text="@step.State.ToString()" Tone="@StepTone(step.State)" />
+                                <div>
+                                    <strong>@step.Label</strong>
+                                    @if (!string.IsNullOrWhiteSpace(step.Detail))
+                                    {
+                                        <span>@step.Detail</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <p class="meta-text">@setupJob.Summary</p>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(generatedPassword))
+                {
+                    <div class="callout ready mail-relay-secret">
+                        <div>
+                            <strong>Generated SMTP password</strong>
+                            <p>Copy this now. LMS will not show it again.</p>
+                            <code>@generatedPassword</code>
+                        </div>
+                        <LmsButton Label="Copy password" Icon="copy" OnClick="CopyGeneratedPasswordAsync" />
+                    </div>
+                }
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Close" Icon="close" OnClick="CloseSetupModal" />
+                <LmsButton Label="@(isPreviewing ? "Previewing..." : "Preview")"
+                           Icon="search"
+                           Busy="@isPreviewing"
+                           Disabled="@(isPreviewing || IsSetupRunning)"
+                           OnClick="PreviewSetupAsync" />
+                <LmsButton Label="@(IsSetupRunning ? "Setting up..." : "Start setup")"
+                           Icon="check"
+                           Primary="true"
+                           Busy="@IsSetupRunning"
+                           Disabled="@(setupPreview?.CanInstall != true || IsSetupRunning)"
+                           OnClick="StartSetupAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showClientModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-client-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">SMTP user</p>
+                    <h2 id="mail-relay-client-title">@(clientId.HasValue ? "Edit SMTP user" : "Add SMTP user")</h2>
+                    <p class="meta-text">Leave the password blank when editing to keep the current secret.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close SMTP user" @onclick="CloseClientModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (!string.IsNullOrWhiteSpace(clientMessage))
+                {
+                    <p class="callout @(clientMessageIsError ? "warning" : "ready")">@clientMessage</p>
+                }
+                <div class="edge-form-grid mail-relay-form-grid">
+                    <label class="ui-field">
+                        <span class="ui-field-label">Name</span>
+                        <input @bind="clientName" placeholder="Home Assistant" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Username</span>
+                        <input @bind="clientUsername" placeholder="homeassistant" disabled="@clientId.HasValue" />
+                    </label>
+                    <label class="ui-field">
+                        <span class="ui-field-label">Password</span>
+                        <div class="mail-relay-password-row">
+                            <input type="text" @bind="clientPassword" autocomplete="new-password" placeholder="@(clientId.HasValue ? "Leave blank to keep current" : "Generate a password")" />
+                            <LmsButton Label="Generate" Icon="refresh" OnClick="GenerateClientPassword" />
+                            <LmsButton Label="Copy" Icon="copy" Disabled="@string.IsNullOrWhiteSpace(clientPassword)" OnClick="CopyClientPasswordAsync" />
+                        </div>
+                    </label>
+                </div>
+                <div class="mail-relay-domain-picks">
+                    <span class="ui-field-label">Allowed sending domains</span>
+                    @if (dashboard is null || dashboard.Domains.Count == 0)
+                    {
+                        <p class="meta-text">No sending domains are available.</p>
+                    }
+                    else
+                    {
+                        @foreach (var domain in dashboard.Domains)
+                        {
+                            <label class="mail-relay-check-field">
+                                <input type="checkbox"
+                                       checked="@selectedDomainIds.Contains(domain.Id)"
+                                       @onchange="@((ChangeEventArgs args) => ToggleDomain(domain.Id, args))" />
+                                <span>@domain.DomainName</span>
+                            </label>
+                        }
+                    }
+                </div>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="CloseClientModal" />
+                <LmsButton Label="@(isSavingClient ? "Saving..." : "Save user")"
+                           Icon="save"
+                           Primary="true"
+                           Busy="@isSavingClient"
+                           Disabled="@isSavingClient"
+                           OnClick="SaveClientAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showPublicIpModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-ip-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Public IP protection</p>
+                    <h2 id="mail-relay-ip-title">Monitor the home address</h2>
+                    <p class="meta-text">LMS only rewrites LMS-owned A and SPF ip4: records, then checks DKIM, DMARC and PTR. It never changes MX.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close public IP settings" @onclick="ClosePublicIpModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                <label class="mail-relay-check-field">
+                    <input type="checkbox" @bind="publicIpMonitorEnabled" />
+                    <span>Enable public IP monitoring</span>
+                </label>
+                <label class="ui-field">
+                    <span class="ui-field-label">Check interval (minutes)</span>
+                    <input type="number" min="15" max="1440" step="15" @bind="publicIpIntervalMinutes" />
+                    <span class="ui-field-helper">Between 15 minutes and 24 hours. Default is 15 because home IPs change.</span>
+                </label>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="ClosePublicIpModal" />
+                <LmsButton Label="@(isSavingPublicIp ? "Saving..." : "Save")"
+                           Icon="save"
+                           Primary="true"
+                           Busy="@isSavingPublicIp"
+                           Disabled="@isSavingPublicIp"
+                           OnClick="SavePublicIpSettingsAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showLegacyModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-legacy-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Legacy devices</p>
+                    <h2 id="mail-relay-legacy-title">Port 25 on the LAN</h2>
+                    <p class="meta-text">Public 587 is never enabled. Keep this listener on private addresses and a tight CIDR allowlist.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close legacy settings" @onclick="CloseLegacyModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (!string.IsNullOrWhiteSpace(legacyMessage))
+                {
+                    <p class="callout @(legacyMessageIsError ? "warning" : "ready")">@legacyMessage</p>
+                }
+                <label class="mail-relay-check-field">
+                    <input type="checkbox" @bind="legacyEnabled" />
+                    <span>Enable legacy port 25</span>
+                </label>
+                <label class="ui-field">
+                    <span class="ui-field-label">Listen IPs</span>
+                    <textarea rows="4" @bind="legacyListenAddressesText" placeholder="192.168.1.10"></textarea>
+                    <span class="ui-field-helper">One IPv4 address per line. Use addresses that exist on this Home Assistant host.</span>
+                </label>
+                <label class="ui-field">
+                    <span class="ui-field-label">Allowed CIDRs</span>
+                    <textarea rows="4" @bind="legacyAllowedCidrsText" placeholder="192.168.1.0/24"></textarea>
+                    <span class="ui-field-helper">Only these networks may submit on port 25.</span>
+                </label>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="CloseLegacyModal" />
+                <LmsButton Label="@(isSavingLegacy ? "Saving..." : "Save")"
+                           Icon="save"
+                           Primary="true"
+                           Busy="@isSavingLegacy"
+                           Disabled="@isSavingLegacy"
+                           OnClick="SaveLegacyAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@if (showRemovalModal)
+{
+    <div class="edge-modal-backdrop" role="presentation">
+        <section class="edge-modal-panel mail-relay-modal" role="dialog" aria-modal="true" aria-labelledby="mail-relay-remove-title">
+            <header class="edge-modal-header">
+                <div>
+                    <p class="eyebrow">Maintenance</p>
+                    <h2 id="mail-relay-remove-title">Remove Mail Relay</h2>
+                    <p class="meta-text">Confirm each item LMS should remove. MX records stay because LMS never owns inbound mail.</p>
+                </div>
+                <button class="edge-modal-close" type="button" aria-label="Close removal" @onclick="CloseRemovalModal">x</button>
+            </header>
+            <div class="edge-modal-body">
+                @if (!string.IsNullOrWhiteSpace(removalMessage))
+                {
+                    <p class="callout @(removalMessageIsError ? "warning" : "ready")">@removalMessage</p>
+                }
+                <div class="mail-relay-domain-picks">
+                    <label class="mail-relay-check-field">
+                        <input type="checkbox" @bind="removeContainer" />
+                        <span>Remove the Mail Relay runtime</span>
+                    </label>
+                    <label class="mail-relay-check-field">
+                        <input type="checkbox" @bind="removeApplicationCredentials" />
+                        <span>Remove application credentials</span>
+                    </label>
+                    <label class="mail-relay-check-field">
+                        <input type="checkbox" @bind="removeManagedDnsRecords" />
+                        <span>Remove LMS-managed DNS records</span>
+                    </label>
+                    <label class="mail-relay-check-field">
+                        <input type="checkbox" @bind="removeDkimKeys" />
+                        <span>Remove DKIM keys</span>
+                    </label>
+                    <label class="mail-relay-check-field">
+                        <input type="checkbox" @bind="removeConfirmed" />
+                        <span>I understand this cannot be undone from this page</span>
+                    </label>
+                </div>
+                <p class="ui-field-helper">Removing credentials or DKIM keys also requires removing the runtime.</p>
+            </div>
+            <footer class="edge-modal-footer">
+                <LmsButton Label="Cancel" Icon="close" OnClick="CloseRemovalModal" />
+                <LmsButton Label="@(isRemoving ? "Removing..." : "Remove Mail Relay")"
+                           Icon="delete"
+                           Danger="true"
+                           Busy="@isRemoving"
+                           Disabled="@(!removeConfirmed || isRemoving)"
+                           OnClick="RemoveMailRelayAsync" />
+            </footer>
+        </section>
+    </div>
+}
+
+@code {
+    private MailRelayDashboardViewModel? dashboard;
+    private MailRelaySetupPreview? setupPreview;
+    private MailRelayProvisioningJobSnapshot? setupJob;
+    private MailRelayTestResult? testResult;
+    private CancellationTokenSource? pollCts;
+
+    private string selectedZoneId = string.Empty;
+    private string actionMessage = string.Empty;
+    private bool actionIsError;
+    private bool isRechecking;
+    private bool isPreviewing;
+    private bool isStartingSetup;
+    private bool isSavingClient;
+    private bool isSendingTest;
+    private bool isCheckingPublicIp;
+    private bool isSavingPublicIp;
+    private bool isSavingLegacy;
+    private bool isRemoving;
+
+    private bool showSetupModal;
+    private bool showClientModal;
+    private bool showPublicIpModal;
+    private bool showLegacyModal;
+    private bool showRemovalModal;
+
+    private string setupRelayHostname = string.Empty;
+    private string setupSendingDomain = string.Empty;
+    private string setupDkimSelector = "lms";
+    private string setupApplicationName = "Home Assistant";
+    private string setupApplicationUsername = "homeassistant";
+    private bool setupAllowTrustedLan = true;
+    private string? generatedPassword;
+
+    private Guid? clientId;
+    private string clientName = string.Empty;
+    private string clientUsername = string.Empty;
+    private string clientPassword = string.Empty;
+    private readonly HashSet<Guid> selectedDomainIds = [];
+    private string clientMessage = string.Empty;
+    private bool clientMessageIsError;
+
+    private string testClientId = string.Empty;
+    private string testFromAddress = string.Empty;
+    private string testRecipientAddress = string.Empty;
+
+    private bool publicIpMonitorEnabled = true;
+    private int publicIpIntervalMinutes = 15;
+
+    private bool legacyEnabled;
+    private string legacyListenAddressesText = string.Empty;
+    private string legacyAllowedCidrsText = string.Empty;
+    private string legacyMessage = string.Empty;
+    private bool legacyMessageIsError;
+
+    private bool removeContainer = true;
+    private bool removeApplicationCredentials = true;
+    private bool removeManagedDnsRecords = true;
+    private bool removeDkimKeys = true;
+    private bool removeConfirmed;
+    private string removalMessage = string.Empty;
+    private bool removalMessageIsError;
+
+    private bool HasCloudflareZones => dashboard?.Preflight.AvailableZones.Count > 0;
+    private bool IsEnabled => dashboard?.Configuration?.Enabled == true;
+    private bool IsSetupRunning =>
+        isStartingSetup ||
+        setupJob is { IsTerminal: false };
+    private string RelayHostname =>
+        !string.IsNullOrWhiteSpace(dashboard?.Configuration?.RelayHostname)
+            ? dashboard!.Configuration!.RelayHostname
+            : dashboard?.Preflight.SuggestedRelayHostname ?? string.Empty;
+    private string PublicIpLabel =>
+        !string.IsNullOrWhiteSpace(dashboard?.Configuration?.PublicIpAddress)
+            ? dashboard!.Configuration!.PublicIpAddress
+            : dashboard?.Preflight.PublicIpAddress ?? string.Empty;
+    private string StatusLabel => dashboard?.Status switch
+    {
+        MailRelayOperationalStatus.Healthy => "Healthy",
+        MailRelayOperationalStatus.Warning => "Warning",
+        MailRelayOperationalStatus.Critical => "Critical",
+        _ => "Not configured"
+    };
+    private LmsStatusTone StatusTone => dashboard?.Status switch
+    {
+        MailRelayOperationalStatus.Healthy => LmsStatusTone.Ready,
+        MailRelayOperationalStatus.Warning => LmsStatusTone.Warning,
+        MailRelayOperationalStatus.Critical => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+    private string SubmissionModeLabel
+    {
+        get
+        {
+            var configuration = dashboard?.Configuration;
+            if (configuration?.Enabled != true)
+            {
+                return "Not configured";
+            }
+
+            if (configuration.AllowLegacyPort25 && configuration.AllowTrustedLan)
+            {
+                return $"Trusted LAN :{configuration.SubmissionPort} + legacy :25";
+            }
+
+            if (configuration.AllowLegacyPort25)
+            {
+                return "Legacy :25";
+            }
+
+            return configuration.AllowTrustedLan
+                ? $"Trusted LAN :{configuration.SubmissionPort}"
+                : $":{configuration.SubmissionPort} local only";
+        }
+    }
+    private string PublicIpMonitorLabel => dashboard?.Configuration?.PublicIpMonitorStatus switch
+    {
+        MailRelayPublicIpMonitorStatus.Healthy => "Healthy",
+        MailRelayPublicIpMonitorStatus.Updated => "Updated",
+        MailRelayPublicIpMonitorStatus.Warning => "Warning",
+        MailRelayPublicIpMonitorStatus.Error => "Error",
+        MailRelayPublicIpMonitorStatus.Disabled => "Disabled",
+        _ => "Waiting"
+    };
+    private LmsStatusTone PublicIpMonitorTone => dashboard?.Configuration?.PublicIpMonitorStatus switch
+    {
+        MailRelayPublicIpMonitorStatus.Healthy or MailRelayPublicIpMonitorStatus.Updated => LmsStatusTone.Ready,
+        MailRelayPublicIpMonitorStatus.Warning => LmsStatusTone.Warning,
+        MailRelayPublicIpMonitorStatus.Error => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+    private string PublicIpMonitorDetail
+    {
+        get
+        {
+            var configuration = dashboard?.Configuration;
+            if (configuration is null)
+            {
+                return string.Empty;
+            }
+
+            var lastCheck = configuration.LastPublicIpCheckUtc.HasValue
+                ? configuration.LastPublicIpCheckUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                : "never";
+            return $"{configuration.PublicIpMonitorDetail} Last check {lastCheck}. Interval {configuration.PublicIpCheckIntervalMinutes} minutes.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardAsync();
+        var latest = await MailRelayService.GetLatestSetupJobAsync();
+        if (latest is null || latest.IsTerminal)
+        {
+            return;
+        }
+
+        ApplySetupRequest(latest.Request);
+        setupJob = latest;
+        showSetupModal = true;
+        BeginPolling(latest.Id);
+    }
+
+    public void Dispose()
+    {
+        pollCts?.Cancel();
+        pollCts?.Dispose();
+        pollCts = null;
+    }
+
+    private async Task LoadDashboardAsync()
+    {
+        dashboard = await MailRelayService.GetDashboardAsync();
+        selectedZoneId = FirstNonEmpty(dashboard.Preflight.CloudflareZoneId, selectedZoneId, dashboard.Preflight.AvailableZones.FirstOrDefault()?.ZoneId);
+        if (string.IsNullOrWhiteSpace(testClientId) && dashboard.Clients.Count == 1)
+        {
+            testClientId = dashboard.Clients[0].Id.ToString();
+            OnTestClientChanged();
+        }
+    }
+
+    private async Task RecheckPreflightAsync()
+    {
+        isRechecking = true;
+        actionMessage = string.Empty;
+        try
+        {
+            var preflight = await MailRelayService.RecheckPreflightAsync(string.IsNullOrWhiteSpace(selectedZoneId) ? null : selectedZoneId);
+            if (dashboard is not null)
+            {
+                dashboard = dashboard with { Preflight = preflight };
+            }
+            else
+            {
+                await LoadDashboardAsync();
+            }
+
+            selectedZoneId = FirstNonEmpty(preflight.CloudflareZoneId, selectedZoneId, preflight.AvailableZones.FirstOrDefault()?.ZoneId);
+            actionMessage = preflight.CanConfigure
+                ? "Preflight passed. This host can run Mail Relay."
+                : "Preflight finished. Resolve the failed checks before setup.";
+            actionIsError = !preflight.CanConfigure;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            SetAction($"Could not run preflight: {exception.Message}", true);
+        }
+        finally
+        {
+            isRechecking = false;
+        }
+    }
+
+    private async Task OnZoneChangedAsync(ChangeEventArgs args)
+    {
+        selectedZoneId = args.Value?.ToString() ?? string.Empty;
+        await RecheckPreflightAsync();
+    }
+
+    private void OpenSetupModal()
+    {
+        var zoneName = SelectedZoneName();
+        setupRelayHostname = FirstNonEmpty(dashboard?.Preflight.SuggestedRelayHostname, string.IsNullOrWhiteSpace(zoneName) ? string.Empty : $"smtp.{zoneName}");
+        setupSendingDomain = zoneName;
+        setupDkimSelector = string.IsNullOrWhiteSpace(setupDkimSelector) ? "lms" : setupDkimSelector;
+        setupApplicationName = string.IsNullOrWhiteSpace(setupApplicationName) ? "Home Assistant" : setupApplicationName;
+        setupApplicationUsername = string.IsNullOrWhiteSpace(setupApplicationUsername) ? "homeassistant" : setupApplicationUsername;
+        setupAllowTrustedLan = true;
+        setupPreview = null;
+        generatedPassword = null;
+        if (setupJob?.IsTerminal == true)
+        {
+            setupJob = null;
+        }
+
+        showSetupModal = true;
+    }
+
+    private void CloseSetupModal() => showSetupModal = false;
+
+    private void ClearSetupPreview() => setupPreview = null;
+
+    private async Task PreviewSetupAsync()
+    {
+        isPreviewing = true;
+        actionMessage = string.Empty;
+        try
+        {
+            setupPreview = await MailRelayService.PreviewSetupAsync(BuildSetupRequest());
+            if (dashboard is not null)
+            {
+                dashboard = dashboard with { Preflight = setupPreview.Preflight };
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            setupPreview = null;
+            SetAction($"Could not preview Mail Relay: {exception.Message}", true);
+        }
+        finally
+        {
+            isPreviewing = false;
+        }
+    }
+
+    private async Task StartSetupAsync()
+    {
+        if (setupPreview?.CanInstall != true)
+        {
+            return;
+        }
+
+        isStartingSetup = true;
+        generatedPassword = null;
+        actionMessage = string.Empty;
+        try
+        {
+            setupJob = await MailRelayService.StartSetupAsync(BuildSetupRequest());
+            BeginPolling(setupJob.Id);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            SetAction($"Could not start Mail Relay setup: {exception.Message}", true);
+        }
+        finally
+        {
+            isStartingSetup = false;
+        }
+    }
+
+    private void BeginPolling(Guid jobId)
+    {
+        pollCts?.Cancel();
+        pollCts?.Dispose();
+        pollCts = new CancellationTokenSource();
+        _ = PollSetupJobAsync(jobId, pollCts.Token);
+    }
+
+    private async Task PollSetupJobAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                var snapshot = await MailRelayService.GetSetupJobAsync(jobId, cancellationToken);
+                setupJob = snapshot;
+                await InvokeAsync(StateHasChanged);
+                if (snapshot?.IsTerminal != true)
+                {
+                    continue;
+                }
+
+                if (snapshot.Status == MailRelayProvisioningJobStatus.Succeeded)
+                {
+                    generatedPassword = snapshot.Result?.GeneratedPassword;
+                    SetAction(snapshot.Result?.Summary ?? snapshot.Summary, false);
+                }
+                else
+                {
+                    SetAction(snapshot.Summary, true);
+                }
+
+                await LoadDashboardAsync();
+                await InvokeAsync(StateHasChanged);
+                break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            SetAction($"Setup progress could not be read: {exception.Message}", true);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private MailRelaySetupRequest BuildSetupRequest() =>
+        new(
+            selectedZoneId,
+            setupRelayHostname,
+            setupSendingDomain,
+            setupDkimSelector,
+            setupApplicationName,
+            setupApplicationUsername,
+            false,
+            setupAllowTrustedLan);
+
+    private void ApplySetupRequest(MailRelaySetupRequest request)
+    {
+        selectedZoneId = request.CloudflareZoneId;
+        setupRelayHostname = request.RelayHostname;
+        setupSendingDomain = request.SendingDomain;
+        setupDkimSelector = request.DkimSelector;
+        setupApplicationName = request.ApplicationName;
+        setupApplicationUsername = request.ApplicationUsername;
+        setupAllowTrustedLan = request.AllowTrustedLan;
+    }
+
+    private void OpenClientModal(MailRelayClient? client)
+    {
+        clientMessage = string.Empty;
+        selectedDomainIds.Clear();
+        if (client is null)
+        {
+            clientId = null;
+            clientName = "Home Assistant";
+            clientUsername = "homeassistant";
+            clientPassword = MailRelayService.GenerateClientPassword();
+            foreach (var domain in dashboard?.Domains.Where(item => item.Enabled) ?? [])
+            {
+                selectedDomainIds.Add(domain.Id);
+            }
+        }
+        else
+        {
+            clientId = client.Id;
+            clientName = client.Name;
+            clientUsername = client.Username;
+            clientPassword = string.Empty;
+            foreach (var domain in dashboard?.Domains ?? [])
+            {
+                if (client.AllowedSenderDomains.Contains(domain.DomainName, StringComparer.OrdinalIgnoreCase))
+                {
+                    selectedDomainIds.Add(domain.Id);
+                }
+            }
+        }
+
+        showClientModal = true;
+    }
+
+    private void CloseClientModal() => showClientModal = false;
+
+    private void GenerateClientPassword() => clientPassword = MailRelayService.GenerateClientPassword();
+
+    private void ToggleDomain(Guid domainId, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            selectedDomainIds.Add(domainId);
+        }
+        else
+        {
+            selectedDomainIds.Remove(domainId);
+        }
+    }
+
+    private async Task SaveClientAsync()
+    {
+        isSavingClient = true;
+        clientMessage = string.Empty;
+        try
+        {
+            var result = await MailRelayService.SaveClientAsync(new MailRelayClientSaveRequest(
+                clientId,
+                clientName,
+                clientUsername,
+                clientPassword,
+                selectedDomainIds.ToArray()));
+            clientMessage = result.Summary;
+            clientMessageIsError = !result.Success;
+            if (!result.Success)
+            {
+                return;
+            }
+
+            await LoadDashboardAsync();
+            showClientModal = false;
+            SetAction(result.Summary, false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            clientMessage = exception.Message;
+            clientMessageIsError = true;
+        }
+        finally
+        {
+            isSavingClient = false;
+        }
+    }
+
+    private void OnTestClientChanged()
+    {
+        if (!Guid.TryParse(testClientId, out var id))
+        {
+            return;
+        }
+
+        var client = dashboard?.Clients.FirstOrDefault(item => item.Id == id);
+        var domain = client?.AllowedSenderDomains.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(domain) && string.IsNullOrWhiteSpace(testFromAddress))
+        {
+            testFromAddress = $"{client!.Username}@{domain}";
+        }
+    }
+
+    private async Task SendTestAsync()
+    {
+        if (!Guid.TryParse(testClientId, out var id))
+        {
+            SetAction("Choose an SMTP user before sending a test.", true);
+            return;
+        }
+
+        isSendingTest = true;
+        try
+        {
+            testResult = await MailRelayService.SendTestAsync(new MailRelayTestRequest(id, testFromAddress, testRecipientAddress));
+            SetAction(testResult.Summary, !testResult.Passed);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            testResult = null;
+            SetAction($"Could not send the test email: {exception.Message}", true);
+        }
+        finally
+        {
+            isSendingTest = false;
+        }
+    }
+
+    private void OpenPublicIpModal()
+    {
+        publicIpMonitorEnabled = dashboard?.Configuration?.MonitorPublicIpChanges ?? true;
+        publicIpIntervalMinutes = dashboard?.Configuration?.PublicIpCheckIntervalMinutes ?? 15;
+        showPublicIpModal = true;
+    }
+
+    private void ClosePublicIpModal() => showPublicIpModal = false;
+
+    private async Task SavePublicIpSettingsAsync()
+    {
+        isSavingPublicIp = true;
+        try
+        {
+            await MailRelayService.UpdatePublicIpMonitorSettingsAsync(new MailRelayPublicIpMonitorSettingsRequest(
+                publicIpMonitorEnabled,
+                Math.Clamp(publicIpIntervalMinutes, 15, 1440)));
+            await LoadDashboardAsync();
+            showPublicIpModal = false;
+            SetAction("Public IP monitoring settings saved.", false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            SetAction(exception.Message, true);
+        }
+        finally
+        {
+            isSavingPublicIp = false;
+        }
+    }
+
+    private async Task CheckPublicIpNowAsync()
+    {
+        isCheckingPublicIp = true;
+        try
+        {
+            var result = await MailRelayService.CheckPublicIpNowAsync();
+            await LoadDashboardAsync();
+            SetAction(result.Summary, !result.Success);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            SetAction($"Public IP check failed: {exception.Message}", true);
+        }
+        finally
+        {
+            isCheckingPublicIp = false;
+        }
+    }
+
+    private void OpenLegacyModal()
+    {
+        var configuration = dashboard?.Configuration;
+        legacyEnabled = configuration?.AllowLegacyPort25 ?? false;
+        legacyListenAddressesText = string.Join(Environment.NewLine, configuration?.EffectiveLegacyListenAddresses ?? []);
+        legacyAllowedCidrsText = string.Join(Environment.NewLine, configuration?.EffectiveLegacyAllowedNetworks ?? []);
+        legacyMessage = string.Empty;
+        showLegacyModal = true;
+    }
+
+    private void CloseLegacyModal() => showLegacyModal = false;
+
+    private async Task SaveLegacyAsync()
+    {
+        isSavingLegacy = true;
+        legacyMessage = string.Empty;
+        try
+        {
+            var result = await MailRelayService.UpdateLegacySubmissionAsync(new MailRelayLegacySubmissionRequest(
+                legacyEnabled,
+                SplitLines(legacyListenAddressesText),
+                SplitLines(legacyAllowedCidrsText)));
+            legacyMessage = result.Summary;
+            legacyMessageIsError = !result.Success;
+            if (!result.Success)
+            {
+                return;
+            }
+
+            await LoadDashboardAsync();
+            showLegacyModal = false;
+            SetAction(result.Summary, false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            legacyMessage = exception.Message;
+            legacyMessageIsError = true;
+        }
+        finally
+        {
+            isSavingLegacy = false;
+        }
+    }
+
+    private void OpenRemovalModal()
+    {
+        removeContainer = true;
+        removeApplicationCredentials = true;
+        removeManagedDnsRecords = true;
+        removeDkimKeys = true;
+        removeConfirmed = false;
+        removalMessage = string.Empty;
+        showRemovalModal = true;
+    }
+
+    private void CloseRemovalModal() => showRemovalModal = false;
+
+    private async Task RemoveMailRelayAsync()
+    {
+        isRemoving = true;
+        removalMessage = string.Empty;
+        try
+        {
+            var result = await MailRelayService.RemoveMailRelayAsync(new MailRelayRemovalRequest(
+                removeContainer,
+                removeApplicationCredentials,
+                removeManagedDnsRecords,
+                removeDkimKeys,
+                removeConfirmed));
+            removalMessage = result.Summary;
+            removalMessageIsError = !result.Success;
+            if (!result.Success)
+            {
+                return;
+            }
+
+            await LoadDashboardAsync();
+            showRemovalModal = false;
+            SetAction(result.Summary, false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            removalMessage = exception.Message;
+            removalMessageIsError = true;
+        }
+        finally
+        {
+            isRemoving = false;
+        }
+    }
+
+    private async Task CopyGeneratedPasswordAsync()
+    {
+        if (string.IsNullOrWhiteSpace(generatedPassword))
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", generatedPassword);
+        SetAction("Generated password copied.", false);
+    }
+
+    private async Task CopyClientPasswordAsync()
+    {
+        if (string.IsNullOrWhiteSpace(clientPassword))
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", clientPassword);
+        clientMessage = "Password copied.";
+        clientMessageIsError = false;
+    }
+
+    private string SelectedZoneName() =>
+        dashboard?.Preflight.AvailableZones.FirstOrDefault(zone => zone.ZoneId.Equals(selectedZoneId, StringComparison.Ordinal))?.ZoneName
+        ?? dashboard?.Preflight.CloudflareZoneName
+        ?? string.Empty;
+
+    private void SetAction(string message, bool isError)
+    {
+        actionMessage = message;
+        actionIsError = isError;
+    }
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+
+    private static IReadOnlyList<string> SplitLines(string? value) =>
+        (value ?? string.Empty).Split(['\r', '\n', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string PreflightStateLabel(MailRelayPreflightCheckState state) => state switch
+    {
+        MailRelayPreflightCheckState.Pass => "Pass",
+        MailRelayPreflightCheckState.Warning => "Warning",
+        MailRelayPreflightCheckState.Failed => "Failed",
+        MailRelayPreflightCheckState.NotAvailable => "Unavailable",
+        _ => "Not run"
+    };
+
+    private static LmsStatusTone PreflightTone(MailRelayPreflightCheckState state) => state switch
+    {
+        MailRelayPreflightCheckState.Pass => LmsStatusTone.Ready,
+        MailRelayPreflightCheckState.Warning => LmsStatusTone.Warning,
+        MailRelayPreflightCheckState.Failed => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+
+    private static string DnsStatusLabel(MailRelayDnsStatus status) => status switch
+    {
+        MailRelayDnsStatus.Pass => "pass",
+        MailRelayDnsStatus.Warning => "warning",
+        MailRelayDnsStatus.Failed => "failed",
+        MailRelayDnsStatus.Pending => "pending",
+        _ => "unchecked"
+    };
+
+    private static LmsStatusTone DnsTone(MailRelayDnsStatus status) => status switch
+    {
+        MailRelayDnsStatus.Pass => LmsStatusTone.Ready,
+        MailRelayDnsStatus.Warning or MailRelayDnsStatus.Pending => LmsStatusTone.Warning,
+        MailRelayDnsStatus.Failed => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+
+    private static LmsStatusTone ChangeKindTone(MailRelaySetupChangeKind kind) => kind switch
+    {
+        MailRelaySetupChangeKind.Create => LmsStatusTone.Ready,
+        MailRelaySetupChangeKind.Update => LmsStatusTone.Warning,
+        MailRelaySetupChangeKind.Blocked => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+
+    private static LmsStatusTone StepTone(MailRelaySetupStepState state) => state switch
+    {
+        MailRelaySetupStepState.Complete => LmsStatusTone.Ready,
+        MailRelaySetupStepState.Running => LmsStatusTone.Warning,
+        MailRelaySetupStepState.Failed => LmsStatusTone.Critical,
+        _ => LmsStatusTone.Neutral
+    };
+}
