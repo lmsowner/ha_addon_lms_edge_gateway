@@ -591,8 +591,7 @@ public sealed partial class MailRelayTestService(
         }
 
         if (detail.Contains("status=bounced", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("fatal:", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("reject:", StringComparison.OrdinalIgnoreCase))
+            detail.Contains("fatal:", StringComparison.OrdinalIgnoreCase))
         {
             return MailRelayLogSeverity.Error;
         }

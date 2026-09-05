@@ -286,50 +286,6 @@
                 </div>
             </section>
 
-            <section class="surface-card edge-card mail-relay-log-panel">
-                <button type="button"
-                        class="mail-relay-log-toggle"
-                        aria-expanded="@mailLogExpanded"
-                        @onclick="ToggleMailLogAsync">
-                    <div>
-                        <p class="eyebrow">Postfix</p>
-                        <h2>Send log</h2>
-                        <p class="meta-text">@(mailLogExpanded ? (mailLog?.Summary ?? "Raw mail.log and queue.") : "Hidden until you need it. Open after a test to see Postfix output.")</p>
-                    </div>
-                    <div class="mail-relay-log-toggle-meta">
-                        <LmsStatusPill Text="@MailLogStatusLabel" Tone="@MailLogStatusTone" />
-                        <span>@(mailLogExpanded ? "Hide" : "Show")</span>
-                    </div>
-                </button>
-                @if (mailLogExpanded)
-                {
-                    <div class="toolbar-row">
-                        <div class="mail-relay-log-filters" role="tablist" aria-label="Send log filter">
-                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "all" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "all"'>All</button>
-                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "test" ? "active" : string.Empty)" disabled="@string.IsNullOrWhiteSpace(testResult?.QueueId)" @onclick='() => mailLogFilter = "test"'>This test</button>
-                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "problems" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "problems"'>Problems</button>
-                            <button type="button" class="mail-relay-log-filter @(mailLogFilter == "queue" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "queue"'>Queue</button>
-                        </div>
-                        <LmsButton Label="@(isLoadingMailLog ? "Reading..." : "Refresh")"
-                                   Icon="refresh"
-                                   Busy="@isLoadingMailLog"
-                                   Disabled="@isLoadingMailLog"
-                                   OnClick="RefreshMailLogAsync" />
-                        <LmsButton Label="Copy"
-                                   Icon="copy"
-                                   Disabled="@string.IsNullOrWhiteSpace(VisibleMailLogText)"
-                                   OnClick="CopyMailLogAsync" />
-                        <LmsButton Label="@(isClearingQueue ? "Clearing..." : "Clear queue")"
-                                   Icon="delete"
-                                   Danger="true"
-                                   Busy="@isClearingQueue"
-                                   Disabled="@isClearingQueue"
-                                   OnClick="ClearMailQueueAsync" />
-                    </div>
-                    <pre class="mail-relay-log">@(string.IsNullOrWhiteSpace(VisibleMailLogText) ? "No Postfix lines for this filter yet. Send a test or refresh." : VisibleMailLogText)</pre>
-                }
-            </section>
-
             <section class="surface-card edge-card">
                 <div class="table-header">
                     <div>
@@ -360,6 +316,50 @@
                 <LmsButton Label="Remove Mail Relay" Icon="delete" Danger="true" OnClick="OpenRemovalModal" />
             </section>
         </div>
+
+        <section class="surface-card edge-card mail-relay-log-panel">
+            <button type="button"
+                    class="mail-relay-log-toggle"
+                    aria-expanded="@mailLogExpanded"
+                    @onclick="ToggleMailLogAsync">
+                <div>
+                    <p class="eyebrow">Postfix</p>
+                    <h2>Send log</h2>
+                    <p class="meta-text">@(mailLogExpanded ? (mailLog?.Summary ?? "Raw mail.log and queue.") : "Hidden until you need it. Open after a test to see Postfix output.")</p>
+                </div>
+                <div class="mail-relay-log-toggle-meta">
+                    <LmsStatusPill Text="@MailLogStatusLabel" Tone="@MailLogStatusTone" />
+                    <span>@(mailLogExpanded ? "Hide" : "Show")</span>
+                </div>
+            </button>
+            @if (mailLogExpanded)
+            {
+                <div class="toolbar-row">
+                    <div class="mail-relay-log-filters" role="tablist" aria-label="Send log filter">
+                        <button type="button" class="mail-relay-log-filter @(mailLogFilter == "all" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "all"'>All</button>
+                        <button type="button" class="mail-relay-log-filter @(mailLogFilter == "test" ? "active" : string.Empty)" disabled="@string.IsNullOrWhiteSpace(testResult?.QueueId)" @onclick='() => mailLogFilter = "test"'>This test</button>
+                        <button type="button" class="mail-relay-log-filter @(mailLogFilter == "problems" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "problems"'>Problems</button>
+                        <button type="button" class="mail-relay-log-filter @(mailLogFilter == "queue" ? "active" : string.Empty)" @onclick='() => mailLogFilter = "queue"'>Queue</button>
+                    </div>
+                    <LmsButton Label="@(isLoadingMailLog ? "Reading..." : "Refresh")"
+                               Icon="refresh"
+                               Busy="@isLoadingMailLog"
+                               Disabled="@isLoadingMailLog"
+                               OnClick="RefreshMailLogAsync" />
+                    <LmsButton Label="Copy"
+                               Icon="copy"
+                               Disabled="@string.IsNullOrWhiteSpace(VisibleMailLogText)"
+                               OnClick="CopyMailLogAsync" />
+                    <LmsButton Label="@(isClearingQueue ? "Clearing..." : "Clear queue")"
+                               Icon="delete"
+                               Danger="true"
+                               Busy="@isClearingQueue"
+                               Disabled="@isClearingQueue"
+                               OnClick="ClearMailQueueAsync" />
+                </div>
+                <pre class="mail-relay-log">@(string.IsNullOrWhiteSpace(VisibleMailLogText) ? "No Postfix lines for this filter yet. Send a test or refresh." : VisibleMailLogText)</pre>
+            }
+        </section>
     }
 </div>
 
@@ -541,7 +541,7 @@
                         <span class="ui-field-label">Username</span>
                         <input @bind="clientUsername" placeholder="homeassistant" disabled="@clientId.HasValue" />
                     </label>
-                    <label class="ui-field">
+                    <label class="ui-field mail-relay-password-field">
                         <span class="ui-field-label">Password</span>
                         <div class="mail-relay-password-row">
                             <input type="text" @bind="clientPassword" autocomplete="new-password" placeholder="@(clientId.HasValue ? "Leave blank to keep current" : "Generate a password")" />
@@ -595,7 +595,7 @@
                 <div>
                     <p class="eyebrow">Sending domain</p>
                     <h2 id="mail-relay-add-domain-title">Add another domain</h2>
-                    <p class="meta-text">Preflight runs for this zone only. Existing mailbox DNS such as Microsoft 365 is merged, never replaced.</p>
+                    <p class="meta-text">Type the sending domain. LMS picks the matching Cloudflare zone when it can. Review DNS is optional. Microsoft 365 MX is never replaced.</p>
                 </div>
                 <button class="edge-modal-close" type="button" aria-label="Close add domain" @onclick="CloseAddDomainModal">x</button>
             </header>
@@ -606,17 +606,18 @@
                 }
                 <div class="edge-form-grid mail-relay-form-grid">
                     <label class="ui-field">
+                        <span class="ui-field-label">Sending domain</span>
+                        <input @bind="addDomainName" @bind:after="OnAddDomainNameChanged" placeholder="aboutmyrental.com" />
+                    </label>
+                    <label class="ui-field">
                         <span class="ui-field-label">Cloudflare zone</span>
                         <select @bind="addDomainZoneId" @bind:after="ClearDomainPreview">
+                            <option value="">Select the zone that owns this domain</option>
                             @foreach (var zone in dashboard?.Preflight.AvailableZones ?? [])
                             {
                                 <option value="@zone.ZoneId">@zone.ZoneName</option>
                             }
                         </select>
-                    </label>
-                    <label class="ui-field">
-                        <span class="ui-field-label">Sending domain</span>
-                        <input @bind="addDomainName" @bind:after="ClearDomainPreview" placeholder="example.com" />
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">DKIM selector</span>
@@ -1049,7 +1050,9 @@
     private bool CanAddDomain =>
         !isPreviewingDomain &&
         !isSavingDomain &&
-        domainPreview?.CanApply == true;
+        !string.IsNullOrWhiteSpace(addDomainZoneId) &&
+        !string.IsNullOrWhiteSpace(addDomainName) &&
+        !string.IsNullOrWhiteSpace(addDomainSelector);
     private string TestCalloutClass =>
         testResult?.Status == MailRelayTestStatus.Sent ? "ready" : "warning";
     private string VisibleMailLogText
@@ -1075,18 +1078,38 @@
             return string.Join('\n', lines);
         }
     }
-    private string MailLogStatusLabel =>
-        mailLog is null ? "Not loaded"
-        : mailLog.Events.Any(item => item.Severity == MailRelayLogSeverity.Error) ? "Errors"
-        : mailLog.Events.Any(item => item.Severity == MailRelayLogSeverity.Warning) ? "Deferred"
-        : mailLog.Events.Any(item => item.Severity == MailRelayLogSeverity.Sent) ? "Delivered"
-        : mailLog.Available ? "Ready"
-        : "Empty";
+    private string MailLogStatusLabel
+    {
+        get
+        {
+            if (!mailLogExpanded || mailLog is null)
+            {
+                return "Idle";
+            }
+
+            if (!mailLog.Available)
+            {
+                return "Unavailable";
+            }
+
+            if (mailLog.Events.Any(item => item.Severity == MailRelayLogSeverity.Error))
+            {
+                return "Problems";
+            }
+
+            if (mailLog.Events.Any(item => item.Severity == MailRelayLogSeverity.Sent))
+            {
+                return "Delivered";
+            }
+
+            return mailLog.Events.Any(item => item.Severity == MailRelayLogSeverity.Warning) ? "Deferred" : "Ready";
+        }
+    }
     private LmsStatusTone MailLogStatusTone => MailLogStatusLabel switch
     {
         "Delivered" or "Ready" => LmsStatusTone.Ready,
         "Deferred" => LmsStatusTone.Warning,
-        "Errors" => LmsStatusTone.Critical,
+        "Problems" or "Unavailable" => LmsStatusTone.Critical,
         _ => LmsStatusTone.Neutral
     };
     private string RelayHostname =>
@@ -1412,8 +1435,8 @@
 
     private void OpenAddDomainModal()
     {
-        addDomainZoneId = FirstNonEmpty(selectedZoneId, dashboard?.Preflight.AvailableZones.FirstOrDefault()?.ZoneId);
-        addDomainName = dashboard?.Preflight.AvailableZones.FirstOrDefault(item => item.ZoneId.Equals(addDomainZoneId, StringComparison.Ordinal))?.ZoneName ?? string.Empty;
+        addDomainZoneId = string.Empty;
+        addDomainName = string.Empty;
         addDomainSelector = "lms";
         domainPreview = null;
         domainMessage = string.Empty;
@@ -1423,6 +1446,27 @@
     private void CloseAddDomainModal() => showAddDomainModal = false;
 
     private void ClearDomainPreview() => domainPreview = null;
+
+    private void OnAddDomainNameChanged()
+    {
+        ClearDomainPreview();
+        var sendingDomain = addDomainName.Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(sendingDomain) || dashboard is null)
+        {
+            return;
+        }
+
+        var match = dashboard.Preflight.AvailableZones
+            .Where(zone =>
+                sendingDomain.Equals(zone.ZoneName, StringComparison.OrdinalIgnoreCase) ||
+                sendingDomain.EndsWith('.' + zone.ZoneName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(zone => zone.ZoneName.Length)
+            .FirstOrDefault();
+        if (match is not null)
+        {
+            addDomainZoneId = match.ZoneId;
+        }
+    }
 
     private MailRelayDomainRequest BuildDomainRequest() =>
         new(addDomainZoneId, addDomainName, addDomainSelector);

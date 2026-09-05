@@ -4594,11 +4594,21 @@ textarea {
     width: auto;
 }
 
+.mail-relay-form-grid > .mail-relay-password-field {
+    grid-column: 1 / -1;
+}
+
 .mail-relay-password-row {
     align-items: center;
     display: grid;
     gap: 0.45rem;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(12rem, 1fr) auto auto;
+    width: 100%;
+}
+
+.mail-relay-password-row input {
+    min-width: 0;
+    width: 100%;
 }
 
 .mail-relay-secret {

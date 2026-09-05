@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.05.17.22
+
+- Move the send log to the bottom and stop calling normal Postfix rejects an error. Widen the SMTP password field. Add domain no longer pre-fills the first Cloudflare zone or require a review click.
+
 ## 2026.09.05.17.11
 
 - Mail Relay uses a two-column layout for domains, users, test, public IP, legacy and remove. The send log is collapsed until you open it or send a test.
