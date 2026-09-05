@@ -272,10 +272,19 @@ public sealed record MailRelayTestResult(
     string SmtpResponse,
     string Summary,
     DateTimeOffset TestedAtUtc,
-    bool DmarcIdentityAligned = false)
+    bool DmarcIdentityAligned = false,
+    IReadOnlyList<string>? LogLines = null)
 {
     public bool Passed =>
         ClientPolicyValidated &&
         AcceptedByRelay &&
         Status is MailRelayTestStatus.Queued or MailRelayTestStatus.Sent;
+
+    public IReadOnlyList<string> Logs => LogLines ?? [];
 }
+
+public sealed record MailRelayLogSnapshot(
+    bool Available,
+    string Path,
+    string Summary,
+    IReadOnlyList<string> Lines);

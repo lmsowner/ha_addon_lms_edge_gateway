@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.05.12.03
+
+- Setup step badges stay pill-sized, so long DNS details no longer crush Complete.
+- Test email now shows Postfix send logs, queue ID and destination. Refresh mail log is on the same card.
+
 ## 2026.09.05.11.46
 
 - Start setup reviews DNS itself. The extra Preview button is gone.

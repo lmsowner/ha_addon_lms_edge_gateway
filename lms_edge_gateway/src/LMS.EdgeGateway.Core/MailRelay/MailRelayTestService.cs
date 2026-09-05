@@ -21,31 +21,32 @@ public sealed partial class MailRelayTestService(
 
         if (configuration?.Enabled != true)
         {
-            return Failed(request, client, testedAt, "Mail Relay is not running. Finish or retry relay setup first.");
+            return await FailedAsync(request, client, testedAt, "Mail Relay is not running. Finish or retry relay setup first.", cancellationToken);
         }
 
         if (client is null || !client.Enabled)
         {
-            return Failed(request, client, testedAt, "Choose an enabled Mail Relay application.");
+            return await FailedAsync(request, client, testedAt, "Choose an enabled Mail Relay application.", cancellationToken);
         }
 
         if (!MailAddress.TryCreate(request.FromAddress?.Trim(), out var sender))
         {
-            return Failed(request, client, testedAt, "Enter a valid From address.");
+            return await FailedAsync(request, client, testedAt, "Enter a valid From address.", cancellationToken);
         }
 
         if (!MailAddress.TryCreate(request.RecipientAddress?.Trim(), out var recipient))
         {
-            return Failed(request, client, testedAt, "Enter a valid recipient address.");
+            return await FailedAsync(request, client, testedAt, "Enter a valid recipient address.", cancellationToken);
         }
 
         if (!client.AllowedSenderDomains.Contains(sender.Host, StringComparer.OrdinalIgnoreCase))
         {
-            return Failed(
+            return await FailedAsync(
                 request,
                 client,
                 testedAt,
-                $"{client.Name} is not allowed to send as {sender.Host}. Choose an address in one of its allowed sender domains.");
+                $"{client.Name} is not allowed to send as {sender.Host}. Choose an address in one of its allowed sender domains.",
+                cancellationToken);
         }
 
         var domains = await store.ListDomainsAsync(cancellationToken);
@@ -54,11 +55,12 @@ public sealed partial class MailRelayTestService(
                 domain.DomainName.Equals(sender.Host, StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(domain.CurrentDkimPrivateKeySecretReference)))
         {
-            return Failed(
+            return await FailedAsync(
                 request,
                 client,
                 testedAt,
-                $"{sender.Host} is not an enabled Mail Relay sending domain with a DKIM key. Configure the domain before testing it.");
+                $"{sender.Host} is not an enabled Mail Relay sending domain with a DKIM key. Configure the domain before testing it.",
+                cancellationToken);
         }
 
         var messageId = $"lms-test-{Guid.NewGuid():N}@{configuration.RelayHostname}";
@@ -81,21 +83,21 @@ public sealed partial class MailRelayTestService(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Failed(request, client, testedAt, "The relay did not complete the SMTP test within 30 seconds.");
+            return await FailedAsync(request, client, testedAt, "The relay did not complete the SMTP test within 30 seconds.", cancellationToken, messageId);
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException)
         {
-            return Failed(request, client, testedAt, $"Mail Relay test failed: {CleanDetail(exception.Message)}");
+            return await FailedAsync(request, client, testedAt, $"Mail Relay test failed: {CleanDetail(exception.Message)}", cancellationToken, messageId);
         }
 
         if (submission.ExitCode == 127)
         {
-            return Failed(request, client, testedAt, "Mail Relay tests require the Home Assistant add-on image, where sendmail is installed.");
+            return await FailedAsync(request, client, testedAt, "Mail Relay tests require the Home Assistant add-on image, where sendmail is installed.", cancellationToken, messageId);
         }
 
         if (submission.ExitCode != 0)
         {
-            return Result(
+            return await ResultAsync(
                 MailRelayTestStatus.Rejected,
                 true,
                 false,
@@ -106,7 +108,9 @@ public sealed partial class MailRelayTestService(
                 null,
                 FirstUsefulLine(submission.StandardError, submission.StandardOutput),
                 "The selected SMTP user and sender policy are valid, but the relay rejected the LMS internal test message.",
-                testedAt);
+                testedAt,
+                cancellationToken,
+                messageId);
         }
 
         var queueId = await FindQueueIdAsync(messageId, cancellationToken);
@@ -121,7 +125,7 @@ public sealed partial class MailRelayTestService(
             _ => "The selected user policy passed and Postfix accepted the message. It is still queued, so inbox delivery is not yet known."
         };
 
-        return Result(
+        return await ResultAsync(
             delivery.Status,
             true,
             true,
@@ -135,7 +139,34 @@ public sealed partial class MailRelayTestService(
                 : delivery.Detail,
             summary,
             testedAt,
+            cancellationToken,
+            messageId,
             dmarcIdentityAligned: true);
+    }
+
+    public async Task<MailRelayLogSnapshot> GetLogAsync(
+        string? queueId = null,
+        string? messageId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = paths.MailLogPath;
+        if (!File.Exists(path))
+        {
+            return new MailRelayLogSnapshot(
+                false,
+                path,
+                "Postfix has not written /var/log/mail.log yet. Send a test, or check that rsyslog is running in the add-on.",
+                []);
+        }
+
+        var text = await ReadMailLogTailAsync(path, cancellationToken);
+        var lines = SelectMailLogLines(text, messageId, queueId, 120);
+        var summary = lines.Count == 0
+            ? "The mail log exists but has no matching lines yet."
+            : string.IsNullOrWhiteSpace(queueId) && string.IsNullOrWhiteSpace(messageId)
+                ? $"Latest {lines.Count} lines from {path}."
+                : $"{lines.Count} mail log lines for this send.";
+        return new MailRelayLogSnapshot(true, path, summary, lines);
     }
 
     private async Task<string?> FindQueueIdAsync(string messageId, CancellationToken cancellationToken)
@@ -310,12 +341,14 @@ public sealed partial class MailRelayTestService(
         ]);
     }
 
-    private static MailRelayTestResult Failed(
+    private Task<MailRelayTestResult> FailedAsync(
         MailRelayTestRequest request,
         MailRelayClient? client,
         DateTimeOffset testedAt,
-        string summary) =>
-        Result(
+        string summary,
+        CancellationToken cancellationToken,
+        string? messageId = null) =>
+        ResultAsync(
             MailRelayTestStatus.Failed,
             false,
             false,
@@ -326,9 +359,11 @@ public sealed partial class MailRelayTestService(
             null,
             string.Empty,
             summary,
-            testedAt);
+            testedAt,
+            cancellationToken,
+            messageId);
 
-    private static MailRelayTestResult Result(
+    private async Task<MailRelayTestResult> ResultAsync(
         MailRelayTestStatus status,
         bool clientPolicyValidated,
         bool accepted,
@@ -340,8 +375,12 @@ public sealed partial class MailRelayTestService(
         string smtpResponse,
         string summary,
         DateTimeOffset testedAt,
-        bool dmarcIdentityAligned = false) =>
-        new(
+        CancellationToken cancellationToken,
+        string? messageId = null,
+        bool dmarcIdentityAligned = false)
+    {
+        var log = await GetLogAsync(queueId, messageId, cancellationToken);
+        return new(
             status,
             clientPolicyValidated,
             accepted,
@@ -353,7 +392,49 @@ public sealed partial class MailRelayTestService(
             CleanDetail(smtpResponse),
             summary,
             testedAt,
-            dmarcIdentityAligned);
+            dmarcIdentityAligned,
+            log.Lines);
+    }
+
+    internal static IReadOnlyList<string> SelectMailLogLines(
+        string logText,
+        string? messageId,
+        string? queueId,
+        int maxLines)
+    {
+        var all = (logText ?? string.Empty)
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var keyed = all
+            .Where(line =>
+                (!string.IsNullOrWhiteSpace(queueId) && line.Contains(queueId, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(messageId) && line.Contains(messageId, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        var source = keyed.Length > 0 ? keyed : all;
+        return source.Length <= maxLines
+            ? source
+            : source[^maxLines..];
+    }
+
+    internal static async Task<string> ReadMailLogTailAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        const int maxBytes = 256 * 1024;
+        var trimmed = stream.Length > maxBytes;
+        if (trimmed)
+        {
+            stream.Seek(-maxBytes, SeekOrigin.End);
+        }
+
+        using var reader = new StreamReader(stream);
+        var text = await reader.ReadToEndAsync(cancellationToken);
+        if (!trimmed)
+        {
+            return text;
+        }
+
+        var firstBreak = text.IndexOf('\n');
+        return firstBreak >= 0 ? text[(firstBreak + 1)..] : text;
+    }
 
     private static string CleanDetail(string value)
     {

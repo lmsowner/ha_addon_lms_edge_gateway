@@ -82,6 +82,12 @@ public sealed class MailRelayService(
         CancellationToken cancellationToken = default) =>
         testService.SendAsync(request, cancellationToken);
 
+    public Task<MailRelayLogSnapshot> GetMailLogAsync(
+        string? queueId = null,
+        string? messageId = null,
+        CancellationToken cancellationToken = default) =>
+        testService.GetLogAsync(queueId, messageId, cancellationToken);
+
     public Task<MailRelayLegacySubmissionResult> UpdateLegacySubmissionAsync(
         MailRelayLegacySubmissionRequest request,
         CancellationToken cancellationToken = default) =>
