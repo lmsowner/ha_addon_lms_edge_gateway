@@ -263,6 +263,71 @@ public sealed partial class MailRelayProvisioningService(
         {
             var before = recordsByZone[domain.CloudflareZoneId];
             var trackedRecords = trackingByDomain[domain.Id];
+            foreach (var hostTracking in trackedRecords.Where(item =>
+                         item.Purpose.Equals("Mail hostname", StringComparison.OrdinalIgnoreCase)))
+            {
+                var hostname = hostTracking.Name.TrimEnd('.');
+                var matches = before.Where(item =>
+                        item.Type.Equals("A", StringComparison.OrdinalIgnoreCase) &&
+                        item.Name.TrimEnd('.').Equals(hostname, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                var current = before.FirstOrDefault(item => item.Id.Equals(hostTracking.CloudflareRecordId, StringComparison.Ordinal));
+                if (current is null && matches.Length == 1)
+                {
+                    current = matches[0];
+                }
+
+                if (matches.Length > 1 ||
+                    (current is null && !hostTracking.CreatedByLms) ||
+                    (current is not null &&
+                     !hostTracking.CreatedByLms &&
+                     !hostTracking.ModifiedByLms &&
+                     (!current.Content.Equals(detectedPublicIp, StringComparison.Ordinal) || current.Proxied)))
+                {
+                    checks.Add(new MailRelayPublicIpDnsCheck(
+                        "Mail hostname",
+                        hostname,
+                        MailRelayDnsStatus.Failed,
+                        false,
+                        "This extra mail hostname was left unchanged."));
+                    continue;
+                }
+
+                var saved = current is null
+                    ? await cloudflareDnsService.CreateRecordAsync(
+                        apiToken,
+                        domain.CloudflareZoneId,
+                        new CloudflareDnsRecord(
+                            string.Empty,
+                            domain.CloudflareZoneId,
+                            hostname,
+                            "A",
+                            detectedPublicIp,
+                            false,
+                            1,
+                            ManagedDnsComment,
+                            null),
+                        cancellationToken)
+                    : current.Content.Equals(detectedPublicIp, StringComparison.Ordinal) && !current.Proxied
+                        ? current
+                        : await cloudflareDnsService.UpdateRecordAsync(
+                            apiToken,
+                            domain.CloudflareZoneId,
+                            current with { Content = detectedPublicIp, Proxied = false },
+                            cancellationToken);
+                var changed = current is null || !current.Content.Equals(saved.Content, StringComparison.Ordinal) || current.Proxied;
+                changedAnyRecord |= changed;
+                await SaveDnsOwnershipAsync(domain.Id, saved, "Mail hostname", before, checkedAt, cancellationToken);
+                checks.Add(new MailRelayPublicIpDnsCheck(
+                    "Mail hostname",
+                    hostname,
+                    MailRelayDnsStatus.Pending,
+                    changed,
+                    changed
+                        ? $"Cloudflare A for {hostname} is now {detectedPublicIp}."
+                        : $"{hostname} already points at {detectedPublicIp}."));
+            }
+
             var spfTracking = trackedRecords.FirstOrDefault(item => item.Purpose.Equals("SPF", StringComparison.OrdinalIgnoreCase));
             var spfRecords = Find(before, "TXT", domain.DomainName)
                 .Where(item => item.Content.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase))
@@ -727,6 +792,39 @@ public sealed partial class MailRelayProvisioningService(
         }
     }
 
+    public async Task<MailRelayHostnameSuggestion> SuggestMailHostnameAsync(
+        string cloudflareZoneId,
+        string sendingDomain,
+        string? preferredHostname = null,
+        CancellationToken cancellationToken = default)
+    {
+        var zoneId = cloudflareZoneId.Trim();
+        var domain = sendingDomain.Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(zoneId) || Uri.CheckHostName(domain) != UriHostNameType.Dns)
+        {
+            return new(string.Empty, string.Empty, false, [], "Enter a sending domain to suggest a mail hostname.");
+        }
+
+        var configuration = await store.GetConfigurationAsync(cancellationToken);
+        var publicIp = configuration?.PublicIpAddress;
+        if (string.IsNullOrWhiteSpace(publicIp))
+        {
+            var preflight = await preflightService.InspectAsync(false, zoneId, cancellationToken);
+            publicIp = preflight.PublicIpAddress;
+        }
+
+        try
+        {
+            var token = await GetCloudflareAsync(cancellationToken);
+            var records = await cloudflareDnsService.ListRecordsAsync(token, zoneId, cancellationToken);
+            return SuggestMailHostname(domain, records, publicIp, preferredHostname);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new($"smtp.{domain}", "smtp", false, [], exception.Message);
+        }
+    }
+
     public async Task<MailRelayDomainPreview> PreviewDomainAsync(
         MailRelayDomainRequest request,
         CancellationToken cancellationToken = default)
@@ -759,6 +857,12 @@ public sealed partial class MailRelayProvisioningService(
         if (!IsWithinZone(normalized.SendingDomain, preflight.CloudflareZoneName))
         {
             errors.Add($"Sending domain must be inside the selected Cloudflare zone {preflight.CloudflareZoneName}.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalized.MailHostname) &&
+            !IsWithinZone(normalized.MailHostname, preflight.CloudflareZoneName))
+        {
+            errors.Add($"Mail hostname must be inside the selected Cloudflare zone {preflight.CloudflareZoneName}.");
         }
 
         var domains = await store.ListDomainsAsync(cancellationToken);
@@ -800,6 +904,18 @@ public sealed partial class MailRelayProvisioningService(
             changes.Add(BuildSpfChange(normalized.SendingDomain, spf));
             changes.Add(BuildDkimChange(records, normalized.SendingDomain, normalized.DkimSelector, selectedDkimIsManaged));
             changes.Add(BuildDmarcChange(records, normalized.SendingDomain));
+            if (!string.IsNullOrWhiteSpace(normalized.MailHostname))
+            {
+                if (string.IsNullOrWhiteSpace(publicIp))
+                {
+                    errors.Add("Public IPv4 is not known yet, so a mail hostname A record cannot be planned.");
+                }
+                else
+                {
+                    changes.Add(BuildAddressChange(records, normalized.MailHostname, publicIp, "Mail hostname"));
+                }
+            }
+
             errors.AddRange(changes.Where(item => item.Kind == MailRelaySetupChangeKind.Blocked).Select(item => item.Detail));
         }
 
@@ -869,12 +985,16 @@ public sealed partial class MailRelayProvisioningService(
                                              item.CloudflareRecordId.Equals(selectedDkimRecord.Id, StringComparison.Ordinal) &&
                                              item.CreatedByLms) ||
                                          selectedDkimRecord.Comment.Equals(ManagedDnsComment, StringComparison.OrdinalIgnoreCase));
-            var currentPlans = new[]
+            var currentPlans = new List<MailRelaySetupChange>
             {
                 BuildSpfChange(normalized.SendingDomain, spfAnalysis),
                 BuildDkimChange(records, normalized.SendingDomain, normalized.DkimSelector, selectedDkimIsManaged),
                 BuildDmarcChange(records, normalized.SendingDomain)
             };
+            if (!string.IsNullOrWhiteSpace(normalized.MailHostname) && !string.IsNullOrWhiteSpace(publicIp))
+            {
+                currentPlans.Add(BuildAddressChange(records, normalized.MailHostname, publicIp, "Mail hostname"));
+            }
             var blockedPlan = currentPlans.FirstOrDefault(item => item.Kind == MailRelaySetupChangeKind.Blocked);
             if (blockedPlan is not null)
             {
@@ -918,6 +1038,19 @@ public sealed partial class MailRelayProvisioningService(
             await SaveDnsOwnershipAsync(domain.Id, spfRecord, "SPF", records, now, cancellationToken);
             await SaveDnsOwnershipAsync(domain.Id, dkimRecord, "DKIM", records, now, cancellationToken);
             await SaveDnsOwnershipAsync(domain.Id, dmarcRecord, "DMARC", records, now, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(normalized.MailHostname) && !string.IsNullOrWhiteSpace(publicIp))
+            {
+                var hostnameRecord = await UpsertRecordAsync(
+                    apiToken,
+                    normalized.CloudflareZoneId,
+                    records,
+                    "A",
+                    normalized.MailHostname,
+                    publicIp,
+                    false,
+                    cancellationToken);
+                await SaveDnsOwnershipAsync(domain.Id, hostnameRecord, "Mail hostname", records, now, cancellationToken);
+            }
 
             var allDomains = (await store.ListDomainsAsync(cancellationToken)).ToArray();
             var clients = await store.ListClientsAsync(cancellationToken);
@@ -2579,21 +2712,27 @@ public sealed partial class MailRelayProvisioningService(
         .SelectMany(value => value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         .FirstOrDefault() ?? "No diagnostic output was returned.";
 
-    private static MailRelaySetupChange BuildAddressChange(IReadOnlyList<CloudflareDnsRecord> records, string hostname, string ip)
+    private static MailRelaySetupChange BuildAddressChange(
+        IReadOnlyList<CloudflareDnsRecord> records,
+        string hostname,
+        string ip,
+        string purpose = "Relay hostname")
     {
-        var sameName = records.Where(item => item.Name.Equals(hostname, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var sameName = records.Where(item => item.Name.TrimEnd('.').Equals(hostname.TrimEnd('.'), StringComparison.OrdinalIgnoreCase)).ToArray();
         if (sameName.Any(item => item.Type.Equals("CNAME", StringComparison.OrdinalIgnoreCase)))
         {
-            return new("Relay hostname", "A", hostname, ip, MailRelaySetupChangeKind.Blocked, $"{hostname} already has a CNAME. Remove or rename it before installing Mail Relay.");
+            return new(purpose, "A", hostname, ip, MailRelaySetupChangeKind.Blocked, $"{hostname} already has a CNAME. Choose another hostname or remove that CNAME first.");
         }
+
         var existing = sameName.FirstOrDefault(item => item.Type.Equals("A", StringComparison.OrdinalIgnoreCase));
         if (existing is null)
         {
-            return new("Relay hostname", "A", hostname, ip, MailRelaySetupChangeKind.Create, "Create a DNS-only A record. Cloudflare proxying will be off.");
+            return new(purpose, "A", hostname, ip, MailRelaySetupChangeKind.Create, "Create a DNS-only A record. Cloudflare proxying will be off.");
         }
+
         return existing.Content == ip && !existing.Proxied
-            ? new("Relay hostname", "A", hostname, ip, MailRelaySetupChangeKind.Keep, "The existing DNS-only A record is already correct.")
-            : new("Relay hostname", "A", hostname, ip, MailRelaySetupChangeKind.Update, $"Replace {existing.Content} and force Cloudflare proxying off.");
+            ? new(purpose, "A", hostname, ip, MailRelaySetupChangeKind.Keep, "The existing DNS-only A record is already correct.")
+            : new(purpose, "A", hostname, ip, MailRelaySetupChangeKind.Update, $"Replace {existing.Content} and force Cloudflare proxying off.");
     }
 
     private static MailRelaySetupChange BuildSpfChange(string domain, SpfAnalysis analysis)
@@ -2897,18 +3036,139 @@ public sealed partial class MailRelayProvisioningService(
         await ApplyRuntimeConfigurationAsync(cancellationToken);
     }
 
-    private static MailRelayDomainRequest NormalizeDomainRequest(MailRelayDomainRequest request) => request with
+    private static MailRelayDomainRequest NormalizeDomainRequest(MailRelayDomainRequest request)
     {
-        CloudflareZoneId = request.CloudflareZoneId.Trim(),
-        SendingDomain = request.SendingDomain.Trim().TrimEnd('.').ToLowerInvariant(),
-        DkimSelector = string.IsNullOrWhiteSpace(request.DkimSelector) ? "lms" : request.DkimSelector.Trim().ToLowerInvariant()
-    };
+        var sendingDomain = request.SendingDomain.Trim().TrimEnd('.').ToLowerInvariant();
+        return request with
+        {
+            CloudflareZoneId = request.CloudflareZoneId.Trim(),
+            SendingDomain = sendingDomain,
+            DkimSelector = string.IsNullOrWhiteSpace(request.DkimSelector) ? "lms" : request.DkimSelector.Trim().ToLowerInvariant(),
+            MailHostname = NormalizeMailHostname(request.MailHostname, sendingDomain)
+        };
+    }
 
     private static IEnumerable<string> ValidateDomainRequest(MailRelayDomainRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.CloudflareZoneId)) yield return "Choose a Cloudflare zone for this sending domain.";
         if (Uri.CheckHostName(request.SendingDomain) != UriHostNameType.Dns) yield return "Enter a valid sending domain.";
         if (!DnsLabelRegex().IsMatch(request.DkimSelector)) yield return "DKIM selector may contain letters, numbers and hyphens only.";
+        if (!string.IsNullOrWhiteSpace(request.MailHostname))
+        {
+            if (Uri.CheckHostName(request.MailHostname) != UriHostNameType.Dns)
+            {
+                yield return "Enter a valid mail hostname, or leave it blank.";
+            }
+
+            if (request.MailHostname.Equals(request.SendingDomain, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return "Mail hostname should be a subdomain such as smtp. or relay., not the sending domain itself.";
+            }
+        }
+    }
+
+    internal static readonly string[] PreferredMailHostLabels = ["smtp", "relay", "mail"];
+
+    internal static string NormalizeMailHostname(string hostname, string sendingDomain)
+    {
+        hostname = hostname.Trim().TrimEnd('.').ToLowerInvariant();
+        sendingDomain = sendingDomain.Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(hostname) || string.IsNullOrWhiteSpace(sendingDomain))
+        {
+            return hostname;
+        }
+
+        return hostname.Contains('.') ? hostname : $"{hostname}.{sendingDomain}";
+    }
+
+    internal static MailRelayHostnameSuggestion SuggestMailHostname(
+        string sendingDomain,
+        IReadOnlyList<CloudflareDnsRecord> records,
+        string? publicIp,
+        string? preferredHostname = null)
+    {
+        sendingDomain = sendingDomain.Trim().TrimEnd('.').ToLowerInvariant();
+        var taken = new List<string>();
+        var candidates = new List<string>();
+        var preferred = string.IsNullOrWhiteSpace(preferredHostname)
+            ? null
+            : NormalizeMailHostname(preferredHostname, sendingDomain);
+        if (!string.IsNullOrWhiteSpace(preferred) &&
+            !preferred.Equals(sendingDomain, StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add(preferred);
+        }
+
+        foreach (var label in PreferredMailHostLabels)
+        {
+            var hostname = $"{label}.{sendingDomain}";
+            if (!candidates.Contains(hostname, StringComparer.OrdinalIgnoreCase))
+            {
+                candidates.Add(hostname);
+            }
+        }
+
+        string? firstAvailable = null;
+        string? firstLabel = null;
+        string? firstDetail = null;
+        foreach (var hostname in candidates)
+        {
+            if (IsMailHostnameAvailable(records, hostname, publicIp))
+            {
+                if (firstAvailable is not null)
+                {
+                    continue;
+                }
+
+                var reuse = records.Any(item =>
+                    item.Name.TrimEnd('.').Equals(hostname, StringComparison.OrdinalIgnoreCase) &&
+                    item.Type.Equals("A", StringComparison.OrdinalIgnoreCase));
+                firstAvailable = hostname;
+                firstLabel = hostname.Split('.')[0];
+                firstDetail = reuse
+                    ? $"{hostname} already points at this relay."
+                    : $"{hostname} is free.";
+            }
+            else
+            {
+                taken.Add(hostname);
+            }
+        }
+
+        if (firstAvailable is not null)
+        {
+            return new(firstAvailable, firstLabel!, true, taken, firstDetail!);
+        }
+
+        return new(
+            $"{PreferredMailHostLabels[0]}.{sendingDomain}",
+            PreferredMailHostLabels[0],
+            false,
+            taken,
+            "smtp, relay and mail are already in use. Enter a free hostname or leave this blank.");
+    }
+
+    internal static bool IsMailHostnameAvailable(
+        IReadOnlyList<CloudflareDnsRecord> records,
+        string hostname,
+        string? publicIp)
+    {
+        var blockers = records.Where(item =>
+                item.Name.TrimEnd('.').Equals(hostname.TrimEnd('.'), StringComparison.OrdinalIgnoreCase) &&
+                (item.Type.Equals("A", StringComparison.OrdinalIgnoreCase) ||
+                 item.Type.Equals("AAAA", StringComparison.OrdinalIgnoreCase) ||
+                 item.Type.Equals("CNAME", StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        if (blockers.Length == 0)
+        {
+            return true;
+        }
+
+        return blockers.Length == 1 &&
+               blockers[0].Type.Equals("A", StringComparison.OrdinalIgnoreCase) &&
+               !blockers[0].Proxied &&
+               !string.IsNullOrWhiteSpace(publicIp) &&
+               blockers[0].Content.Equals(publicIp, StringComparison.Ordinal);
     }
 
     private static MailRelaySetupRequest ToSetupRequest(MailRelayConfiguration configuration, MailRelayDomainRequest request) =>

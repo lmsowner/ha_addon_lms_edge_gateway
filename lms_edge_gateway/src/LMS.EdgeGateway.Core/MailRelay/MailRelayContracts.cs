@@ -95,7 +95,15 @@ public sealed record MailRelayExistingEmailConfiguration(
 public sealed record MailRelayDomainRequest(
     string CloudflareZoneId,
     string SendingDomain,
-    string DkimSelector);
+    string DkimSelector,
+    string MailHostname = "");
+
+public sealed record MailRelayHostnameSuggestion(
+    string Hostname,
+    string Label,
+    bool Available,
+    IReadOnlyList<string> TakenHostnames,
+    string Detail);
 
 public sealed record MailRelayDomainPreview(
     MailRelayDomainRequest Request,

@@ -595,7 +595,7 @@
                 <div>
                     <p class="eyebrow">Sending domain</p>
                     <h2 id="mail-relay-add-domain-title">Add another domain</h2>
-                    <p class="meta-text">Type the sending domain. LMS picks the matching Cloudflare zone when it can. Review DNS is optional. Microsoft 365 MX is never replaced.</p>
+                    <p class="meta-text">Type the sending domain. LMS picks the matching Cloudflare zone and suggests a free smtp, relay or mail hostname. Review DNS is optional. Microsoft 365 MX is never replaced.</p>
                 </div>
                 <button class="edge-modal-close" type="button" aria-label="Close add domain" @onclick="CloseAddDomainModal">x</button>
             </header>
@@ -611,7 +611,7 @@
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Cloudflare zone</span>
-                        <select @bind="addDomainZoneId" @bind:after="ClearDomainPreview">
+                        <select @bind="addDomainZoneId" @bind:after="OnAddDomainZoneChanged">
                             <option value="">Select the zone that owns this domain</option>
                             @foreach (var zone in dashboard?.Preflight.AvailableZones ?? [])
                             {
@@ -622,6 +622,22 @@
                     <label class="ui-field">
                         <span class="ui-field-label">DKIM selector</span>
                         <input @bind="addDomainSelector" @bind:after="ClearDomainPreview" placeholder="lms" />
+                    </label>
+                    <label class="ui-field mail-relay-hostname-field">
+                        <span class="ui-field-label">Mail hostname</span>
+                        <input @bind="addDomainHostname" @bind:after="OnAddDomainHostnameChanged" placeholder="smtp.aboutmyrental.com" />
+                        @if (isCheckingHostname)
+                        {
+                            <span class="meta-text">Checking whether smtp, relay or mail is free on this domain...</span>
+                        }
+                        else if (hostnameSuggestion is not null)
+                        {
+                            <span class="meta-text">@hostnameSuggestion.Detail Leave blank if you do not want an extra A record.</span>
+                            @if (hostnameSuggestion.TakenHostnames.Count > 0)
+                            {
+                                <span class="meta-text">Already in use: @string.Join(", ", hostnameSuggestion.TakenHostnames)</span>
+                            }
+                        }
                     </label>
                 </div>
                 @if (domainPreview is not null)
@@ -994,6 +1010,12 @@
     private string addDomainZoneId = string.Empty;
     private string addDomainName = string.Empty;
     private string addDomainSelector = "lms";
+    private string addDomainHostname = string.Empty;
+    private string lastAutoHostname = string.Empty;
+    private bool hostnameClearedByUser;
+    private MailRelayHostnameSuggestion? hostnameSuggestion;
+    private bool isCheckingHostname;
+    private int hostnameSuggestionEpoch;
     private MailRelayDomainPreview? domainPreview;
     private MailRelayDomainDetail? domainDetail;
     private MailRelayDomain? deleteDomain;
@@ -1050,6 +1072,7 @@
     private bool CanAddDomain =>
         !isPreviewingDomain &&
         !isSavingDomain &&
+        !isCheckingHostname &&
         !string.IsNullOrWhiteSpace(addDomainZoneId) &&
         !string.IsNullOrWhiteSpace(addDomainName) &&
         !string.IsNullOrWhiteSpace(addDomainSelector);
@@ -1438,6 +1461,10 @@
         addDomainZoneId = string.Empty;
         addDomainName = string.Empty;
         addDomainSelector = "lms";
+        addDomainHostname = string.Empty;
+        lastAutoHostname = string.Empty;
+        hostnameClearedByUser = false;
+        hostnameSuggestion = null;
         domainPreview = null;
         domainMessage = string.Empty;
         showAddDomainModal = true;
@@ -1447,9 +1474,13 @@
 
     private void ClearDomainPreview() => domainPreview = null;
 
-    private void OnAddDomainNameChanged()
+    private async Task OnAddDomainNameChanged()
     {
         ClearDomainPreview();
+        addDomainHostname = string.Empty;
+        lastAutoHostname = string.Empty;
+        hostnameClearedByUser = false;
+        hostnameSuggestion = null;
         var sendingDomain = addDomainName.Trim().TrimEnd('.').ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(sendingDomain) || dashboard is null)
         {
@@ -1466,10 +1497,79 @@
         {
             addDomainZoneId = match.ZoneId;
         }
+
+        await RefreshHostnameSuggestionAsync();
+    }
+
+    private async Task OnAddDomainZoneChanged()
+    {
+        ClearDomainPreview();
+        await RefreshHostnameSuggestionAsync();
+    }
+
+    private async Task OnAddDomainHostnameChanged()
+    {
+        ClearDomainPreview();
+        hostnameClearedByUser = string.IsNullOrWhiteSpace(addDomainHostname);
+        await RefreshHostnameSuggestionAsync();
+    }
+
+    private async Task RefreshHostnameSuggestionAsync()
+    {
+        var epoch = ++hostnameSuggestionEpoch;
+        var zoneId = addDomainZoneId.Trim();
+        var sendingDomain = addDomainName.Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(zoneId) || string.IsNullOrWhiteSpace(sendingDomain))
+        {
+            hostnameSuggestion = null;
+            return;
+        }
+
+        isCheckingHostname = true;
+        try
+        {
+            var preferred = hostnameClearedByUser ? null : addDomainHostname;
+            var suggestion = await MailRelayService.SuggestMailHostnameAsync(zoneId, sendingDomain, preferred);
+            if (epoch != hostnameSuggestionEpoch)
+            {
+                return;
+            }
+
+            hostnameSuggestion = suggestion;
+            if (!hostnameClearedByUser &&
+                suggestion.Available &&
+                (string.IsNullOrWhiteSpace(addDomainHostname) ||
+                 addDomainHostname.Equals(lastAutoHostname, StringComparison.OrdinalIgnoreCase)))
+            {
+                addDomainHostname = suggestion.Hostname;
+                lastAutoHostname = suggestion.Hostname;
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (epoch != hostnameSuggestionEpoch)
+            {
+                return;
+            }
+
+            hostnameSuggestion = new(
+                string.IsNullOrWhiteSpace(sendingDomain) ? string.Empty : $"smtp.{sendingDomain}",
+                "smtp",
+                false,
+                [],
+                exception.Message);
+        }
+        finally
+        {
+            if (epoch == hostnameSuggestionEpoch)
+            {
+                isCheckingHostname = false;
+            }
+        }
     }
 
     private MailRelayDomainRequest BuildDomainRequest() =>
-        new(addDomainZoneId, addDomainName, addDomainSelector);
+        new(addDomainZoneId, addDomainName, addDomainSelector, addDomainHostname);
 
     private async Task PreviewAddDomainAsync()
     {
