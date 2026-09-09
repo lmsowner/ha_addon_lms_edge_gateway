@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.09.19.58
+
+- Mail Relay test From is a dropdown of the selected SMTP user's allowed domains, so switching sending domain is one click.
+
+
 ## 2026.09.09.19.52
 
 - Detect quoted Cloudflare SPF/DMARC TXT values so Check now merges Stackmail/Brevo duplicates instead of leaving a second LMS-only record.

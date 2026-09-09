@@ -228,7 +228,19 @@
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">From</span>
-                        <input type="email" @bind="testFromAddress" placeholder="homeassistant@example.com" />
+                        <select @bind="testFromAddress" disabled="@(!TestFromOptions.Any())">
+                            @if (!TestFromOptions.Any())
+                            {
+                                <option value="">Select an SMTP user with allowed domains</option>
+                            }
+                            else
+                            {
+                                @foreach (var fromAddress in TestFromOptions)
+                                {
+                                    <option value="@fromAddress">@fromAddress</option>
+                                }
+                            }
+                        </select>
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">Recipient</span>
@@ -1244,8 +1256,9 @@
         if (string.IsNullOrWhiteSpace(testClientId) && dashboard.Clients.Count == 1)
         {
             testClientId = dashboard.Clients[0].Id.ToString();
-            OnTestClientChanged();
         }
+
+        OnTestClientChanged();
 
         if (dashboard.Configuration?.Enabled == true && mailLogExpanded && mailLog is null)
         {
@@ -1806,18 +1819,42 @@
         }
     }
 
+    private IReadOnlyList<string> TestFromOptions
+    {
+        get
+        {
+            if (!Guid.TryParse(testClientId, out var id))
+            {
+                return [];
+            }
+
+            var client = dashboard?.Clients.FirstOrDefault(item => item.Id == id);
+            if (client is null)
+            {
+                return [];
+            }
+
+            return client.AllowedSenderDomains
+                .Where(domain => !string.IsNullOrWhiteSpace(domain))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(domain => domain, StringComparer.OrdinalIgnoreCase)
+                .Select(domain => $"{client.Username}@{domain}")
+                .ToArray();
+        }
+    }
+
     private void OnTestClientChanged()
     {
-        if (!Guid.TryParse(testClientId, out var id))
+        var options = TestFromOptions;
+        if (options.Count == 0)
         {
+            testFromAddress = string.Empty;
             return;
         }
 
-        var client = dashboard?.Clients.FirstOrDefault(item => item.Id == id);
-        var domain = client?.AllowedSenderDomains.FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(domain) && string.IsNullOrWhiteSpace(testFromAddress))
+        if (!options.Contains(testFromAddress, StringComparer.OrdinalIgnoreCase))
         {
-            testFromAddress = $"{client!.Username}@{domain}";
+            testFromAddress = options[0];
         }
     }
 
