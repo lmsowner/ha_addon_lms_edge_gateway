@@ -8,7 +8,8 @@ public enum MessagingEmailProvider
     Resend = 3,
     Brevo = 4,
     MailerSend = 5,
-    Mailgun = 6
+    Mailgun = 6,
+    MailRelay = 7
 }
 
 public enum MailgunRegion
@@ -73,6 +74,7 @@ public sealed record EdgeGatewayMessagingSettings(
     string ApiKeyProtected,
     string MailgunDomain,
     MailgunRegion MailgunRegion,
+    string MailRelaySendingDomain,
     DateTimeOffset? LastVerifiedAtUtc,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc)
@@ -97,6 +99,7 @@ public sealed record EdgeGatewayMessagingSettings(
             string.Empty,
             string.Empty,
             MailgunRegion.Us,
+            string.Empty,
             null,
             now,
             now);
@@ -169,14 +172,21 @@ public sealed record SecurityMessagingSettingsViewModel(
     bool HasApiKey,
     string MailgunDomain,
     MailgunRegion MailgunRegion,
+    string MailRelaySendingDomain,
     DateTimeOffset? LastVerifiedAtUtc,
     bool CanSendLoginSetupEmail);
+
+public sealed record MailRelayMessagingOption(
+    string DomainName,
+    string RelayHostname,
+    string Label);
 
 public sealed record SecuritySettingsPageViewModel(
     IReadOnlyList<SecurityUserViewModel> Users,
     SecurityMessagingSettingsViewModel Messaging,
     EdgeGatewayLoginDesignSettings LoginDesign,
-    IReadOnlyList<TrustedIpAddressViewModel> TrustedIpAddresses);
+    IReadOnlyList<TrustedIpAddressViewModel> TrustedIpAddresses,
+    IReadOnlyList<MailRelayMessagingOption> MailRelayMessagingOptions);
 
 public sealed class SecurityUserEditor
 {
@@ -210,6 +220,7 @@ public sealed class SecurityMessagingSettingsEditor
     public bool HasApiKey { get; set; }
     public string MailgunDomain { get; set; } = string.Empty;
     public MailgunRegion MailgunRegion { get; set; } = MailgunRegion.Us;
+    public string MailRelaySendingDomain { get; set; } = string.Empty;
 }
 
 public sealed record SecurityUserProvisioningViewModel(

@@ -379,17 +379,19 @@
         <div class="docs-definition-list compact">
             <div><strong>SMTP</strong><span>Works with a standard SMTP server or relay account.</span></div>
             <div><strong>Microsoft Graph</strong><span>Uses an Entra app registration and a mailbox allowed to send setup messages.</span></div>
+            <div><strong>Mail Relay</strong><span>When Mail Relay is running, each enabled sending domain appears as <code>Mail Relay [domain]</code>. No SMTP host, username, or API key is required.</span></div>
             <div><strong>Resend, Brevo, MailerSend, Mailgun</strong><span>API-based transactional providers. Many have free tiers; check current provider limits before choosing one.</span></div>
         </div>
         <p class="callout ready">
-            Recommended flow: choose a provider, save the settings, send a successful test to yourself, then create LMS users.
+            Recommended flow: if Mail Relay is configured, choose <code>Mail Relay [your domain]</code>, send a test to yourself, then create LMS users.
+            Otherwise choose an API or SMTP provider, save, test, then create users.
             That gives each user a cleaner setup path and gives you email OTP as a fallback when a passkey is not yet enrolled.
         </p>
         <p class="callout">
             Messaging is an <strong>outbound client</strong> used by Edge Gateway itself (account setup, email OTP, IP approval).
-            Mail Relay is a separate <strong>outbound SMTP server</strong> on private TCP/587 for applications on your LAN.
+            Mail Relay is also an <strong>outbound SMTP server</strong> on private TCP/587 for applications on your LAN.
+            Prefer the built-in Mail Relay Messaging option when available; it is local and already DKIM-signed.
             Do not point Messaging at a public smart-host unless you intend Edge Gateway to send through that provider.
-            After Mail Relay is running, you can optionally point Messaging SMTP at <code>127.0.0.1:587</code> using a Mail Relay username.
         </p>
     </section>
 
@@ -406,7 +408,7 @@
             </div>
         </div>
         <div class="docs-definition-list compact">
-            <div><strong>Cloudflare DNS</strong><span>Creates or merges unproxied A for <code>smtp.yourzone</code>, SPF <code>ip4:</code> for this WAN, LMS DKIM, and DMARC <code>p=none</code> only if missing. Existing MX and other people's DKIM/DMARC are left alone.</span></div>
+            <div><strong>Cloudflare DNS</strong><span>Creates or merges unproxied A for <code>smtp.yourzone</code>, one shared SPF <code>ip4:</code> for this WAN (duplicates from Stackmail, Microsoft 365, Brevo, etc. are consolidated), LMS DKIM, and a single DMARC policy (creates <code>p=none</code> only if missing; duplicate DMARC TXT records are consolidated). Existing MX and other people's DKIM are left alone.</span></div>
             <div><strong>Public IP refresh</strong><span>Home WAN addresses change. Mail Relay checks Cloudflare's <code>cdn-cgi/trace</code> every 15 minutes by default and rewrites only LMS-owned A and SPF <code>ip4:</code> values.</span></div>
             <div><strong>PTR</strong><span>Reverse DNS stays with your ISP. A mismatch is a warning, not a blocker.</span></div>
             <div><strong>Outbound TCP/25</strong><span>Many home ISPs block port 25. Preflight treats that as a warning, not a setup failure. Delivery to a destination server requires STARTTLS (TLS 1.2+).</span></div>

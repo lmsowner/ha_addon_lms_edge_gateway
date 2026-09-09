@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using LMS.EdgeGateway.Core;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -498,6 +499,7 @@ public sealed class EmailProviderTests
             NoopTemporaryIpApprovalService.Instance,
             new PlainSecretProtector(),
             BuildEmailSender(store, handler ?? new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
+            new EmptyMailRelayStore(),
             NullLogger<EdgeGatewaySecurityService>.Instance);
     }
 
@@ -520,6 +522,8 @@ public sealed class EmailProviderTests
             secretProtector,
             httpClientFactory,
             new EmailProviderFactory(providers),
+            new EmptyMailRelayStore(),
+            new RecordingMailRelayHostCommand(),
             NullLogger<EdgeGatewayEmailDeliveryService>.Instance);
     }
 
@@ -551,6 +555,232 @@ public sealed class EmailProviderTests
             "Subject",
             "Hello",
             "<p>Hello</p>");
+
+    [Fact]
+    public async Task Mail_relay_provider_sends_through_local_sendmail_without_smtp_secrets()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var host = new RecordingMailRelayHostCommand();
+        var mailRelayStore = new ConfigurableMailRelayStore(
+            MailRelayConfiguration.CreateDefault(now) with
+            {
+                Enabled = true,
+                RelayHostname = "smtp.example.com"
+            },
+            [
+                new MailRelayDomain(
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    "zone",
+                    "example.com",
+                    true,
+                    "lms",
+                    "dkim-ref",
+                    now,
+                    now,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    MailRelayDnsStatus.Pass,
+                    MailRelayDnsStatus.Pass,
+                    MailRelayDnsStatus.Pass,
+                    MailRelayDmarcPolicy.Monitor,
+                    null,
+                    now,
+                    now)
+            ]);
+        var store = new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty with
+        {
+            Messaging = EdgeGatewayMessagingSettings.CreateDefault(now) with
+            {
+                IsEnabled = true,
+                Provider = MessagingEmailProvider.MailRelay,
+                SenderAddress = "lms@example.com",
+                MailRelaySendingDomain = "example.com"
+            }
+        });
+        var sender = new EdgeGatewayEmailDeliveryService(
+            store,
+            new PlainSecretProtector(),
+            new FakeHttpClientFactory(new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
+            new EmailProviderFactory([]),
+            mailRelayStore,
+            host,
+            NullLogger<EdgeGatewayEmailDeliveryService>.Instance);
+
+        var result = await sender.SendAsync(Message() with
+        {
+            FromEmail = "lms@example.com",
+            FromName = "Linux Made Sane"
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(MessagingEmailProvider.MailRelay, result.Provider);
+        Assert.Equal(2, host.Calls.Count);
+        Assert.Equal("sendmail", host.Calls[0].FileName);
+        Assert.Contains("-f", host.Calls[0].Arguments);
+        Assert.Contains("lms@example.com", host.Calls[0].Arguments);
+        Assert.NotNull(host.Calls[0].StandardInput);
+        var raw = Encoding.UTF8.GetString(host.Calls[0].StandardInput!);
+        Assert.Contains("From: Linux Made Sane <lms@example.com>", raw, StringComparison.Ordinal);
+        Assert.Equal("postqueue", host.Calls[1].FileName);
+    }
+
+    [Fact]
+    public async Task Security_page_lists_mail_relay_domains_as_messaging_options()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var mailRelayStore = new ConfigurableMailRelayStore(
+            MailRelayConfiguration.CreateDefault(now) with
+            {
+                Enabled = true,
+                RelayHostname = "smtp.example.com"
+            },
+            [
+                new MailRelayDomain(
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    "zone",
+                    "example.com",
+                    true,
+                    "lms",
+                    "dkim-ref",
+                    now,
+                    now,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    MailRelayDnsStatus.Pass,
+                    MailRelayDnsStatus.Pass,
+                    MailRelayDnsStatus.Pass,
+                    MailRelayDmarcPolicy.Monitor,
+                    null,
+                    now,
+                    now)
+            ]);
+        var service = new EdgeGatewaySecurityService(
+            new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty),
+            new InMemoryConfigurationStore(EdgeGatewayConfiguration.Empty),
+            NoopTemporaryIpApprovalService.Instance,
+            new PlainSecretProtector(),
+            BuildEmailSender(new InMemorySecurityStore(EdgeGatewaySecurityConfiguration.Empty), new CaptureHandler(new HttpResponseMessage(HttpStatusCode.OK))),
+            mailRelayStore,
+            NullLogger<EdgeGatewaySecurityService>.Instance);
+
+        var page = await service.GetPageAsync();
+
+        Assert.Single(page.MailRelayMessagingOptions);
+        Assert.Equal("example.com", page.MailRelayMessagingOptions[0].DomainName);
+        Assert.Equal("Mail Relay [example.com]", page.MailRelayMessagingOptions[0].Label);
+    }
+
+    private sealed class EmptyMailRelayStore : IMailRelayStore
+    {
+        public Task<MailRelayConfiguration?> GetConfigurationAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<MailRelayConfiguration?>(null);
+
+        public Task SaveConfigurationAsync(MailRelayConfiguration configuration, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<MailRelayDomain>> ListDomainsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MailRelayDomain>>([]);
+
+        public Task SaveDomainAsync(MailRelayDomain domain, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task DeleteDomainAsync(Guid domainId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<MailRelayClient>> ListClientsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MailRelayClient>>([]);
+
+        public Task SaveClientAsync(MailRelayClient client, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task DeleteClientAsync(Guid clientId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<MailRelayDnsRecord>> ListDnsRecordsAsync(Guid domainId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MailRelayDnsRecord>>([]);
+
+        public Task SaveDnsRecordAsync(MailRelayDnsRecord record, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task DeleteDnsRecordAsync(Guid recordId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task ClearAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class ConfigurableMailRelayStore(
+        MailRelayConfiguration configuration,
+        IReadOnlyList<MailRelayDomain> domains) : IMailRelayStore
+    {
+        public Task<MailRelayConfiguration?> GetConfigurationAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<MailRelayConfiguration?>(configuration);
+
+        public Task SaveConfigurationAsync(MailRelayConfiguration configuration, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<MailRelayDomain>> ListDomainsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(domains);
+
+        public Task SaveDomainAsync(MailRelayDomain domain, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task DeleteDomainAsync(Guid domainId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<MailRelayClient>> ListClientsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MailRelayClient>>([]);
+
+        public Task SaveClientAsync(MailRelayClient client, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task DeleteClientAsync(Guid clientId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<IReadOnlyList<MailRelayDnsRecord>> ListDnsRecordsAsync(Guid domainId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MailRelayDnsRecord>>([]);
+
+        public Task SaveDnsRecordAsync(MailRelayDnsRecord record, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task DeleteDnsRecordAsync(Guid recordId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task ClearAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class RecordingMailRelayHostCommand : IMailRelayHostCommand
+    {
+        public List<(string FileName, IReadOnlyList<string> Arguments, byte[]? StandardInput)> Calls { get; } = [];
+
+        public Task<MailRelayHostCommandResult> RunAsync(
+            string fileName,
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken,
+            string? workingDirectory = null,
+            IReadOnlyDictionary<string, string>? environment = null,
+            byte[]? standardInput = null,
+            TimeSpan? timeout = null)
+        {
+            Calls.Add((fileName, arguments.ToArray(), standardInput));
+            return Task.FromResult(new MailRelayHostCommandResult(0, "ok", string.Empty));
+        }
+    }
 
     private sealed class CaptureHandler(HttpResponseMessage response) : HttpMessageHandler
     {

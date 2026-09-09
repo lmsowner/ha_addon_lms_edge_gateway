@@ -83,12 +83,12 @@ public sealed record MailRelayExistingEmailConfiguration(
     public string CoexistenceSummary => Provider switch
     {
         MailRelayExistingProvider.Microsoft365 =>
-            "Microsoft 365 already handles inbound mail for this domain. LMS will not change MX. SPF keeps include:spf.protection.outlook.com and adds this relay's ip4. Existing Microsoft DKIM selectors stay. DMARC stays if present.",
+            "Microsoft 365 already handles inbound mail for this domain. LMS will not change MX. SPF keeps include:spf.protection.outlook.com and adds this relay's ip4 into one shared SPF TXT. Existing Microsoft DKIM selectors stay. DMARC stays if present; duplicate DMARC TXT records are consolidated.",
         MailRelayExistingProvider.GoogleWorkspace =>
-            "Google Workspace already handles inbound mail for this domain. LMS will not change MX. SPF keeps the Google include and adds this relay's ip4. Existing Google DKIM selectors stay. DMARC stays if present.",
+            "Google Workspace already handles inbound mail for this domain. LMS will not change MX. SPF keeps the Google include and adds this relay's ip4 into one shared SPF TXT. Existing Google DKIM selectors stay. DMARC stays if present; duplicate DMARC TXT records are consolidated.",
         MailRelayExistingProvider.ExistingMailProvider =>
-            "This domain already has mail DNS. LMS will not change MX. SPF is merged in place. Other people's DKIM and DMARC stay. Only an LMS selector is added if it is free.",
-        _ => "No existing mailbox provider was detected. LMS will create SPF, an LMS DKIM selector, and a monitoring DMARC policy only if they are missing."
+            "This domain already has mail DNS. LMS will not change MX. SPF is merged into one shared TXT (duplicates are consolidated). Other people's DKIM and DMARC stay; only an LMS DKIM selector is added if it is free. Duplicate DMARC TXT records are consolidated.",
+        _ => "No existing mailbox provider was detected. LMS will create one SPF TXT, an LMS DKIM selector, and a monitoring DMARC policy only if they are missing."
     };
 }
 

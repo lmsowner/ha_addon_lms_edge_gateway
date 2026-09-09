@@ -311,7 +311,7 @@
                         <div class="security-section-heading">
                             <div>
                                 <h3>Email delivery</h3>
-                                <p class="meta-text">Configure SMTP, Microsoft Graph, or a simple HTTPS email API. Secrets are protected under the add-on data root.</p>
+                                <p class="meta-text">Configure SMTP, Microsoft Graph, a simple HTTPS email API, or a local Mail Relay domain. Secrets are protected under the add-on data root.</p>
                             </div>
                             <span class="security-status-pill @(page.Messaging.CanSendLoginSetupEmail ? "success" : "warning")">
                                 @(page.Messaging.CanSendLoginSetupEmail ? "Verified" : "Not verified")
@@ -336,14 +336,18 @@
 
                             <label class="ui-field">
                                 <span class="ui-field-label">Provider</span>
-                                <select @bind="SelectedMessagingProvider">
-                                    <option value="@MessagingEmailProvider.Disabled">Disabled</option>
-                                    <option value="@MessagingEmailProvider.Smtp">SMTP</option>
-                                    <option value="@MessagingEmailProvider.MicrosoftGraph">Microsoft Graph</option>
-                                    <option value="@MessagingEmailProvider.Resend">Resend</option>
-                                    <option value="@MessagingEmailProvider.Brevo">Brevo</option>
-                                    <option value="@MessagingEmailProvider.MailerSend">MailerSend</option>
-                                    <option value="@MessagingEmailProvider.Mailgun">Mailgun</option>
+                                <select @bind="SelectedMessagingProviderKey">
+                                    <option value="@MessagingEmailProvider.Disabled.ToString()">Disabled</option>
+                                    <option value="@MessagingEmailProvider.Smtp.ToString()">SMTP</option>
+                                    <option value="@MessagingEmailProvider.MicrosoftGraph.ToString()">Microsoft Graph</option>
+                                    <option value="@MessagingEmailProvider.Resend.ToString()">Resend</option>
+                                    <option value="@MessagingEmailProvider.Brevo.ToString()">Brevo</option>
+                                    <option value="@MessagingEmailProvider.MailerSend.ToString()">MailerSend</option>
+                                    <option value="@MessagingEmailProvider.Mailgun.ToString()">Mailgun</option>
+                                    @foreach (var option in page.MailRelayMessagingOptions)
+                                    {
+                                        <option value="@MailRelayProviderKey(option.DomainName)">@option.Label</option>
+                                    }
                                 </select>
                             </label>
 
@@ -351,7 +355,9 @@
 
                             <label class="ui-field">
                                 <span class="ui-field-label">Sender email</span>
-                                <input type="email" @bind="messagingEditor.SenderAddress" placeholder="serviceaccount@example.com" />
+                                <input type="email"
+                                       @bind="messagingEditor.SenderAddress"
+                                       placeholder="@(messagingEditor.Provider == MessagingEmailProvider.MailRelay && !string.IsNullOrWhiteSpace(messagingEditor.MailRelaySendingDomain) ? $"lms@{messagingEditor.MailRelaySendingDomain}" : "serviceaccount@example.com")" />
                             </label>
 
                             <label class="ui-field">
@@ -360,7 +366,15 @@
                             </label>
                         </div>
 
-                        @if (messagingEditor.Provider == MessagingEmailProvider.Smtp)
+                        @if (messagingEditor.Provider == MessagingEmailProvider.MailRelay)
+                        {
+                            <section class="surface-subcard security-provider-note">
+                                <strong>@FormatMessagingProviderSelection()</strong>
+                                <span>Uses the local Mail Relay already configured for this add-on. No SMTP host, username, or API key is required.</span>
+                                <span>Mails leave through Postfix with LMS DKIM for @messagingEditor.MailRelaySendingDomain. Ideal for temporary IP approval and account setup emails.</span>
+                            </section>
+                        }
+                        else if (messagingEditor.Provider == MessagingEmailProvider.Smtp)
                         {
                             <div class="edge-form-grid security-messaging-grid">
                                 <label class="ui-field">
@@ -548,7 +562,7 @@
 }
 
 @code {
-    private SecuritySettingsPageViewModel page = new([], BuildDefaultMessagingViewModel(), EdgeGatewayLoginDesignSettings.Default, []);
+    private SecuritySettingsPageViewModel page = new([], BuildDefaultMessagingViewModel(), EdgeGatewayLoginDesignSettings.Default, [], []);
     private SecurityUserEditor userEditor = new();
     private SecurityMessagingSettingsEditor messagingEditor = new();
     private SecurityUserProvisioningViewModel? provisioningResult;
@@ -578,6 +592,7 @@
 
     private const string UsersTab = "users";
     private const string MessagingTab = "messaging";
+    private const string MailRelayProviderPrefix = "MailRelay:";
     private const int MinutesPerHour = 60;
     private const int MinutesPerDay = 24 * MinutesPerHour;
 
@@ -587,12 +602,14 @@
         isLoaded = true;
     }
 
-    private MessagingEmailProvider SelectedMessagingProvider
+    private string SelectedMessagingProviderKey
     {
-        get => messagingEditor.Provider;
+        get => messagingEditor.Provider == MessagingEmailProvider.MailRelay
+            ? MailRelayProviderKey(messagingEditor.MailRelaySendingDomain)
+            : messagingEditor.Provider.ToString();
         set
         {
-            messagingEditor.Provider = value;
+            ApplyMessagingProviderKey(value);
             messagingMessage = null;
             messagingMessageIsError = false;
         }
@@ -606,7 +623,9 @@
 
     private bool IsSelectedMessagingProviderVerified =>
         page.Messaging.CanSendLoginSetupEmail &&
-        page.Messaging.Provider == messagingEditor.Provider;
+        page.Messaging.Provider == messagingEditor.Provider &&
+        (messagingEditor.Provider != MessagingEmailProvider.MailRelay ||
+         page.Messaging.MailRelaySendingDomain.Equals(messagingEditor.MailRelaySendingDomain, StringComparison.OrdinalIgnoreCase));
 
     private bool CanToggleMessagingEnabledForSelectedProvider =>
         IsSelectedMessagingProviderVerified;
@@ -619,17 +638,17 @@
         {
             if (MessagingEnabledForSelectedProvider)
             {
-                return $"{FormatMessagingProvider(messagingEditor.Provider)} is the saved and verified email provider.";
+                return $"{FormatMessagingProviderSelection()} is the saved and verified email provider.";
             }
 
             if (page.Messaging.CanSendLoginSetupEmail)
             {
                 if (messagingEditor.Provider == MessagingEmailProvider.Disabled)
                 {
-                    return $"{FormatMessagingProvider(page.Messaging.Provider)} is currently verified. Choose a provider and send a successful test to change it.";
+                    return $"{FormatSavedMessagingProvider(page.Messaging)} is currently verified. Choose a provider and send a successful test to change it.";
                 }
 
-                return $"Only {FormatMessagingProvider(page.Messaging.Provider)} is currently verified. Send a successful test to enable {FormatMessagingProvider(messagingEditor.Provider)}.";
+                return $"Only {FormatSavedMessagingProvider(page.Messaging)} is currently verified. Send a successful test to enable {FormatMessagingProviderSelection()}.";
             }
 
             if (messagingEditor.Provider == MessagingEmailProvider.Disabled)
@@ -637,9 +656,20 @@
                 return "Choose a provider, configure it, then send a successful test email to enable Messaging.";
             }
 
+            if (messagingEditor.Provider == MessagingEmailProvider.MailRelay)
+            {
+                return $"{FormatMessagingProviderSelection()} needs no SMTP credentials. Send a successful test to verify and enable it.";
+            }
+
             return "Send a successful test email to verify and enable the selected provider.";
         }
     }
+
+    private static string FormatSavedMessagingProvider(SecurityMessagingSettingsViewModel messaging) =>
+        messaging.Provider == MessagingEmailProvider.MailRelay &&
+        !string.IsNullOrWhiteSpace(messaging.MailRelaySendingDomain)
+            ? $"Mail Relay [{messaging.MailRelaySendingDomain}]"
+            : FormatMessagingProvider(messaging.Provider);
 
     private void SetTab(string tab) => activeTab = tab;
 
@@ -1049,8 +1079,47 @@
             false,
             string.Empty,
             MailgunRegion.Us,
+            string.Empty,
             null,
             false);
+
+    private static string MailRelayProviderKey(string domainName) =>
+        $"{MailRelayProviderPrefix}{(domainName ?? string.Empty).Trim().TrimEnd('.').ToLowerInvariant()}";
+
+    private void ApplyMessagingProviderKey(string? value)
+    {
+        var key = (value ?? string.Empty).Trim();
+        if (key.StartsWith(MailRelayProviderPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var domain = key[MailRelayProviderPrefix.Length..].Trim().TrimEnd('.').ToLowerInvariant();
+            messagingEditor.Provider = MessagingEmailProvider.MailRelay;
+            messagingEditor.MailRelaySendingDomain = domain;
+            if (string.IsNullOrWhiteSpace(messagingEditor.SenderAddress) ||
+                !messagingEditor.SenderAddress.EndsWith("@" + domain, StringComparison.OrdinalIgnoreCase))
+            {
+                messagingEditor.SenderAddress = string.IsNullOrWhiteSpace(domain) ? string.Empty : $"lms@{domain}";
+            }
+
+            return;
+        }
+
+        if (Enum.TryParse<MessagingEmailProvider>(key, ignoreCase: true, out var provider) &&
+            provider != MessagingEmailProvider.MailRelay)
+        {
+            messagingEditor.Provider = provider;
+            messagingEditor.MailRelaySendingDomain = string.Empty;
+            return;
+        }
+
+        messagingEditor.Provider = MessagingEmailProvider.Disabled;
+        messagingEditor.MailRelaySendingDomain = string.Empty;
+    }
+
+    private string FormatMessagingProviderSelection() =>
+        messagingEditor.Provider == MessagingEmailProvider.MailRelay &&
+        !string.IsNullOrWhiteSpace(messagingEditor.MailRelaySendingDomain)
+            ? $"Mail Relay [{messagingEditor.MailRelaySendingDomain}]"
+            : FormatMessagingProvider(messagingEditor.Provider);
 
     private static bool IsApiProvider(MessagingEmailProvider provider) =>
         provider is MessagingEmailProvider.Resend
@@ -1062,6 +1131,7 @@
     {
         MessagingEmailProvider.MicrosoftGraph => "Microsoft Graph",
         MessagingEmailProvider.MailerSend => "MailerSend",
+        MessagingEmailProvider.MailRelay => "Mail Relay",
         _ => provider.ToString()
     };
 
@@ -1071,6 +1141,7 @@
         MessagingEmailProvider.Brevo => "Simple transactional email API with a generous daily free tier.",
         MessagingEmailProvider.MailerSend => "Transactional email API with a small free monthly allowance.",
         MessagingEmailProvider.Mailgun => "Powerful transactional email API. Requires a verified sending domain.",
+        MessagingEmailProvider.MailRelay => "Local Mail Relay already configured in this add-on. No extra SMTP or API credentials.",
         _ => string.Empty
     };
 

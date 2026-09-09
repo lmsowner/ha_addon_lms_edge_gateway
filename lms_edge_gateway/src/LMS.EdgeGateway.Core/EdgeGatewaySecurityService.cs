@@ -12,6 +12,7 @@ public sealed class EdgeGatewaySecurityService(
     IEdgeGatewayTemporaryIpApprovalService temporaryIpApprovalService,
     IEdgeGatewaySecretProtector secretProtector,
     IEdgeGatewayEmailDeliveryService emailDeliveryService,
+    IMailRelayStore mailRelayStore,
     ILogger<EdgeGatewaySecurityService> logger,
     IEdgeGatewayAuthSessionFlushService? authSessionFlushService = null) : IEdgeGatewaySecurityService
 {
@@ -29,7 +30,8 @@ public sealed class EdgeGatewaySecurityService(
                 .ToArray(),
             MapMessaging(configuration.Messaging),
             configuration.LoginDesign,
-            await temporaryIpApprovalService.ListTrustedIpAddressesAsync(cancellationToken));
+            await temporaryIpApprovalService.ListTrustedIpAddressesAsync(cancellationToken),
+            await ListMailRelayMessagingOptionsAsync(cancellationToken));
     }
 
     public async Task<SecurityMessagingSettingsEditor> GetMessagingEditorAsync(CancellationToken cancellationToken = default)
@@ -54,7 +56,8 @@ public sealed class EdgeGatewaySecurityService(
             GraphSaveToSentItems = settings.GraphSaveToSentItems,
             HasApiKey = !string.IsNullOrWhiteSpace(settings.ApiKeyProtected),
             MailgunDomain = settings.MailgunDomain,
-            MailgunRegion = settings.MailgunRegion
+            MailgunRegion = settings.MailgunRegion,
+            MailRelaySendingDomain = settings.MailRelaySendingDomain
         };
     }
 
@@ -66,7 +69,7 @@ public sealed class EdgeGatewaySecurityService(
         var existing = configuration.Messaging;
         var now = DateTimeOffset.UtcNow;
         var candidateSettings = BuildMessagingSettings(existing, editor, now, resetVerification: false);
-        ValidateMessagingSettings(candidateSettings);
+        await ValidateMessagingSettingsAsync(candidateSettings, cancellationToken);
 
         var canPreserveVerification = CanPreserveMessagingVerification(existing, candidateSettings);
         var settings = candidateSettings with
@@ -109,7 +112,7 @@ public sealed class EdgeGatewaySecurityService(
         var existing = configuration.Messaging;
         var now = DateTimeOffset.UtcNow;
         var settings = BuildMessagingSettings(existing, editor, now, resetVerification: true, enableSelectedProvider: true);
-        ValidateMessagingSettings(settings);
+        await ValidateMessagingSettingsAsync(settings, cancellationToken);
         var secretDiagnostic = BuildMessagingSecretDiagnostic(settings, editor);
         logger.LogInformation(
             "Messaging test prepared for {Provider}; sender {SenderAddress}; secret source {SecretSource}; secret length {SecretLength}.",
@@ -838,6 +841,9 @@ public sealed class EdgeGatewaySecurityService(
             ApiKeyProtected = apiKeyProtected,
             MailgunDomain = NormalizeDomain(editor.MailgunDomain),
             MailgunRegion = editor.MailgunRegion,
+            MailRelaySendingDomain = provider == MessagingEmailProvider.MailRelay
+                ? NormalizeDomain(editor.MailRelaySendingDomain)
+                : string.Empty,
             LastVerifiedAtUtc = resetVerification ? null : existing.LastVerifiedAtUtc,
             UpdatedAtUtc = now
         };
@@ -865,21 +871,30 @@ public sealed class EdgeGatewaySecurityService(
         existing.GraphSaveToSentItems == candidate.GraphSaveToSentItems &&
         existing.ApiKeyProtected.Equals(candidate.ApiKeyProtected, StringComparison.Ordinal) &&
         existing.MailgunDomain.Equals(candidate.MailgunDomain, StringComparison.OrdinalIgnoreCase) &&
-        existing.MailgunRegion == candidate.MailgunRegion;
+        existing.MailgunRegion == candidate.MailgunRegion &&
+        existing.MailRelaySendingDomain.Equals(candidate.MailRelaySendingDomain, StringComparison.OrdinalIgnoreCase);
 
     private static bool UrlsEquivalent(string left, string right) =>
         left.Trim().TrimEnd('/').Equals(right.Trim().TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
-    private static void ValidateMessagingSettings(EdgeGatewayMessagingSettings settings)
+    private async Task ValidateMessagingSettingsAsync(
+        EdgeGatewayMessagingSettings settings,
+        CancellationToken cancellationToken)
     {
         if (!settings.IsEnabled || settings.Provider == MessagingEmailProvider.Disabled)
         {
             return;
         }
 
-        if (!MailAddress.TryCreate(settings.SenderAddress, out _))
+        if (!MailAddress.TryCreate(settings.SenderAddress, out var sender))
         {
             throw new InvalidOperationException("Sender email address is required.");
+        }
+
+        if (settings.Provider == MessagingEmailProvider.MailRelay)
+        {
+            await EnsureMailRelayMessagingReadyAsync(settings, sender, cancellationToken);
+            return;
         }
 
         if (settings.Provider == MessagingEmailProvider.Smtp)
@@ -910,6 +925,61 @@ public sealed class EdgeGatewaySecurityService(
         {
             throw new InvalidOperationException("Mailgun domain is required.");
         }
+    }
+
+    private async Task EnsureMailRelayMessagingReadyAsync(
+        EdgeGatewayMessagingSettings settings,
+        MailAddress sender,
+        CancellationToken cancellationToken)
+    {
+        var domainName = NormalizeDomain(settings.MailRelaySendingDomain);
+        if (string.IsNullOrWhiteSpace(domainName))
+        {
+            throw new InvalidOperationException("Choose a Mail Relay sending domain.");
+        }
+
+        if (!sender.Host.Equals(domainName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Sender email must use @{domainName} for this Mail Relay entry.");
+        }
+
+        var configuration = await mailRelayStore.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true)
+        {
+            throw new InvalidOperationException("Mail Relay is not running. Finish Mail Relay setup first.");
+        }
+
+        var domains = await mailRelayStore.ListDomainsAsync(cancellationToken);
+        var domain = domains.FirstOrDefault(item =>
+            item.Enabled &&
+            item.DomainName.Equals(domainName, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(item.CurrentDkimPrivateKeySecretReference));
+        if (domain is null)
+        {
+            throw new InvalidOperationException($"{domainName} is not an enabled Mail Relay sending domain with a DKIM key.");
+        }
+    }
+
+    private async Task<IReadOnlyList<MailRelayMessagingOption>> ListMailRelayMessagingOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var configuration = await mailRelayStore.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true || string.IsNullOrWhiteSpace(configuration.RelayHostname))
+        {
+            return [];
+        }
+
+        var domains = await mailRelayStore.ListDomainsAsync(cancellationToken);
+        return domains
+            .Where(item => item.Enabled &&
+                           !string.IsNullOrWhiteSpace(item.DomainName) &&
+                           !string.IsNullOrWhiteSpace(item.CurrentDkimPrivateKeySecretReference))
+            .OrderBy(item => item.DomainName, StringComparer.OrdinalIgnoreCase)
+            .Select(item => new MailRelayMessagingOption(
+                item.DomainName,
+                configuration.RelayHostname,
+                $"Mail Relay [{item.DomainName}]"))
+            .ToArray();
     }
 
     private static string NormalizeEmail(string email) => (email ?? string.Empty).Trim().ToLowerInvariant();
@@ -1021,6 +1091,7 @@ public sealed class EdgeGatewaySecurityService(
             !string.IsNullOrWhiteSpace(settings.ApiKeyProtected),
             settings.MailgunDomain,
             settings.MailgunRegion,
+            settings.MailRelaySendingDomain,
             settings.LastVerifiedAtUtc,
             CanSendLoginSetupEmail(settings));
 
@@ -1039,6 +1110,7 @@ public sealed class EdgeGatewaySecurityService(
     {
         MessagingEmailProvider.MicrosoftGraph => "Microsoft Graph",
         MessagingEmailProvider.MailerSend => "MailerSend",
+        MessagingEmailProvider.MailRelay => "Mail Relay",
         _ => provider.ToString()
     };
 

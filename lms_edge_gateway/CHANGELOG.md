@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.09.09.19.28
+
+- Merge Mail Relay SPF and DMARC with existing providers into one shared TXT each, and repair duplicate records on public IP check.
+- Add configured Mail Relay domains to Messaging as zero-config providers (Mail Relay [domain]) for local DKIM-signed setup and IP approval mail.
+
+
 ## 2026.09.05.17.42
 
 - Add domain starts from the Cloudflare zone. Sending domain, DKIM and mail hostname fill from that choice. No hardcoded domain placeholders.

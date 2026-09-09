@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Mail;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,8 @@ public sealed partial class EdgeGatewayEmailDeliveryService(
     IEdgeGatewaySecretProtector secretProtector,
     IHttpClientFactory httpClientFactory,
     EmailProviderFactory providerFactory,
+    IMailRelayStore mailRelayStore,
+    IMailRelayHostCommand mailRelayHostCommand,
     ILogger<EdgeGatewayEmailDeliveryService> logger) : IEdgeGatewayEmailDeliveryService
 {
     private readonly SemaphoreSlim graphTokenLock = new(1, 1);
@@ -83,6 +86,7 @@ public sealed partial class EdgeGatewayEmailDeliveryService(
         return settings.Provider switch
         {
             MessagingEmailProvider.Smtp => await SendSmtpAsync(settings, normalized, cancellationToken),
+            MessagingEmailProvider.MailRelay => await SendMailRelayAsync(settings, normalized, cancellationToken),
             MessagingEmailProvider.MicrosoftGraph => await SendGraphAsync(settings, normalized, cancellationToken),
             MessagingEmailProvider.Resend or
             MessagingEmailProvider.Brevo or
@@ -93,6 +97,172 @@ public sealed partial class EdgeGatewayEmailDeliveryService(
             _ => EmailSendResult.Failed(settings.Provider, null, "Choose an email provider first.")
         };
     }
+
+    private async Task<EmailSendResult> SendMailRelayAsync(
+        EdgeGatewayMessagingSettings settings,
+        EmailMessage message,
+        CancellationToken cancellationToken)
+    {
+        var domainName = (settings.MailRelaySendingDomain ?? string.Empty).Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(domainName))
+        {
+            return EmailSendResult.Failed(MessagingEmailProvider.MailRelay, null, "Choose a Mail Relay sending domain.");
+        }
+
+        if (!MailAddress.TryCreate(message.FromEmail, out var sender) ||
+            !sender.Host.Equals(domainName, StringComparison.OrdinalIgnoreCase))
+        {
+            return EmailSendResult.Failed(
+                MessagingEmailProvider.MailRelay,
+                null,
+                $"Sender email must use @{domainName} for this Mail Relay entry.");
+        }
+
+        var configuration = await mailRelayStore.GetConfigurationAsync(cancellationToken);
+        if (configuration?.Enabled != true)
+        {
+            return EmailSendResult.Failed(
+                MessagingEmailProvider.MailRelay,
+                null,
+                "Mail Relay is not running. Finish Mail Relay setup first.");
+        }
+
+        var domains = await mailRelayStore.ListDomainsAsync(cancellationToken);
+        if (!domains.Any(item =>
+                item.Enabled &&
+                item.DomainName.Equals(domainName, StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(item.CurrentDkimPrivateKeySecretReference)))
+        {
+            return EmailSendResult.Failed(
+                MessagingEmailProvider.MailRelay,
+                null,
+                $"{domainName} is not an enabled Mail Relay sending domain with a DKIM key.");
+        }
+
+        if (!MailAddress.TryCreate(message.ToEmail, out var recipient))
+        {
+            return EmailSendResult.Failed(MessagingEmailProvider.MailRelay, null, "Enter a valid destination email address.");
+        }
+
+        var messageId = $"lms-messaging-{Guid.NewGuid():N}@{configuration.RelayHostname}";
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            var submission = await mailRelayHostCommand.RunAsync(
+                "sendmail",
+                ["-i", "-f", sender.Address, "--", recipient.Address],
+                timeout.Token,
+                standardInput: Encoding.UTF8.GetBytes(BuildMailRelayMessage(message, sender, recipient, messageId)),
+                timeout: TimeSpan.FromSeconds(30));
+
+            if (submission.ExitCode == 127)
+            {
+                return EmailSendResult.Failed(
+                    MessagingEmailProvider.MailRelay,
+                    null,
+                    "Mail Relay messaging requires the Home Assistant add-on image, where sendmail is installed.");
+            }
+
+            if (submission.ExitCode != 0)
+            {
+                var detail = FirstUsefulLine(submission.StandardError, submission.StandardOutput);
+                return EmailSendResult.Failed(
+                    MessagingEmailProvider.MailRelay,
+                    null,
+                    string.IsNullOrWhiteSpace(detail)
+                        ? "Mail Relay rejected the local messaging submission."
+                        : $"Mail Relay rejected the local messaging submission: {detail}");
+            }
+
+            _ = await mailRelayHostCommand.RunAsync(
+                "postqueue",
+                ["-f"],
+                cancellationToken,
+                timeout: TimeSpan.FromSeconds(10));
+            return EmailSendResult.Succeeded(MessagingEmailProvider.MailRelay, null, messageId);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return EmailSendResult.Failed(
+                MessagingEmailProvider.MailRelay,
+                null,
+                "Mail Relay did not accept the messaging submission within 30 seconds.");
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException)
+        {
+            return EmailSendResult.Failed(
+                MessagingEmailProvider.MailRelay,
+                null,
+                $"Mail Relay send failed: {exception.Message}");
+        }
+    }
+
+    private static string BuildMailRelayMessage(
+        EmailMessage message,
+        MailAddress sender,
+        MailAddress recipient,
+        string messageId)
+    {
+        var fromHeader = string.IsNullOrWhiteSpace(message.FromName)
+            ? sender.Address
+            : $"{QuoteDisplayName(message.FromName)} <{sender.Address}>";
+        var toHeader = string.IsNullOrWhiteSpace(message.ToName)
+            ? recipient.Address
+            : $"{QuoteDisplayName(message.ToName)} <{recipient.Address}>";
+        var useHtml = !string.IsNullOrWhiteSpace(message.HtmlBody);
+        var body = useHtml ? message.HtmlBody : message.PlainTextBody;
+        var encodedBody = Convert.ToBase64String(Encoding.UTF8.GetBytes(body ?? string.Empty));
+        var bodyLines = Enumerable.Range(0, (encodedBody.Length + 75) / 76)
+            .Select(index => encodedBody.Substring(index * 76, Math.Min(76, encodedBody.Length - (index * 76))));
+        var headers = new List<string>
+        {
+            $"Date: {DateTimeOffset.UtcNow:R}",
+            $"Message-ID: <{messageId}>",
+            $"From: {fromHeader}",
+            $"To: {toHeader}",
+            $"Subject: {EncodeHeaderValue(message.Subject)}",
+            "MIME-Version: 1.0",
+            useHtml
+                ? "Content-Type: text/html; charset=utf-8"
+                : "Content-Type: text/plain; charset=utf-8",
+            "Content-Transfer-Encoding: base64"
+        };
+        if (!string.IsNullOrWhiteSpace(message.ReplyToEmail) &&
+            MailAddress.TryCreate(message.ReplyToEmail, out var replyTo))
+        {
+            headers.Insert(4, $"Reply-To: {replyTo.Address}");
+        }
+
+        return string.Join("\r\n", headers.Concat([string.Empty]).Concat(bodyLines).Concat([string.Empty]));
+    }
+
+    private static string QuoteDisplayName(string displayName)
+    {
+        var trimmed = displayName.Trim();
+        return trimmed.Contains('"') || trimmed.Contains('\\') || trimmed.Contains(',') || trimmed.Contains('<')
+            ? $"\"{trimmed.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\""
+            : trimmed;
+    }
+
+    private static string EncodeHeaderValue(string value)
+    {
+        var trimmed = (value ?? string.Empty).Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal)
+            .Trim();
+        return Encoding.UTF8.GetByteCount(trimmed) == trimmed.Length
+            ? trimmed
+            : $"=?utf-8?B?{Convert.ToBase64String(Encoding.UTF8.GetBytes(trimmed))}?=";
+    }
+
+    private static string FirstUsefulLine(string primary, string fallback) =>
+        (primary ?? string.Empty)
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault()
+        ?? (fallback ?? string.Empty)
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault()
+        ?? string.Empty;
 
     private async Task<EmailSendResult> SendSmtpAsync(
         EdgeGatewayMessagingSettings settings,
@@ -316,6 +486,7 @@ public sealed partial class EdgeGatewayEmailDeliveryService(
     {
         MessagingEmailProvider.MicrosoftGraph => "Microsoft Graph",
         MessagingEmailProvider.MailerSend => "MailerSend",
+        MessagingEmailProvider.MailRelay => "Mail Relay",
         _ => provider.ToString()
     };
 

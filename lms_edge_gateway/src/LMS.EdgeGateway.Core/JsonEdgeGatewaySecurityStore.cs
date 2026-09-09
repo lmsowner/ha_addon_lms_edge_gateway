@@ -111,7 +111,8 @@ public sealed class JsonEdgeGatewaySecurityStore(IOptions<EdgeGatewayCoreOptions
                 ? "https://graph.microsoft.com/v1.0"
                 : value.GraphBaseUrl.Trim(),
             ApiKeyProtected = value.ApiKeyProtected ?? string.Empty,
-            MailgunDomain = value.MailgunDomain?.Trim().TrimEnd('.').ToLowerInvariant() ?? string.Empty
+            MailgunDomain = value.MailgunDomain?.Trim().TrimEnd('.').ToLowerInvariant() ?? string.Empty,
+            MailRelaySendingDomain = value.MailRelaySendingDomain?.Trim().TrimEnd('.').ToLowerInvariant() ?? string.Empty
         };
     }
 
