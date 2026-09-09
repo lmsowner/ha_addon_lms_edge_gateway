@@ -228,16 +228,18 @@
                     </label>
                     <label class="ui-field">
                         <span class="ui-field-label">From</span>
-                        <select @bind="testFromAddress" disabled="@(!TestFromOptions.Any())">
-                            @if (!TestFromOptions.Any())
+                        <select value="@testFromDomain"
+                                disabled="@(TestFromDomains.Count == 0)"
+                                @onchange="OnTestFromDomainChanged">
+                            @if (TestFromDomains.Count == 0)
                             {
                                 <option value="">Select an SMTP user with allowed domains</option>
                             }
                             else
                             {
-                                @foreach (var fromAddress in TestFromOptions)
+                                @foreach (var domain in TestFromDomains)
                                 {
-                                    <option value="@fromAddress">@fromAddress</option>
+                                    <option value="@domain">@(FormatTestFromAddress(domain))</option>
                                 }
                             }
                         </select>
@@ -1047,7 +1049,7 @@
     private bool clientMessageIsError;
 
     private string testClientId = string.Empty;
-    private string testFromAddress = string.Empty;
+    private string testFromDomain = string.Empty;
     private string testRecipientAddress = string.Empty;
 
     private bool publicIpMonitorEnabled = true;
@@ -1748,7 +1750,7 @@
             if (testClientId.Equals(deleteClient.Id.ToString(), StringComparison.OrdinalIgnoreCase))
             {
                 testClientId = string.Empty;
-                testFromAddress = string.Empty;
+                testFromDomain = string.Empty;
             }
 
             await LoadDashboardAsync();
@@ -1819,7 +1821,7 @@
         }
     }
 
-    private IReadOnlyList<string> TestFromOptions
+    private IReadOnlyList<string> TestFromDomains
     {
         get
         {
@@ -1838,24 +1840,51 @@
                 .Where(domain => !string.IsNullOrWhiteSpace(domain))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(domain => domain, StringComparer.OrdinalIgnoreCase)
-                .Select(domain => $"{client.Username}@{domain}")
                 .ToArray();
         }
     }
 
+    private string? TestFromUsername
+    {
+        get
+        {
+            if (!Guid.TryParse(testClientId, out var id))
+            {
+                return null;
+            }
+
+            return dashboard?.Clients.FirstOrDefault(item => item.Id == id)?.Username;
+        }
+    }
+
+    private string FormatTestFromAddress(string domain)
+    {
+        var username = TestFromUsername;
+        return string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(domain)
+            ? string.Empty
+            : $"{username}@{domain}";
+    }
+
+    private string CurrentTestFromAddress => FormatTestFromAddress(testFromDomain);
+
     private void OnTestClientChanged()
     {
-        var options = TestFromOptions;
-        if (options.Count == 0)
+        var domains = TestFromDomains;
+        if (domains.Count == 0)
         {
-            testFromAddress = string.Empty;
+            testFromDomain = string.Empty;
             return;
         }
 
-        if (!options.Contains(testFromAddress, StringComparer.OrdinalIgnoreCase))
+        if (!domains.Contains(testFromDomain, StringComparer.OrdinalIgnoreCase))
         {
-            testFromAddress = options[0];
+            testFromDomain = domains[0];
         }
+    }
+
+    private void OnTestFromDomainChanged(ChangeEventArgs args)
+    {
+        testFromDomain = args.Value?.ToString()?.Trim() ?? string.Empty;
     }
 
     private async Task SendTestAsync()
@@ -1866,10 +1895,17 @@
             return;
         }
 
+        var fromAddress = CurrentTestFromAddress;
+        if (string.IsNullOrWhiteSpace(fromAddress))
+        {
+            SetAction("Choose a From domain before sending a test.", true);
+            return;
+        }
+
         isSendingTest = true;
         try
         {
-            testResult = await MailRelayService.SendTestAsync(new MailRelayTestRequest(id, testFromAddress, testRecipientAddress));
+            testResult = await MailRelayService.SendTestAsync(new MailRelayTestRequest(id, fromAddress, testRecipientAddress));
             mailLogExpanded = true;
             await RefreshMailLogAsync();
             if (!string.IsNullOrWhiteSpace(testResult.QueueId))

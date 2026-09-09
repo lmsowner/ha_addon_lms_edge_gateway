@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.09.20.14
+
+- Fix Mail Relay test From: bind the selected domain explicitly so the second dropdown entry is the address that is actually sent.
+
+
 ## 2026.09.09.19.58
 
 - Mail Relay test From is a dropdown of the selected SMTP user's allowed domains, so switching sending domain is one click.
