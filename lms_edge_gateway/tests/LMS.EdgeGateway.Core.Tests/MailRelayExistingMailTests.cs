@@ -81,9 +81,34 @@ public sealed class MailRelayExistingMailTests
         var stackmail = Record("spf-stack", "example.com", "v=spf1 include:spf.stackmail.com a mx -all");
         var lmsOnly = Record("spf-lms", "example.com", "v=spf1 ip4:95.172.225.2 -all");
 
-        var keeper = MailRelayProvisioningService.SelectSpfKeeper([lmsOnly, stackmail], trackedRecordId: null);
+        var keeper = MailRelayProvisioningService.SelectSpfKeeper([lmsOnly, stackmail], trackedRecordId: "spf-lms");
 
         Assert.Equal("spf-stack", keeper.Id);
+    }
+
+    [Fact]
+    public void Analyze_spf_detects_quoted_cloudflare_txt_duplicates()
+    {
+        var records = new[]
+        {
+            Record("spf-stack", "linuxmadesane.online", "\"v=spf1 include:spf.stackmail.com a mx -all\""),
+            Record("spf-lms", "linuxmadesane.online", "v=spf1 ip4:95.172.225.2 -all"),
+            Record("brevo", "linuxmadesane.online", "brevo-code:abc")
+        };
+
+        var analysis = MailRelayProvisioningService.AnalyzeSpf(records, "linuxmadesane.online", "95.172.225.2");
+
+        Assert.Empty(analysis.Errors);
+        Assert.Equal(2, analysis.SourceRecordCount);
+        AssertSpfContains(analysis.ProposedValue, "ip4:95.172.225.2", "include:spf.stackmail.com", "a", "mx");
+    }
+
+    [Fact]
+    public void Normalize_txt_strips_dns_style_quotes()
+    {
+        Assert.Equal(
+            "v=spf1 include:spf.stackmail.com a mx -all",
+            MailRelayProvisioningService.NormalizeTxtRecordContent("\"v=spf1 include:spf.stackmail.com a mx -all\""));
     }
 
     [Fact]

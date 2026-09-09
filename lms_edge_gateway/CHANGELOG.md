@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.09.09.19.52
+
+- Detect quoted Cloudflare SPF/DMARC TXT values so Check now merges Stackmail/Brevo duplicates instead of leaving a second LMS-only record.
+- Prefer the richest SPF record when consolidating, and stop claiming Mail Relay DNS matches while public SPF/DMARC is still pending.
+
+
 ## 2026.09.09.19.28
 
 - Merge Mail Relay SPF and DMARC with existing providers into one shared TXT each, and repair duplicate records on public IP check.

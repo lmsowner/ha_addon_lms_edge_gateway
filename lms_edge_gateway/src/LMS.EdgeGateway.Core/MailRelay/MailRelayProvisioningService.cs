@@ -329,9 +329,7 @@ public sealed partial class MailRelayProvisioningService(
             }
 
             var spfTracking = trackedRecords.FirstOrDefault(item => item.Purpose.Equals("SPF", StringComparison.OrdinalIgnoreCase));
-            var spfRecords = Find(before, "TXT", domain.DomainName)
-                .Where(item => item.Content.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+            var spfRecords = FindSpfRecords(before, domain.DomainName);
             MailRelayDnsStatus spfStatus;
             if (spfTracking is null && spfRecords.Length == 0)
             {
@@ -456,9 +454,7 @@ public sealed partial class MailRelayProvisioningService(
 
             var dmarcName = $"_dmarc.{domain.DomainName}";
             var dmarcTracking = trackedRecords.FirstOrDefault(item => item.Purpose.Equals("DMARC", StringComparison.OrdinalIgnoreCase));
-            var dmarcRecords = Find(before, "TXT", dmarcName)
-                .Where(item => item.Content.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+            var dmarcRecords = FindDmarcRecords(before, domain.DomainName);
             MailRelayDnsStatus dmarcStatus;
             if (dmarcRecords.Length == 0)
             {
@@ -530,8 +526,12 @@ public sealed partial class MailRelayProvisioningService(
                     ? $"Public IPv4 changed from {previousPublicIp} to {detectedPublicIp}. Cloudflare was updated; public DNS propagation is pending."
                     : $"Public IPv4 changed from {previousPublicIp} to {detectedPublicIp}. LMS updated the relay A record and every sending domain SPF record."
                 : changedAnyRecord
-                    ? $"Public IPv4 is still {detectedPublicIp}. LMS repaired drift in its managed DNS records."
-                    : $"Public IPv4 is still {detectedPublicIp}; Mail Relay DNS matches.";
+                    ? hasPending
+                        ? $"Public IPv4 is still {detectedPublicIp}. LMS repaired Cloudflare DNS; public SPF/DKIM/DMARC propagation is still pending."
+                        : $"Public IPv4 is still {detectedPublicIp}. LMS repaired drift in its managed DNS records."
+                    : hasPending
+                        ? $"Public IPv4 is still {detectedPublicIp}. Cloudflare is checked; public SPF/DKIM/DMARC has not matched yet (duplicates or propagation)."
+                        : $"Public IPv4 is still {detectedPublicIp}; Mail Relay DNS matches.";
 
         configuration = configuration with
         {
@@ -1697,9 +1697,7 @@ public sealed partial class MailRelayProvisioningService(
             throw new InvalidOperationException($"SPF cannot be merged safely: {string.Join(" ", analysis.Errors)}");
         }
 
-        var spfRecords = Find(records, "TXT", domain)
-            .Where(item => item.Content.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        var spfRecords = FindSpfRecords(records, domain);
         if (spfRecords.Length == 0)
         {
             var created = await cloudflareDnsService.CreateRecordAsync(
@@ -1711,14 +1709,17 @@ public sealed partial class MailRelayProvisioningService(
         }
 
         var keeper = SelectSpfKeeper(spfRecords, trackedRecordId);
-        var saved = keeper.Content.Equals(analysis.ProposedValue, StringComparison.Ordinal)
-            ? keeper
+        var keeperAlreadyMerged = NormalizeTxtRecordContent(keeper.Content)
+            .Equals(analysis.ProposedValue, StringComparison.Ordinal);
+        var saved = keeperAlreadyMerged
+            ? keeper with { Content = analysis.ProposedValue }
             : await cloudflareDnsService.UpdateRecordAsync(
                 apiToken,
                 zoneId,
                 keeper with { Content = analysis.ProposedValue, Proxied = false },
                 cancellationToken);
-        var changed = !keeper.Content.Equals(saved.Content, StringComparison.Ordinal);
+        var changed = !keeperAlreadyMerged ||
+                      !NormalizeTxtRecordContent(saved.Content).Equals(analysis.ProposedValue, StringComparison.Ordinal);
         var deleted = 0;
         foreach (var duplicate in spfRecords.Where(item => !item.Id.Equals(keeper.Id, StringComparison.Ordinal)))
         {
@@ -1727,7 +1728,7 @@ public sealed partial class MailRelayProvisioningService(
             changed = true;
         }
 
-        return (saved, changed, deleted);
+        return (saved with { Content = NormalizeTxtRecordContent(saved.Content) }, changed, deleted);
     }
 
     private async Task<(CloudflareDnsRecord Record, bool Changed, int DeletedDuplicates)> EnsureSingleDmarcAsync(
@@ -1739,9 +1740,7 @@ public sealed partial class MailRelayProvisioningService(
         CancellationToken cancellationToken)
     {
         var dmarcName = $"_dmarc.{domain}";
-        var dmarcRecords = Find(records, "TXT", dmarcName)
-            .Where(item => item.Content.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        var dmarcRecords = FindDmarcRecords(records, domain);
         if (dmarcRecords.Length == 0)
         {
             var created = await cloudflareDnsService.CreateRecordAsync(
@@ -1763,10 +1762,14 @@ public sealed partial class MailRelayProvisioningService(
         return (keeper, deleted > 0, deleted);
     }
 
-    private static bool PurposeMatches(string existing, string proposed) =>
-        existing.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase) == proposed.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase) &&
-        existing.StartsWith("v=DKIM1", StringComparison.OrdinalIgnoreCase) == proposed.StartsWith("v=DKIM1", StringComparison.OrdinalIgnoreCase) &&
-        existing.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase) == proposed.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase);
+    private static bool PurposeMatches(string existing, string proposed)
+    {
+        var left = NormalizeTxtRecordContent(existing);
+        var right = NormalizeTxtRecordContent(proposed);
+        return left.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase) == right.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase) &&
+               left.StartsWith("v=DKIM1", StringComparison.OrdinalIgnoreCase) == right.StartsWith("v=DKIM1", StringComparison.OrdinalIgnoreCase) &&
+               left.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase) == right.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static void ValidatePreservedMailDns(
         IReadOnlyList<CloudflareDnsRecord> before,
@@ -1801,23 +1804,23 @@ public sealed partial class MailRelayProvisioningService(
             throw new InvalidOperationException("An existing provider DKIM selector changed while applying Mail Relay DNS. Setup stopped.");
         }
 
-        var spfRecords = Find(after, "TXT", domain)
-            .Where(item => item.Content.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (spfRecords.Length != 1 || !spfRecords[0].Content.Equals(expectedSpf, StringComparison.Ordinal) ||
-            !spfRecords[0].Content.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        var spfRecords = FindSpfRecords(after, domain);
+        if (spfRecords.Length != 1 ||
+            !NormalizeTxtRecordContent(spfRecords[0].Content).Equals(NormalizeTxtRecordContent(expectedSpf), StringComparison.Ordinal) ||
+            !NormalizeTxtRecordContent(spfRecords[0].Content).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Any(term => SpfTermAuthorizesIpv4(term, publicIp)))
         {
             throw new InvalidOperationException("The resulting SPF record is not the single reviewed value authorising both the existing provider and LMS.");
         }
-        if (!Find(after, "TXT", dkimName).Any(item => item.Content.Equals(expectedDkim, StringComparison.Ordinal)))
+        if (!Find(after, "TXT", dkimName).Any(item =>
+                NormalizeTxtRecordContent(item.Content).Equals(NormalizeTxtRecordContent(expectedDkim), StringComparison.Ordinal)))
         {
             throw new InvalidOperationException("The LMS DKIM record does not match the generated signing key.");
         }
-        var dmarcRecords = Find(after, "TXT", dmarcName)
-            .Where(item => item.Content.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (dmarcRecords.Length != 1 || !dmarcRecords[0].Content.Equals(expectedDmarc, StringComparison.Ordinal))
+        var dmarcRecords = FindDmarcRecords(after, domain);
+        if (dmarcRecords.Length != 1 ||
+            !NormalizeTxtRecordContent(dmarcRecords[0].Content)
+                .Equals(NormalizeTxtRecordContent(expectedDmarc), StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The resulting DMARC policy is not the single reviewed value. Multiple or changed DMARC records are not allowed.");
         }
@@ -1918,10 +1921,48 @@ public sealed partial class MailRelayProvisioningService(
         }
     }
 
-    private static string NormalizeDigTxt(string value) => value
-        .Replace("\" \"", string.Empty, StringComparison.Ordinal)
-        .Trim()
-        .Trim('"');
+    private static string NormalizeDigTxt(string value) => NormalizeTxtRecordContent(value);
+
+    /// <summary>
+    /// Cloudflare UI paste and some API responses wrap TXT values in DNS-style quotes.
+    /// Those quotes must be stripped or SPF/DMARC detection misses provider records and creates duplicates.
+    /// </summary>
+    internal static string NormalizeTxtRecordContent(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var current = value.Trim();
+        for (var pass = 0; pass < 3; pass++)
+        {
+            var joined = current
+                .Replace("\" \"", string.Empty, StringComparison.Ordinal)
+                .Trim()
+                .Trim('"');
+            if (joined.Equals(current, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            current = joined;
+        }
+
+        return current.Trim().Trim('"');
+    }
+
+    private static CloudflareDnsRecord[] FindSpfRecords(IReadOnlyList<CloudflareDnsRecord> records, string domain) =>
+        Find(records, "TXT", domain)
+            .Select(item => item with { Content = NormalizeTxtRecordContent(item.Content) })
+            .Where(item => item.Content.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+    private static CloudflareDnsRecord[] FindDmarcRecords(IReadOnlyList<CloudflareDnsRecord> records, string domain) =>
+        Find(records, "TXT", $"_dmarc.{domain}")
+            .Select(item => item with { Content = NormalizeTxtRecordContent(item.Content) })
+            .Where(item => item.Content.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
     private static bool IsDkimRecordForDomain(CloudflareDnsRecord record, string domain) =>
         record.Name.Contains("._domainkey.", StringComparison.OrdinalIgnoreCase) &&
@@ -2461,9 +2502,7 @@ public sealed partial class MailRelayProvisioningService(
             if (tracked.Purpose.Equals("SPF", StringComparison.OrdinalIgnoreCase) &&
                 (tracked.CreatedByLms || tracked.ModifiedByLms))
             {
-                var currentSpfRecords = Find(currentRecords, "TXT", tracked.Name)
-                    .Where(record => record.Content.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
+                var currentSpfRecords = FindSpfRecords(currentRecords, tracked.Name);
                 if (currentSpfRecords.Length == 0)
                 {
                     changes.Add($"{tracked.Name}: SPF already absent");
@@ -2930,9 +2969,7 @@ public sealed partial class MailRelayProvisioningService(
         string domain,
         string publicIp)
     {
-        var spfRecords = Find(records, "TXT", domain)
-            .Where(item => item.Content.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        var spfRecords = FindSpfRecords(records, domain);
         if (spfRecords.Length == 0)
         {
             return new(null, $"v=spf1 ip4:{publicIp} -all", 0, [], 0);
@@ -2995,7 +3032,8 @@ public sealed partial class MailRelayProvisioningService(
         var allQualifiers = new List<string>();
         foreach (var record in spfRecords)
         {
-            var tokens = (record ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var tokens = NormalizeTxtRecordContent(record ?? string.Empty)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (tokens.Length == 0 || !tokens[0].Equals("v=spf1", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -3049,20 +3087,25 @@ public sealed partial class MailRelayProvisioningService(
             throw new InvalidOperationException("Cannot choose an SPF keeper without SPF records.");
         }
 
+        var richest = spfRecords
+            .OrderByDescending(item => CountSpfNonAllMechanisms(NormalizeTxtRecordContent(item.Content)))
+            .ThenByDescending(item => NormalizeTxtRecordContent(item.Content).Contains("include:", StringComparison.OrdinalIgnoreCase))
+            .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .First();
+
         if (!string.IsNullOrWhiteSpace(trackedRecordId))
         {
             var tracked = spfRecords.FirstOrDefault(item => item.Id.Equals(trackedRecordId, StringComparison.Ordinal));
-            if (tracked is not null)
+            // Prefer the richer provider SPF over a bare LMS ip4-only record when consolidating duplicates.
+            if (tracked is not null &&
+                CountSpfNonAllMechanisms(NormalizeTxtRecordContent(tracked.Content)) >=
+                CountSpfNonAllMechanisms(NormalizeTxtRecordContent(richest.Content)))
             {
                 return tracked;
             }
         }
 
-        return spfRecords
-            .OrderByDescending(item => CountSpfNonAllMechanisms(item.Content))
-            .ThenByDescending(item => item.Content.Contains("include:", StringComparison.OrdinalIgnoreCase))
-            .ThenBy(item => item.Id, StringComparer.Ordinal)
-            .First();
+        return richest;
     }
 
     internal static CloudflareDnsRecord SelectDmarcKeeper(
@@ -3272,7 +3315,7 @@ public sealed partial class MailRelayProvisioningService(
     private static MailRelaySetupChange BuildDmarcChange(IReadOnlyList<CloudflareDnsRecord> records, string domain)
     {
         var name = $"_dmarc.{domain}";
-        var existing = Find(records, "TXT", name).Where(item => item.Content.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var existing = FindDmarcRecords(records, domain);
         if (existing.Length > 1)
         {
             var keeper = SelectDmarcKeeper(existing, trackedRecordId: null);
@@ -3307,9 +3350,7 @@ public sealed partial class MailRelayProvisioningService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var dmarc = Find(records, "TXT", $"_dmarc.{domain}")
-            .FirstOrDefault(item => item.Content.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase))
-            ?.Content;
+        var dmarc = FindDmarcRecords(records, domain).FirstOrDefault()?.Content;
         var combined = string.Join(' ', mxRecords.Append(spf.ExistingValue ?? string.Empty));
         var provider = combined.Contains("mail.protection.outlook.com", StringComparison.OrdinalIgnoreCase) ||
                        combined.Contains("spf.protection.outlook.com", StringComparison.OrdinalIgnoreCase)
