@@ -139,7 +139,7 @@ postconf -e compatibility_level=3.11 smtp_tcp_port=smtp default_transport=smtp r
   smtp_sasl_auth_enable=no smtp_tls_wrappermode=no smtp_tls_security_level=may
 cp /etc/postfix/main.cf "${CONFIG_ROOT}/main.cf"
 
-# Keep the outbound SMTP client out of the Postfix chroot so MX lookups work in the add-on.
+# Keep the outbound SMTP client out of the Postfix chroot so MX lookups work in the app.
 if grep -qE '^[#]*smtp[[:space:]]+unix[[:space:]]' /etc/postfix/master.cf; then
   sed -i -E 's/^[#]*smtp[[:space:]]+unix[[:space:]].*/smtp      unix  -       -       n       -       -       smtp/' /etc/postfix/master.cf
 else

@@ -111,7 +111,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 if (adapter is DockerDiscoveryAdapter && request.IncludeDocker)
                 {
                     progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                        "Docker discovery skipped. Enable advanced_docker_discovery in add-on options before using Docker API evidence.",
+                        "Docker discovery skipped. Enable advanced_docker_discovery in app options before using Docker API evidence.",
                         0,
                         0,
                         evidence.Count));
@@ -1654,8 +1654,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     Exposure: DiscoveryExposure.RequiresManualConfirmation,
                     Reachable: false,
                     Fingerprint: $"ha-addon:{slug}:{port.Port}",
-                    DisplayName: $"{name} add-on",
-                    Notes: [$"Supervisor add-on slug {slug}.", $"State: {state}.", ingress ? "Ingress is enabled." : "Ingress is not enabled.", port.Description]);
+                    DisplayName: $"{name} app",
+                    Notes: [$"Supervisor app slug {slug}.", $"State: {state}.", ingress ? "Ingress is enabled." : "Ingress is not enabled.", port.Description]);
             }
 
             var ingressPort = GetJsonInt(data, "ingress_port");
@@ -1673,8 +1673,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     Exposure: DiscoveryExposure.InternalOnly,
                     Reachable: false,
                     Fingerprint: $"ha-addon-ingress:{slug}:{ingressPort.Value}",
-                    DisplayName: $"{name} add-on",
-                    Notes: [$"Supervisor add-on slug {slug}.", $"State: {state}.", $"Ingress port {ingressPort.Value}.", "No exposed host port was reported."]);
+                    DisplayName: $"{name} app",
+                    Notes: [$"Supervisor app slug {slug}.", $"State: {state}.", $"Ingress port {ingressPort.Value}.", "No exposed host port was reported."]);
             }
         }
 
@@ -1716,7 +1716,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             if (!File.Exists(DockerSocketPath))
             {
                 progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                    "Docker discovery skipped. Docker API socket is not available to this add-on.",
+                    "Docker discovery skipped. Docker API socket is not available to this app.",
                     0,
                     0,
                     0));

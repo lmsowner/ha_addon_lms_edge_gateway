@@ -28,7 +28,7 @@
                 <h2>What Edge Gateway is doing for you</h2>
                 <p class="meta-text">
                     Edge Gateway turns each published hostname into a managed route. Cloudflare handles the public edge and
-                    tunnel transport, cloudflared keeps an outbound connector alive from this add-on, Caddy routes traffic to
+                    tunnel transport, cloudflared keeps an outbound connector alive from this app, Caddy routes traffic to
                     the correct LAN service, and LMS applies the selected access policy before the upstream app is reached.
                 </p>
             </div>
@@ -36,7 +36,7 @@
 
         <div class="docs-flow-list">
             <div><strong>1. DNS</strong><span>A public hostname such as <code>plex.example.com</code> points at the managed Edge Gateway relay namespace.</span></div>
-            <div><strong>2. Tunnel</strong><span>Cloudflare routes the request down the named tunnel to the local cloudflared process in the add-on.</span></div>
+            <div><strong>2. Tunnel</strong><span>Cloudflare routes the request down the named tunnel to the local cloudflared process in the app.</span></div>
             <div><strong>3. Caddy</strong><span>Caddy matches the public Host header and optional path prefix, then proxies to the configured internal target.</span></div>
             <div><strong>4. Auth</strong><span>For protected apps, Caddy asks LMS forward-auth whether to allow, redirect to login, deny, or pass through.</span></div>
         </div>
@@ -60,7 +60,7 @@
         <div class="docs-check-grid">
             <article>
                 <strong>Cloudflare account</strong>
-                <span>The add-on uses Cloudflare APIs to create or reuse a tunnel, write DNS records, and keep ingress aligned.</span>
+                <span>The app uses Cloudflare APIs to create or reuse a tunnel, write DNS records, and keep ingress aligned.</span>
             </article>
             <article>
                 <strong>Cloudflare-managed domain</strong>
@@ -68,7 +68,7 @@
             </article>
             <article>
                 <strong>Scoped API token</strong>
-                <span>Use a custom token with only the required account and zone permissions for the domains this add-on should manage.</span>
+                <span>Use a custom token with only the required account and zone permissions for the domains this app should manage.</span>
             </article>
             <article>
                 <strong>Email provider</strong>
@@ -95,8 +95,8 @@
                 <p class="eyebrow">Cloudflare token</p>
                 <h2>Create and save the scoped token</h2>
                 <p class="meta-text">
-                    Go to Cloudflare API Tokens, create a custom token, scope it to the account and zone this add-on should manage,
-                    then paste it into Setup. The token is stored under the add-on data root.
+                    Go to Cloudflare API Tokens, create a custom token, scope it to the account and zone this app should manage,
+                    then paste it into Setup. The token is stored under the app data root.
                 </p>
             </div>
         </div>
@@ -110,8 +110,8 @@
                     <li><code>Zone</code> / <code>DNS</code> / <code>Edit</code></li>
                 </ul>
                 <p class="meta-text">
-                    Keep the token narrow. Prefer one account and only the zones this add-on is allowed to publish.
-                    Rotate the token if it is copied outside Home Assistant or if the add-on host is decommissioned.
+                    Keep the token narrow. Prefer one account and only the zones this app is allowed to publish.
+                    Rotate the token if it is copied outside Home Assistant or if the app host is decommissioned.
                 </p>
             </div>
 
@@ -149,7 +149,7 @@
             <li>Finds the selected Cloudflare zone and account from the saved token.</li>
             <li>Creates or reuses a named Cloudflare Tunnel for the relay namespace.</li>
             <li>Creates the proxied wildcard DNS record for <code>*.ha-app-relay.example.com</code>.</li>
-            <li>Saves the connector token used by cloudflared inside the add-on.</li>
+            <li>Saves the connector token used by cloudflared inside the app.</li>
             <li>Writes tunnel ingress so Cloudflare sends matching hostnames to local Caddy.</li>
             <li>Applies the Caddyfile so host/path matches route to the right internal service.</li>
         </ol>
@@ -240,7 +240,7 @@
         <div class="docs-check-grid">
             <article>
                 <strong>Tesla Fleet</strong>
-                <span>Generates an EC key pair, stores the private key under add-on secrets, and publishes only the public key at Tesla's required path.</span>
+                <span>Generates an EC key pair, stores the private key under app secrets, and publishes only the public key at Tesla's required path.</span>
             </article>
             <article>
                 <strong>security.txt</strong>
@@ -324,8 +324,8 @@
                     <div><strong>Denied response</strong><span>Leave Return 404 off to show the access check page for all unapproved clients (production included). Enable Return 404 only when you want a silent Not Found instead.</span></div>
                     <div><strong>Shared IP access</strong><span>Off by default. When enabled, any client on the approved public IP may use the route. Use this for trusted home or LAN public IPs.</span></div>
                     <div><strong>Verified LAN trust</strong><span>Optional. Skip MFA/Email approve IP when the real LAN source IP is inside your trusted CIDRs and reverse DNS (plus forward confirm) matches your internal domain. Cloudflare internet clients are never trusted this way.</span></div>
-                    <div><strong>Idle cut-off</strong><span>How long the approved IP remains open after the last seen request. Blank uses the add-on default.</span></div>
-                    <div><strong>Maximum expiry</strong><span>Absolute lifetime for the approval grant even if traffic continues. Blank uses the add-on default.</span></div>
+                    <div><strong>Idle cut-off</strong><span>How long the approved IP remains open after the last seen request. Blank uses the app default.</span></div>
+                    <div><strong>Maximum expiry</strong><span>Absolute lifetime for the approval grant even if traffic continues. Blank uses the app default.</span></div>
                 </div>
                 <p class="callout ready">
                     Email approve IP is not the same as pass-through. Pass-through sends traffic straight to the upstream service.
@@ -401,7 +401,7 @@
                 <p class="eyebrow">Mail Relay</p>
                 <h2>Outbound SMTP from a home IP</h2>
                 <p class="meta-text">
-                    Mail Relay is outbound-only. It is not an inbound mailbox or MX. Postfix, OpenDKIM and SASL run inside this add-on.
+                    Mail Relay is outbound-only. It is not an inbound mailbox or MX. Postfix, OpenDKIM and SASL run inside this app.
                     Public TCP/587 is never opened. Authenticated STARTTLS on private 587 is the default; optional legacy port 25 listens on all adapters and is restricted by a send-from allowlist.
                     Multiple sending domains are supported and can sit alongside Microsoft 365 or Google Workspace. LMS never changes MX.
                 </p>
@@ -459,7 +459,7 @@
             <div><strong>Setup tab</strong><span>Validates the token, relay zones, tunnel status, wildcard DNS, connector token, cloudflared, and Caddy readiness.</span></div>
             <div><strong>Published Apps</strong><span>Shows each domain group, lets you add, edit, enable, disable, test, or delete routes.</span></div>
             <div><strong>Diagnostics</strong><span>Shows route checks, access events, and operational signals for why a route is allowed, denied, or failing.</span></div>
-            <div><strong>Repair behavior</strong><span>Startup and Setup validation reconcile tunnel ingress, DNS, Caddy, and cloudflared where possible. If Cloudflare reports the tunnel down, the add-on tries to restart or directly start cloudflared before asking you to rebuild anything.</span></div>
+            <div><strong>Repair behavior</strong><span>Startup and Setup validation reconcile tunnel ingress, DNS, Caddy, and cloudflared where possible. If Cloudflare reports the tunnel down, the app tries to restart or directly start cloudflared before asking you to rebuild anything.</span></div>
         </div>
 
         <h3>Home Assistant install progress</h3>
@@ -468,7 +468,7 @@
             Supervisor reporting a coarse install phase, not proof that the Edge Gateway app is ready yet.
         </p>
         <p class="meta-text">
-            This add-on is currently built locally by Home Assistant from the repository Dockerfile. The HA host still has to
+            This app is currently built locally by Home Assistant from the repository Dockerfile. The HA host still has to
             restore and publish the .NET app, install Caddy, download cloudflared, create the Docker image, and start the
             supervised services. On smaller Home Assistant hardware that can take long enough to look stuck.
         </p>

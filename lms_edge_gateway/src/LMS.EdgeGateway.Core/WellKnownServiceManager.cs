@@ -825,7 +825,7 @@ public sealed class WellKnownServiceManager(
         }
         catch
         {
-            // Best-effort hardening; the add-on data directory still owns the file.
+            // Best-effort hardening; the app data directory still owns the file.
         }
     }
 

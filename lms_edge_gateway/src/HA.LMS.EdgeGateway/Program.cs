@@ -95,7 +95,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = "Linux Made Sane - Edge Gateway Add-on" }));
+app.MapGet("/healthz", () => Results.Ok(new { status = "ok", product = "Linux Made Sane - Edge Gateway App" }));
 app.MapGet("/api/public-assets", async Task<IResult> (
     HttpContext context,
     IWellKnownServiceManager wellKnownManager,

@@ -58,7 +58,7 @@ public sealed class EdgeGatewayStatusService(
                 "Caddy",
                 EdgeGatewayComponentState.Ready,
                 "Reverse proxy is running",
-                hasConfig ? configPath : "Caddy is running; default configuration will be created on next add-on start.");
+                hasConfig ? configPath : "Caddy is running; default configuration will be created on next app start.");
         }
 
         return new EdgeGatewayComponentStatus(
@@ -97,7 +97,7 @@ public sealed class EdgeGatewayStatusService(
                 "Cloudflare Tunnel",
                 EdgeGatewayComponentState.Ready,
                 "Tunnel process is running",
-                "cloudflared is active inside the add-on container.");
+                "cloudflared is active inside the app container.");
         }
 
         if (!string.IsNullOrWhiteSpace(tunnelToken))
@@ -107,7 +107,7 @@ public sealed class EdgeGatewayStatusService(
                 "Cloudflare Tunnel",
                 EdgeGatewayComponentState.Starting,
                 "Tunnel token saved",
-                "cloudflared has a tunnel token saved. Restart the add-on if the tunnel process does not start automatically.");
+                "cloudflared has a tunnel token saved. Restart the app if the tunnel process does not start automatically.");
         }
 
         return new EdgeGatewayComponentStatus(

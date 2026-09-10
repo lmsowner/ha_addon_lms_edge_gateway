@@ -167,7 +167,7 @@ public sealed class LoginEmailOtpService(
                       </tr>
                       <tr>
                         <td style="background:#f7fbfe;padding:16px 30px;color:#64748b;font-size:12px;line-height:1.5;">
-                          LMS HA Add-On MFA email code
+                          LMS HA App MFA email code
                         </td>
                       </tr>
                     </table>

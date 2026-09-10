@@ -33,7 +33,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read add-on version
+      - name: Read app version
         id: version
         run: |
           version="$(sed -n 's/^version:[[:space:]]*"\([^"]*\)".*/\1/p' lms_edge_gateway/config.yaml | head -n1)"

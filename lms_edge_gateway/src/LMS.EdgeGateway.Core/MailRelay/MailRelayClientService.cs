@@ -163,7 +163,7 @@ public sealed class MailRelayClientService(
 
         if (result.ExitCode == 127)
         {
-            throw new InvalidOperationException("Mail Relay user changes require the Home Assistant add-on image, where Postfix and SASL are installed.");
+            throw new InvalidOperationException("Mail Relay user changes require the Home Assistant App image, where Postfix and SASL are installed.");
         }
     }
 

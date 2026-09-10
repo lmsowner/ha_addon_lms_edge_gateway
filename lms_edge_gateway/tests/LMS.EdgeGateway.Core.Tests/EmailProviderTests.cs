@@ -217,7 +217,7 @@ public sealed class EmailProviderTests
         var html = document.RootElement.GetProperty("htmlContent").GetString();
         var text = document.RootElement.GetProperty("textContent").GetString();
         Assert.Contains("Linux Made Sane - Edge Gateway", html, StringComparison.Ordinal);
-        Assert.Contains("Home Assistant Add-on", html, StringComparison.Ordinal);
+        Assert.Contains("Home Assistant App", html, StringComparison.Ordinal);
         Assert.Contains("Messaging is ready", html, StringComparison.Ordinal);
         Assert.Contains("<img", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("raw.githubusercontent.com/lmsowner/linuxmadesanerelease", html, StringComparison.Ordinal);
@@ -415,7 +415,7 @@ public sealed class EmailProviderTests
     }
 
     [Fact]
-    public async Task Created_user_otp_uri_uses_lms_ha_addon_authenticator_name()
+    public async Task Created_user_otp_uri_uses_lms_ha_app_authenticator_name()
     {
         var service = BuildSecurityService();
 
@@ -428,10 +428,10 @@ public sealed class EmailProviderTests
         });
 
         Assert.StartsWith(
-            "otpauth://totp/LMS%20HA%20Add-On:user%40example.com?",
+            "otpauth://totp/LMS%20HA%20App:user%40example.com?",
             result.OtpUri,
             StringComparison.Ordinal);
-        Assert.Contains("issuer=LMS%20HA%20Add-On", result.OtpUri, StringComparison.Ordinal);
+        Assert.Contains("issuer=LMS%20HA%20App", result.OtpUri, StringComparison.Ordinal);
         Assert.DoesNotContain("issuer=Linux%20Made%20Sane", result.OtpUri, StringComparison.Ordinal);
     }
 
@@ -467,7 +467,7 @@ public sealed class EmailProviderTests
         Assert.Equal("Your Linux Made Sane Edge Gateway login is ready", document.RootElement.GetProperty("subject").GetString());
         var html = document.RootElement.GetProperty("htmlContent").GetString();
         Assert.Contains("Linux Made Sane - Edge Gateway", html, StringComparison.Ordinal);
-        Assert.Contains("Home Assistant Add-on", html, StringComparison.Ordinal);
+        Assert.Contains("Home Assistant App", html, StringComparison.Ordinal);
         Assert.Contains("Authenticator setup", html, StringComparison.Ordinal);
         Assert.Contains("Manual key", html, StringComparison.Ordinal);
         Assert.Contains("OTP URI", html, StringComparison.Ordinal);

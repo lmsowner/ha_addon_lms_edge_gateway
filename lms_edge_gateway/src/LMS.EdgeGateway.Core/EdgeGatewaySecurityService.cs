@@ -503,7 +503,7 @@ public sealed class EdgeGatewaySecurityService(
               </tr>
             </table>
             """,
-            "Do not forward this email. If you did not request this account change, contact the person who manages your LMS Edge Gateway add-on.");
+            "Do not forward this email. If you did not request this account change, contact the person who manages your LMS Edge Gateway app.");
     }
 
     private static EmailMessage BuildMessagingTestEmailMessage(
@@ -520,12 +520,12 @@ public sealed class EdgeGatewaySecurityService(
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:18px 0;">
               <tr>
                 <td style="padding:15px 16px;background:#ecfdf5;border:1px solid #bbf7d0;border-radius:14px;color:#14532d;font-size:15px;line-height:1.5;">
-                  Messaging is verified for Linux Made Sane - Edge Gateway and ready for the Home Assistant Add-on.
+                  Messaging is verified for Linux Made Sane - Edge Gateway and ready for the Home Assistant App.
                 </td>
               </tr>
             </table>
             """,
-            "You received this because someone sent a Messaging test from the LMS Edge Gateway add-on.");
+            "You received this because someone sent a Messaging test from the LMS Edge Gateway app.");
 
         return new EmailMessage(
             settings.SenderAddress,
@@ -535,7 +535,7 @@ public sealed class EdgeGatewaySecurityService(
             "LMS test email",
             """
             Linux Made Sane - Edge Gateway
-            Home Assistant Add-on
+            Home Assistant App
 
             This is a test email from Linux Made Sane.
 
@@ -575,7 +575,7 @@ public sealed class EdgeGatewaySecurityService(
                               </td>
                               <td valign="top" style="padding-left:12px;">
                                 <div style="font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:#94f0c4;font-weight:900;">Linux Made Sane - Edge Gateway</div>
-                                <div style="font-size:14px;color:#c7d7e8;margin-top:4px;font-weight:700;">Home Assistant Add-on</div>
+                                <div style="font-size:14px;color:#c7d7e8;margin-top:4px;font-weight:700;">Home Assistant App</div>
                                 <h1 style="margin:14px 0 0;font-size:30px;line-height:1.16;font-weight:900;color:#ffffff;">{{encodedTitle}}</h1>
                               </td>
                             </tr>
@@ -596,7 +596,7 @@ public sealed class EdgeGatewaySecurityService(
                                       {{BuildEmailIconCard("Secure access", "MFA and OTP ready", "shield")}}
                                     </td>
                                     <td width="33.33%" style="padding:0 4px;">
-                                      {{BuildEmailIconCard("Home Assistant", "Add-on controlled", "home")}}
+                                      {{BuildEmailIconCard("Home Assistant", "App controlled", "home")}}
                                     </td>
                                     <td width="33.33%" style="padding:0 0 0 7px;">
                                       {{BuildEmailIconCard("Edge Gateway", "Routes protected", "route")}}
@@ -612,7 +612,7 @@ public sealed class EdgeGatewaySecurityService(
                       </tr>
                       <tr>
                         <td style="background:#f6f9fc;padding:18px 32px;color:#64748b;font-size:12px;line-height:1.5;">
-                          Linux Made Sane - Edge Gateway &bull; Home Assistant Add-on &bull; Secure local-first access
+                          Linux Made Sane - Edge Gateway &bull; Home Assistant App &bull; Secure local-first access
                         </td>
                       </tr>
                     </table>
@@ -687,7 +687,7 @@ public sealed class EdgeGatewaySecurityService(
             <td align="center" style="padding:18px 16px;background:#ffffff;border:1px solid #dce7f3;border-radius:16px;">
               <div style="font-size:12px;color:#607089;font-weight:900;text-transform:uppercase;letter-spacing:.08em;margin:0 0 12px;">Scan this QR code</div>
               {{qrTable}}
-              <div style="font-size:12px;color:#64748b;line-height:1.45;margin-top:12px;">Open your authenticator app and scan this QR code to add LMS HA Add-On MFA.</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.45;margin-top:12px;">Open your authenticator app and scan this QR code to add LMS HA App MFA.</div>
             </td>
           </tr>
         </table>

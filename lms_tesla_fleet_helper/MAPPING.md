@@ -1,6 +1,6 @@
 # LMS Tesla Fleet Helper Mapping
 
-This add-on should keep Tesla API transport, LMS state, and Home Assistant MQTT projection separate.
+This app should keep Tesla API transport, LMS state, and Home Assistant MQTT projection separate.
 
 ## Flow
 
@@ -45,7 +45,7 @@ Initial DTO coverage:
 
 Normalized records live in `TeslaFleetNormalizedModels.cs`.
 
-This is the stable model the rest of the add-on should use:
+This is the stable model the rest of the app should use:
 
 - `LmsTeslaFleetState`
 - `LmsTeslaVehicleState`

@@ -31,4 +31,4 @@ fi
 
 caddy fmt --overwrite /data/caddy/Caddyfile >/dev/null 2>&1 || true
 
-bashio::log.info "Linux Made Sane - Edge Gateway add-on data prepared."
+bashio::log.info "Linux Made Sane - Edge Gateway app data prepared."

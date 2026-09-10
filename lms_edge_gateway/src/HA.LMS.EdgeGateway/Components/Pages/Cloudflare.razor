@@ -26,7 +26,7 @@
         {
             <div class="edge-cloudflare-intro">
                 <strong>What Edge Gateway manages</strong>
-                <span>Setup Relay prepares the Cloudflare Tunnel, wildcard DNS and local Caddy/cloudflared routes for this Home Assistant add-on host.</span>
+                <span>Setup Relay prepares the Cloudflare Tunnel, wildcard DNS and local Caddy/cloudflared routes for this Home Assistant App host.</span>
             </div>
 
             <form class="edge-token-grid" method="post" action="api/setup/cloudflare-api-token">
@@ -53,7 +53,7 @@
             <div>
                 <p class="eyebrow">Configured zones</p>
                 <h2>Configured relay zones</h2>
-                <p class="meta-text">Shows every relay wildcard LMS can see for this add-on host. Domains without Cloudflare tunnel and DNS details still need Setup Relay.</p>
+                <p class="meta-text">Shows every relay wildcard LMS can see for this app host. Domains without Cloudflare tunnel and DNS details still need Setup Relay.</p>
             </div>
                 <LmsStatusPill Text="@BuildConfiguredRelayCountLabel()" Tone="@(ConfiguredRelayZones.Any(IsRelayReady) ? LmsStatusTone.Ready : LmsStatusTone.Neutral)" />
         </div>
@@ -157,7 +157,7 @@
                 <label class="ui-field">
                     <span class="ui-field-label">Relay namespace</span>
                     <input value="@RelayNamespace" readonly />
-                    <span class="ui-field-helper">Locked until namespace editing is wired for the add-on host.</span>
+                    <span class="ui-field-helper">Locked until namespace editing is wired for the app host.</span>
                 </label>
                 <div class="edge-readonly-field">
                     <span class="ui-field-label">Example</span>

@@ -7,7 +7,7 @@
             <img class="lms-product-logo" src="images/lms-logo-192.png" alt="" />
             <span class="lms-product-copy">
                 <strong>Linux Made Sane - Edge Gateway</strong>
-                <small>Home Assistant Add-on <span class="lms-product-version">@FormattedProductVersion</span></small>
+                <small>Home Assistant App <span class="lms-product-version">@FormattedProductVersion</span></small>
             </span>
         </a>
         <div class="lms-product-actions">
@@ -40,7 +40,7 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<NavigationItem> Items { get; set; } = [];
     [Parameter] public RenderFragment? ChildContent { get; set; }
-    [Parameter] public string ProductVersion { get; set; } = "2026.09.09.20.14";
+    [Parameter] public string ProductVersion { get; set; } = "2026.09.10.17.46";
 
     private string FormattedProductVersion => $"v{NormalizeProductVersion(ProductVersion)}";
 
@@ -71,7 +71,7 @@
         var normalized = (value ?? string.Empty).Trim();
         return string.IsNullOrWhiteSpace(normalized) ||
                normalized.Equals("@productversion", StringComparison.OrdinalIgnoreCase)
-            ? "2026.09.09.20.14"
+            ? "2026.09.10.17.46"
             : normalized.TrimStart('v', 'V');
     }
 }

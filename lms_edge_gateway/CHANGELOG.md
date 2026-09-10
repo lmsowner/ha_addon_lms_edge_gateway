@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.10.17.46
+
+- Renames user-facing Home Assistant terminology from Add-on to App (Supervisor/API identifiers unchanged).
+
+
 ## 2026.09.09.20.14
 
 - Fix Mail Relay test From: bind the selected domain explicitly so the second dropdown entry is the address that is actually sent.
@@ -103,7 +108,7 @@
 ## 2026.09.05.10.58
 
 - Adds a Mail Relay tab: outbound-only SMTP on private 587 (optional restricted port 25), Cloudflare SPF/DKIM/DMARC preserve-and-merge, and public-IP DNS refresh every 15 minutes by default.
-- Postfix, OpenDKIM and SASL run inside the add-on. This is not inbound MX and it is not the Security → Messaging outbound client.
+- Postfix, OpenDKIM and SASL run inside the app. This is not inbound MX and it is not the Security → Messaging outbound client.
 
 ## 2026.08.19.07.48
 
@@ -140,21 +145,21 @@
 
 ## 2026.08.17.21.36
 
-- Switches add-on versioning to `yyyy.MM.dd.HH.mm` so Home Assistant can show a new build as soon as GitHub has `config.yaml`.
+- Switches app versioning to `yyyy.MM.dd.HH.mm` so Home Assistant can show a new build as soon as GitHub has `config.yaml`.
 
 ## 0.1.71
 
-- Restores the Home Assistant ingress UI: the add-on stays on 0.0.0.0:5000, allows LAN/Docker/supervisor clients, and no longer traps the admin page on a login spinner.
+- Restores the Home Assistant ingress UI: the app stays on 0.0.0.0:5000, allows LAN/Docker/supervisor clients, and no longer traps the admin page on a login spinner.
 
 ## 0.1.70
 
-- Requires admin login for the add-on UI once users exist, hardens auth cookies, and rate-limits login/passkey failures.
-- Restricts add-on HTTP access to loopback and the Home Assistant supervisor network, and requires authorization on passkey management APIs.
+- Requires admin login for the app UI once users exist, hardens auth cookies, and rate-limits login/passkey failures.
+- Restricts app HTTP access to loopback and the Home Assistant supervisor network, and requires authorization on passkey management APIs.
 - Looks up both IPv4 and IPv6 for Get current WAN IP, and canonicalizes known-source/LAN IP matching.
 
 ## 0.1.69
 
-- Fixes add-on build failure caused by calling MemoryCache.Compact on IMemoryCache in the authentication flush service.
+- Fixes app build failure caused by calling MemoryCache.Compact on IMemoryCache in the authentication flush service.
 
 ## 0.1.68
 
@@ -186,7 +191,7 @@
 ## 0.1.62
 
 - Tidies add/edit route auth settings into stacked panels (Email approval, Known source IPs, Verified LAN trust) instead of a crowded multi-column grid.
-- Adds Get current WAN IP on Known source IPs to append the add-on's public address from ipify.
+- Adds Get current WAN IP on Known source IPs to append the app's public address from ipify.
 
 ## 0.1.61
 
@@ -196,7 +201,7 @@
 
 ## 0.1.60
 
-- Publishes prebuilt multi-arch images to GHCR and configures the add-on `image` field so Home Assistant pulls instead of building from source on install/update.
+- Publishes prebuilt multi-arch images to GHCR and configures the app `image` field so Home Assistant pulls instead of building from source on install/update.
 
 ## 0.1.59
 
@@ -215,7 +220,7 @@
 ## 0.1.56
 
 - Shows active Email approve IP trusted addresses on the Security/Users tab and allows revoking them.
-- Fixes the add-on version header so unresolved build placeholders are not shown.
+- Fixes the app version header so unresolved build placeholders are not shown.
 
 ## 0.1.55
 
@@ -261,7 +266,7 @@
 
 ## 0.1.47
 
-- Shows the installed Edge Gateway add-on version discreetly in the product header.
+- Shows the installed Edge Gateway app version discreetly in the product header.
 
 ## 0.1.46
 
@@ -281,13 +286,13 @@
 
 ## 0.1.43
 
-- Adds a trusted local public route upstream health-test API for companion add-ons.
+- Adds a trusted local public route upstream health-test API for companion apps.
 - Lets LMS Tesla Fleet Helper verify that Edge Gateway can reach the helper before publishing Tesla OAuth proxy routes.
 
 ## 0.1.42
 
-- Adds a local-only generic public asset API for trusted companion add-ons to publish, list, delete, and verify public `/.well-known/` assets through the existing Edge Gateway routing foundation.
-- Keeps the existing Domain Services and Tesla Fleet UI in Edge Gateway unchanged while allowing companion add-ons to publish generic hostname/path/content assets.
+- Adds a local-only generic public asset API for trusted companion apps to publish, list, delete, and verify public `/.well-known/` assets through the existing Edge Gateway routing foundation.
+- Keeps the existing Domain Services and Tesla Fleet UI in Edge Gateway unchanged while allowing companion apps to publish generic hostname/path/content assets.
 
 ## 0.1.41
 
@@ -302,7 +307,7 @@
 ## 0.1.39
 
 - Serves public `.well-known` responses through an internal Edge Gateway endpoint instead of Caddy `file_server`, while still writing files under `/share/lms-edge-gateway/well-known/public` for visibility and diagnostics.
-- Avoids public verification failures caused by add-on share mount or Caddy file-serving permission issues.
+- Avoids public verification failures caused by app share mount or Caddy file-serving permission issues.
 
 ## 0.1.38
 
@@ -316,8 +321,8 @@
 
 ## 0.1.36
 
-- Moves public `.well-known` files served by Caddy to `/share/lms-edge-gateway/well-known/public` in the Home Assistant add-on.
-- Keeps private add-on state and Tesla Fleet private keys under `/data/lms-edge-gateway`.
+- Moves public `.well-known` files served by Caddy to `/share/lms-edge-gateway/well-known/public` in the Home Assistant App.
+- Keeps private app state and Tesla Fleet private keys under `/data/lms-edge-gateway`.
 
 ## 0.1.35
 
@@ -355,8 +360,8 @@
 
 ## 0.1.29
 
-- Documents why Home Assistant can show add-on installation moving from `0%` to `100%` while the Supervisor still reports `Installing`.
-- Clarifies that the current package is source-built by Home Assistant until prebuilt registry images are published and referenced by the add-on config.
+- Documents why Home Assistant can show app installation moving from `0%` to `100%` while the Supervisor still reports `Installing`.
+- Clarifies that the current package is source-built by Home Assistant until prebuilt registry images are published and referenced by the app config.
 
 ## 0.1.28
 
@@ -408,25 +413,25 @@
 
 ## 0.1.18
 
-- Updates the About page to present LMS HA Edge Gateway as the Home Assistant add-on edition.
+- Updates the About page to present LMS HA Edge Gateway as the Home Assistant App edition.
 - Uses the Home Assistant-specific LMS Edge Gateway imagery in the About page.
 - Adds clearer references to Linux Made Sane as the base LMS project.
 
 ## 0.1.17
 
-- Keeps the full Home Assistant add-on name while shortening the sidebar label to Edge Gateway.
+- Keeps the full Home Assistant App name while shortening the sidebar label to Edge Gateway.
 - Adds clearer first-run Cloudflare onboarding that explains the required account, DNS-managed domain, and scoped API token.
 - Improves the Setup tab introduction so users know what Edge Gateway will manage before configuring a relay.
 
 ## 0.1.16
 
-- Runs relay validation on add-on startup after tunnel ingress reconciliation.
+- Runs relay validation on app startup after tunnel ingress reconciliation.
 - Restarts or directly starts cloudflared during startup when Cloudflare reports the saved tunnel is not healthy.
 - Matches the Setup tab validation behavior without requiring the user to open Setup after an update.
 
 ## 0.1.15
 
-- Reconciles managed Cloudflare Tunnel ingress routes for every saved app when the add-on starts.
+- Reconciles managed Cloudflare Tunnel ingress routes for every saved app when the app starts.
 - Uses the same tunnel ingress origin settings on startup that edit/save applies to existing app routes.
 - Prevents version updates from leaving old Cloudflare tunnel entries stale until each app is manually re-saved.
 
@@ -447,7 +452,7 @@
 
 ## 0.1.11
 
-- Runs the Home Assistant add-on on the host network so LAN discovery sees the same network view as the HA host.
+- Runs the Home Assistant App on the host network so LAN discovery sees the same network view as the HA host.
 - Grants raw network access for ICMP reachability checks during LAN discovery.
 - Binds the internal Caddy relay listener to loopback when using the default localhost origin.
 - Adds LAN scan-plan progress messages showing CIDRs, ARP/neighbour counts, and target counts before probing.
@@ -470,7 +475,7 @@
 
 - Re-applies the saved theme after Blazor enhanced navigation so the toggle state persists between pages.
 - Stores the selected theme in both local storage and a cookie fallback.
-- Uses the parent Home Assistant frame theme as the default when no explicit add-on theme has been saved.
+- Uses the parent Home Assistant frame theme as the default when no explicit app theme has been saved.
 
 ## 0.1.7
 
@@ -481,7 +486,7 @@
 ## 0.1.6
 
 - Builds full LAN scan ranges when Supervisor reports Home Assistant host IPv4 details as address plus prefix or netmask.
-- Falls back bare private Supervisor host addresses to `/24` instead of scanning only the add-on container network.
+- Falls back bare private Supervisor host addresses to `/24` instead of scanning only the app container network.
 - Keeps known LAN neighbours in the scan target set even when CIDR discovery falls back.
 
 ## 0.1.5
@@ -497,21 +502,21 @@
 
 ## 0.1.3
 
-- Removes Home Assistant theme inheritance and returns the add-on UI to its fixed light styling.
+- Removes Home Assistant theme inheritance and returns the app UI to its fixed light styling.
 
 ## 0.1.2
 
-- Uses Home Assistant Supervisor network information to scan the host LAN subnet, not only the add-on container network.
+- Uses Home Assistant Supervisor network information to scan the host LAN subnet, not only the app container network.
 - Collapses duplicate HTTP/S lookup candidates for the same discovered service.
 
 ## 0.1.1
 
-- Updates the Home Assistant add-on display name to LMS Edge Gateway for Home Assistant.
-- Prepares the add-on package for full end-to-end Home Assistant testing.
+- Updates the Home Assistant App display name to LMS Edge Gateway for Home Assistant.
+- Prepares the app package for full end-to-end Home Assistant testing.
 
 ## 0.1.0
 
-- Initial Linux Made Sane - Edge Gateway Home Assistant Add-on product scaffold.
+- Initial Linux Made Sane - Edge Gateway Home Assistant App product scaffold.
 - Adds Blazor control plane with Home Assistant ingress support.
 - Adds Caddy and cloudflared process supervision.
 - Adds persistent `/data` storage for gateway state and Caddy configuration.

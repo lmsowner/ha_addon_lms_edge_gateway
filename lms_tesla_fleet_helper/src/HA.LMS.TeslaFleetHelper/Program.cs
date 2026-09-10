@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 const string ProductName = "LMS Tesla Fleet Helper";
-const string ProductVersionFallback = "0.2.41";
+const string ProductVersionFallback = "0.2.42";
 const string TeslaPublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-key.pem";
 const string TeslaPublicKeyContentType = "application/x-pem-file";
 const string TeslaAuthorizeEndpoint = "https://auth.tesla.com/oauth2/v3/authorize";
@@ -1119,7 +1119,7 @@ static async Task<IResult> HandleOAuthCallbackAsync(
             TokenExpiresUtc = expiresUtc,
             LastOAuthUtc = DateTimeOffset.UtcNow,
             LastStatus = "OAuth connected",
-            LastMessage = "Tesla OAuth completed and tokens were saved locally in the Tesla Fleet Helper add-on.",
+            LastMessage = "Tesla OAuth completed and tokens were saved locally in the Tesla Fleet Helper app.",
             LastChecks =
             [
                 $"Token type: {FirstNonEmpty(token.TokenType, "unknown")}.",
@@ -1397,7 +1397,7 @@ static void TrySetOwnerOnly(string path)
     }
     catch
     {
-        // Permission tightening is best effort inside Home Assistant add-on containers.
+        // Permission tightening is best effort inside Home Assistant App containers.
     }
 }
 
@@ -2921,7 +2921,7 @@ static string RenderSetupGuide(
             <li>The origin domain is a public HTTPS host managed by LMS Edge Gateway and Cloudflare.</li>
             <li>The Tesla public key is reachable at the Tesla-required .well-known path.</li>
             <li>The Tesla Developer app uses the exact redirect URI shown here.</li>
-            <li>Tesla OAuth is connected and the refresh token is stored locally in this add-on.</li>
+            <li>Tesla OAuth is connected and the refresh token is stored locally in this app.</li>
             <li>The virtual key is installed once per vehicle so signed commands can work.</li>
           </ul>
         </div>
@@ -4569,22 +4569,22 @@ sealed class EdgeGatewayCompanionResolver(HttpClient httpClient)
                 using var response = await httpClient.SendAsync(request, cancellationToken);
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 supervisorAvailable = response.IsSuccessStatusCode;
-                checks.Add($"Supervisor add-on lookup returned HTTP {(int)response.StatusCode}.");
+                checks.Add($"Supervisor app lookup returned HTTP {(int)response.StatusCode}.");
                 if (response.IsSuccessStatusCode)
                 {
                     (installed, started, slug, version) = ReadEdgeGatewayAddon(body);
                     if (installed)
                     {
                         checks.Add(string.IsNullOrWhiteSpace(version)
-                            ? $"Detected LMS Edge Gateway add-on {slug}."
-                            : $"Detected LMS Edge Gateway add-on {slug} version {version}.");
+                            ? $"Detected LMS Edge Gateway app {slug}."
+                            : $"Detected LMS Edge Gateway app {slug} version {version}.");
                         checks.Add(started
-                            ? "LMS Edge Gateway add-on is started."
-                            : "LMS Edge Gateway add-on is installed but not started.");
+                            ? "LMS Edge Gateway app is started."
+                            : "LMS Edge Gateway app is installed but not started.");
                     }
                     else
                     {
-                        checks.Add("LMS Edge Gateway add-on is not installed in this Supervisor instance.");
+                        checks.Add("LMS Edge Gateway app is not installed in this Supervisor instance.");
                     }
                 }
                 else
@@ -4594,7 +4594,7 @@ sealed class EdgeGatewayCompanionResolver(HttpClient httpClient)
             }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
             {
-                checks.Add($"Supervisor add-on lookup failed: {exception.Message}");
+                checks.Add($"Supervisor app lookup failed: {exception.Message}");
             }
         }
 
@@ -4609,7 +4609,7 @@ sealed class EdgeGatewayCompanionResolver(HttpClient httpClient)
         var summary = edgeGatewayHealthy
             ? "LMS Edge Gateway was auto-detected on this Home Assistant host."
             : installed
-                ? "LMS Edge Gateway is installed, but the helper cannot reach it yet. Start or update the Edge Gateway add-on."
+                ? "LMS Edge Gateway is installed, but the helper cannot reach it yet. Start or update the Edge Gateway app."
                 : "Install and start LMS Edge Gateway on this Home Assistant host before publishing Tesla Fleet routes.";
 
         return new EdgeGatewayCompanionStatus(

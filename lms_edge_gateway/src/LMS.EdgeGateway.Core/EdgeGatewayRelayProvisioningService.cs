@@ -155,7 +155,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
             }
 
             await tokenStore.SaveTunnelTokenAsync(connectorToken, cancellationToken);
-            steps.Add("Saved cloudflared connector token into the add-on options.");
+            steps.Add("Saved cloudflared connector token into the app options.");
 
             var cloudflaredRestart = await TryRestartCloudflaredAsync(cancellationToken);
             if (cloudflaredRestart.Success)
@@ -447,7 +447,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
 
                 var cloudflaredRestart = await TryRestartCloudflaredAsync(
                     "Restarted cloudflared after clearing the tunnel token.",
-                    "cloudflared token is cleared; restart the add-on if Zero Trust still shows the connector active.",
+                    "cloudflared token is cleared; restart the app if Zero Trust still shows the connector active.",
                     cancellationToken);
                 if (cloudflaredRestart.Success)
                 {
@@ -2389,7 +2389,7 @@ public sealed class EdgeGatewayRelayProvisioningService(
     private Task<CommandAttempt> TryRestartCloudflaredAsync(CancellationToken cancellationToken) =>
         TryRestartCloudflaredAsync(
             "Restarted the cloudflared service so it can use the new tunnel token.",
-            "cloudflared connector token is saved; restart the add-on if the tunnel process does not start automatically.",
+            "cloudflared connector token is saved; restart the app if the tunnel process does not start automatically.",
             cancellationToken);
 
     private async Task<CommandAttempt> TryRestartCloudflaredAsync(

@@ -368,12 +368,12 @@ public sealed class MailRelayPreflightService(
         {
             return Check(MailRelayPreflightCheckKeys.MailRuntime, "Mail runtime",
                 MailRelayPreflightCheckState.Pass, "PASS",
-                "Postfix, OpenDKIM and SASL are installed in this add-on.");
+                "Postfix, OpenDKIM and SASL are installed in this app.");
         }
 
         return Check(MailRelayPreflightCheckKeys.MailRuntime, "Mail runtime",
             MailRelayPreflightCheckState.Warning, "ADD-ON ONLY",
-            "Postfix, OpenDKIM and SASL run inside the Home Assistant add-on image. Local development hosts can preview DNS, but setup starts the MTA only on the add-on.");
+            "Postfix, OpenDKIM and SASL run inside the Home Assistant App image. Local development hosts can preview DNS, but setup starts the MTA only on the app.");
     }
 
     private static MailRelayPreflightResult MissingEdgeGatewayResult(bool dnsEditWasTested, DateTimeOffset checkedAtUtc)

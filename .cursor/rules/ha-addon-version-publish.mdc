@@ -1,13 +1,13 @@
 ---
-description: Bump HA add-on version and push to GitHub so Home Assistant can pick up testable updates
+description: Bump HA App version and push to GitHub so Home Assistant can pick up testable updates
 alwaysApply: true
 ---
 
-# Home Assistant add-on publish for testing
+# Home Assistant App publish for testing
 
-This repo is consumed by Home Assistant as an add-on store repository. Local UI/code changes are not testable in HA until they are version-bumped and pushed to GitHub.
+This repo is consumed by Home Assistant as an App (formerly Add-on) store repository. Local UI/code changes are not testable in HA until they are version-bumped and pushed to GitHub.
 
-Home Assistant shows a new add-on version as soon as `config.yaml` is on `origin`. Do **not** wait for GitHub Actions or GHCR image builds to finish. Push and stop. Image publish continues in the background; HA pulls `ghcr.io/lmsowner/lms_edge_gateway-{arch}:<version>` when the user updates.
+Home Assistant shows a new App version as soon as `config.yaml` is on `origin`. Do **not** wait for GitHub Actions or GHCR image builds to finish. Push and stop. Image publish continues in the background; HA pulls `ghcr.io/lmsowner/lms_edge_gateway-{arch}:<version>` when the user updates.
 
 ## Version format
 
@@ -21,8 +21,8 @@ Do not use `0.1.x` patch bumps for Edge Gateway.
 
 ## When the user wants to test in Home Assistant
 
-1. Set the affected add-on version to the current `yyyy.MM.dd.HH.mm` stamp.
-2. Keep version strings aligned across that add-on's metadata and UI fallbacks.
+1. Set the affected App version to the current `yyyy.MM.dd.HH.mm` stamp.
+2. Keep version strings aligned across that App's metadata and UI fallbacks.
 3. Add a concise `CHANGELOG.md` entry for the new version.
 4. Commit the feature/fix plus the version bump.
 5. Push to `origin` (`main` unless told otherwise) and return. Do not poll Actions/GHCR.
@@ -40,7 +40,7 @@ Update these together when publishing `lms_edge_gateway`:
 
 ## Tesla Fleet Helper
 
-If publishing `lms_tesla_fleet_helper`, bump that add-on's matching `config.yaml` / `build.yaml` / `Dockerfile` / `CHANGELOG.md` (and any UI version fallbacks) the same way. Do not bump Tesla when only Edge Gateway changed, and vice versa.
+If publishing `lms_tesla_fleet_helper`, bump that App's matching `config.yaml` / `build.yaml` / `Dockerfile` / `CHANGELOG.md` (and any UI version fallbacks) the same way. Do not bump Tesla when only Edge Gateway changed, and vice versa.
 
 ## Do not
 

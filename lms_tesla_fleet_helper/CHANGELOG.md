@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.42
+
+- Renames user-facing Home Assistant terminology from Add-on to App (Supervisor/API identifiers unchanged).
+
+
 ## 0.2.41
 
 - Adds a full Setup Guide tab covering Edge Gateway domain service setup, Tesla Developer app values, public-key publishing, Partner Account registration, OAuth, virtual-key install, and Home Assistant MQTT setup.
@@ -11,7 +16,7 @@
 
 ## 0.2.39
 
-- Shows the installed Tesla Fleet Helper add-on version discreetly in the header.
+- Shows the installed Tesla Fleet Helper app version discreetly in the header.
 
 ## 0.2.38
 
@@ -141,7 +146,7 @@
 
 ## 0.2.16
 
-- Adds Tesla's official vehicle-command HTTP proxy to the add-on image and supervises it from the Helper using the generated Fleet private key.
+- Adds Tesla's official vehicle-command HTTP proxy to the app image and supervises it from the Helper using the generated Fleet private key.
 - Publishes writable Home Assistant MQTT vehicle controls for charge limit, charging amps, charger, climate, sentry mode, door lock, wake, lights, horn, charge port, frunk, and trunk.
 - Routes vehicle writes through the signed command proxy where Tesla requires the Vehicle Command Protocol, while keeping wake-up on the documented Fleet API vehicle endpoint.
 - Adds documented Energy write controls for Storm watch and Off-grid vehicle charging reserve.
@@ -214,9 +219,9 @@
 
 ## 0.2.4
 
-- Makes LMS Edge Gateway a same-host companion add-on that is auto-detected through the Home Assistant Supervisor API and local health checks.
+- Makes LMS Edge Gateway a same-host companion app that is auto-detected through the Home Assistant Supervisor API and local health checks.
 - Removes normal setup/options fields for Edge Gateway URL and Helper upstream URL.
-- Forces the internal same-host add-on bridge so Tesla setup does not require users to enter IP addresses or ports.
+- Forces the internal same-host app bridge so Tesla setup does not require users to enter IP addresses or ports.
 
 ## 0.2.3
 
@@ -225,12 +230,12 @@
 
 ## 0.2.2
 
-- Adds a companion-link diagnostics action for same-host LMS Edge Gateway add-on installs.
+- Adds a companion-link diagnostics action for same-host LMS Edge Gateway app installs.
 - Verifies both Helper-to-Edge Gateway and Edge Gateway-to-Helper health before publishing Tesla routes.
 
 ## 0.2.1
 
-- Adds a Home Assistant add-on option for the Helper upstream URL used by Edge Gateway OAuth forwarding.
+- Adds a Home Assistant App option for the Helper upstream URL used by Edge Gateway OAuth forwarding.
 - Documents the cross-host Edge Gateway and Helper URL requirements for production Home Assistant testing.
 
 ## 0.2.0
@@ -241,6 +246,6 @@
 
 ## 0.1.0
 
-- Adds the initial LMS Tesla Fleet Helper companion add-on.
+- Adds the initial LMS Tesla Fleet Helper companion app.
 - Generates and stores an EC P-256 Tesla Fleet private key and publishes the public key through LMS Edge Gateway.
 - Shows Tesla Developer Console values, Home Assistant redirect URI guidance, private key export, virtual key URL, and diagnostics.

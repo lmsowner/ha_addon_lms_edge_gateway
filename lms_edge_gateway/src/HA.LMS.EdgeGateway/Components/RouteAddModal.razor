@@ -129,7 +129,7 @@
                                         <span class="ui-field-label">
                                             Idle cut-off (minutes)
                                             <LmsFieldInfo Title="Idle cut-off">
-                                                <p>Minutes without traffic before the grant expires. Blank uses the add-on default, currently 15 minutes.</p>
+                                                <p>Minutes without traffic before the grant expires. Blank uses the app default, currently 15 minutes.</p>
                                             </LmsFieldInfo>
                                         </span>
                                         <input type="number" min="1" max="1440" @bind="addTemporaryIpApprovalIdleTimeoutMinutes" placeholder="15" />
@@ -138,7 +138,7 @@
                                         <span class="ui-field-label">
                                             Maximum expiry (minutes)
                                             <LmsFieldInfo Title="Maximum expiry">
-                                                <p>Absolute lifetime of an approval, even if the client stays active. Blank uses the add-on default, currently 120 minutes.</p>
+                                                <p>Absolute lifetime of an approval, even if the client stays active. Blank uses the app default, currently 120 minutes.</p>
                                             </LmsFieldInfo>
                                         </span>
                                         <input type="number" min="1" max="10080" @bind="addTemporaryIpApprovalMaxLifetimeMinutes" placeholder="120" />
@@ -330,7 +330,7 @@
                             <span class="ui-field-label">
                                 Scheme
                                 <LmsFieldInfo Title="Scheme">
-                                    <p>How Edge Gateway talks to the local app. Use http for most add-ons and LAN services. Use https only if the upstream itself serves TLS.</p>
+                                    <p>How Edge Gateway talks to the local app. Use http for most apps and LAN services. Use https only if the upstream itself serves TLS.</p>
                                 </LmsFieldInfo>
                             </span>
                             <select @bind="addAppTargetScheme">

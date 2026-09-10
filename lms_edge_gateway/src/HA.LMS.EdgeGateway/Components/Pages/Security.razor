@@ -311,7 +311,7 @@
                         <div class="security-section-heading">
                             <div>
                                 <h3>Email delivery</h3>
-                                <p class="meta-text">Configure SMTP, Microsoft Graph, a simple HTTPS email API, or a local Mail Relay domain. Secrets are protected under the add-on data root.</p>
+                                <p class="meta-text">Configure SMTP, Microsoft Graph, a simple HTTPS email API, or a local Mail Relay domain. Secrets are protected under the app data root.</p>
                             </div>
                             <span class="security-status-pill @(page.Messaging.CanSendLoginSetupEmail ? "success" : "warning")">
                                 @(page.Messaging.CanSendLoginSetupEmail ? "Verified" : "Not verified")
@@ -370,7 +370,7 @@
                         {
                             <section class="surface-subcard security-provider-note">
                                 <strong>@FormatMessagingProviderSelection()</strong>
-                                <span>Uses the local Mail Relay already configured for this add-on. No SMTP host, username, or API key is required.</span>
+                                <span>Uses the local Mail Relay already configured for this app. No SMTP host, username, or API key is required.</span>
                                 <span>Mails leave through Postfix with LMS DKIM for @messagingEditor.MailRelaySendingDomain. Ideal for temporary IP approval and account setup emails.</span>
                             </section>
                         }
@@ -1141,7 +1141,7 @@
         MessagingEmailProvider.Brevo => "Simple transactional email API with a generous daily free tier.",
         MessagingEmailProvider.MailerSend => "Transactional email API with a small free monthly allowance.",
         MessagingEmailProvider.Mailgun => "Powerful transactional email API. Requires a verified sending domain.",
-        MessagingEmailProvider.MailRelay => "Local Mail Relay already configured in this add-on. No extra SMTP or API credentials.",
+        MessagingEmailProvider.MailRelay => "Local Mail Relay already configured in this app. No extra SMTP or API credentials.",
         _ => string.Empty
     };
 

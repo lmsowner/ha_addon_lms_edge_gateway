@@ -4,4 +4,4 @@ set -euo pipefail
 
 mkdir -p /data/lms-tesla-fleet-helper /data/lms-tesla-fleet-helper/secrets /data/lms-tesla-fleet-helper/logs
 
-bashio::log.info "Linux Made Sane - Tesla Fleet Helper add-on data prepared."
+bashio::log.info "Linux Made Sane - Tesla Fleet Helper app data prepared."

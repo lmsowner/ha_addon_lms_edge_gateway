@@ -92,7 +92,7 @@ public sealed partial class MailRelayTestService(
 
         if (submission.ExitCode == 127)
         {
-            return await FailedAsync(request, client, testedAt, "Mail Relay tests require the Home Assistant add-on image, where sendmail is installed.", cancellationToken, messageId);
+            return await FailedAsync(request, client, testedAt, "Mail Relay tests require the Home Assistant App image, where sendmail is installed.", cancellationToken, messageId);
         }
 
         if (submission.ExitCode != 0)

@@ -23,12 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Read add-on version
+      - name: Read app version
         id: version
         run: |
           version="$(sed -n 's/^version:[[:space:]]*"\([^"]*\)".*/\1/p' lms_edge_gateway/config.yaml | head -n1)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Build add-on image
+      - name: Build app image
         run: |
           docker build \
             --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest \

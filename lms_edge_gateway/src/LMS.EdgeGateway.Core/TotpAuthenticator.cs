@@ -6,7 +6,7 @@ namespace LMS.EdgeGateway.Core;
 internal static class TotpAuthenticator
 {
     private const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    private const string Issuer = "LMS HA Add-On";
+    private const string Issuer = "LMS HA App";
     private static readonly TimeSpan Step = TimeSpan.FromSeconds(30);
 
     public static string GenerateSecret(int length = 20)

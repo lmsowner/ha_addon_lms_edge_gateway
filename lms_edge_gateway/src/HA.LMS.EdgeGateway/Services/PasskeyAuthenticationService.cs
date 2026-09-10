@@ -166,7 +166,7 @@ public sealed class PasskeyAuthenticationService(
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "Passkey registration failed for add-on LMS user {UserId}.", targetUser.Id);
+            logger.LogWarning(exception, "Passkey registration failed for app LMS user {UserId}.", targetUser.Id);
             return new PasskeyOperationResult(false, "The passkey could not be verified.");
         }
     }
@@ -293,7 +293,7 @@ public sealed class PasskeyAuthenticationService(
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "Passkey sign-in failed for add-on LMS user {UserId}.", user.Id);
+            logger.LogWarning(exception, "Passkey sign-in failed for app LMS user {UserId}.", user.Id);
             return PasskeyLoginResult.Fail("The passkey could not be verified.");
         }
     }

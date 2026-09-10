@@ -161,7 +161,7 @@ public sealed partial class EdgeGatewayEmailDeliveryService(
                 return EmailSendResult.Failed(
                     MessagingEmailProvider.MailRelay,
                     null,
-                    "Mail Relay messaging requires the Home Assistant add-on image, where sendmail is installed.");
+                    "Mail Relay messaging requires the Home Assistant App image, where sendmail is installed.");
             }
 
             if (submission.ExitCode != 0)

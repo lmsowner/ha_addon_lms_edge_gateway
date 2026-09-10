@@ -1,6 +1,6 @@
 # LMS Tesla Fleet Helper
 
-LMS Tesla Fleet Helper is a companion Home Assistant add-on for Tesla Fleet setup.
+LMS Tesla Fleet Helper is a companion Home Assistant App (formerly known as an Add-on) for Tesla Fleet setup.
 
 It owns Tesla-specific behaviour:
 
@@ -14,10 +14,10 @@ It owns Tesla-specific behaviour:
 
 LMS Edge Gateway remains the public HTTPS, Cloudflare, Caddy, and `.well-known` publishing layer. Install this helper on the same Home Assistant server as LMS Edge Gateway.
 
-## Companion add-on setup
+## Companion app setup
 
-Both add-ons should run on the same Home Assistant Supervisor host. The helper auto-detects the LMS Edge Gateway add-on through the Supervisor API and uses the local add-on bridge internally.
+Both apps should run on the same Home Assistant Supervisor host. The helper auto-detects the LMS Edge Gateway app through the Supervisor API and uses the local app bridge internally.
 
-The Tesla origin domain still points at Edge Gateway publicly. Edge Gateway then forwards `/oauth/start`, `/redirect`, and `/oauth/callback` to the helper over the internal same-host add-on bridge.
+The Tesla origin domain still points at Edge Gateway publicly. Edge Gateway then forwards `/oauth/start`, `/redirect`, and `/oauth/callback` to the helper over the internal same-host app bridge.
 
 Use the **Check Edge Gateway link** diagnostics action to confirm both directions are healthy before publishing Tesla routes.

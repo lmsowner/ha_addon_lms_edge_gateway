@@ -650,7 +650,7 @@ public sealed partial class MailRelayProvisioningService(
                 };
             }
 
-            Report("apply", MailRelaySetupStepState.Running, "Writing Postfix, SASL and OpenDKIM configuration for the Home Assistant add-on.");
+            Report("apply", MailRelaySetupStepState.Running, "Writing Postfix, SASL and OpenDKIM configuration for the Home Assistant App.");
             var allDomains = domains.Where(item => item.Id != domain.Id).Append(domain).ToArray();
             var allClients = clients.Where(item => item.Id != client.Id).Append(client).ToArray();
             var dkimKeys = new Dictionary<Guid, string> { [domain.Id] = dkim.PrivateKeyPem };
@@ -669,7 +669,7 @@ public sealed partial class MailRelayProvisioningService(
                 dkimKeys[configuredDomain.Id] = existingKey;
             }
             await WriteConfigurationFilesAsync(configuration, network.BindAddresses, tls.CertificatePem, tls.PrivateKeyPem, allDomains, allClients, dkimKeys, cancellationToken);
-            Report("apply", MailRelaySetupStepState.Complete, "Managed configuration files are written under the add-on data directory.");
+            Report("apply", MailRelaySetupStepState.Complete, "Managed configuration files are written under the app data directory.");
 
             Report("config", MailRelaySetupStepState.Running, "Writing managed Postfix, SMTP AUTH, sender restriction and OpenDKIM configuration.");
             RestrictConfigurationAccess();
@@ -1550,7 +1550,7 @@ public sealed partial class MailRelayProvisioningService(
         if (missing.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Mail Relay requires {string.Join(", ", missing)} on this Home Assistant add-on host. These packages are provided by the LMS Edge Gateway add-on image.");
+                $"Mail Relay requires {string.Join(", ", missing)} on this Home Assistant App host. These packages are provided by the LMS Edge Gateway App image.");
         }
 
         return "Postfix, OpenDKIM and SASL are present on this host.";
@@ -2692,7 +2692,7 @@ public sealed partial class MailRelayProvisioningService(
         if (!File.Exists(paths.ApplyScriptPath))
         {
             throw new InvalidOperationException(
-                "Mail Relay runs in the Home Assistant add-on image. The apply script /usr/local/bin/lms-mail-relay-apply was not found on this machine.");
+                "Mail Relay runs in the Home Assistant App image. The apply script /usr/local/bin/lms-mail-relay-apply was not found on this machine.");
         }
 
         await RunRequiredAsync(

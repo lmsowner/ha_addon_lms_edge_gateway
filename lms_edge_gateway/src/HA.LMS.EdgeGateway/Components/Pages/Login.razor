@@ -1,7 +1,7 @@
 @page "/login"
 @layout AuthLayout
 
-<PageTitle>LMS HA Add-On Login</PageTitle>
+<PageTitle>LMS HA App Login</PageTitle>
 
 <div class="auth-login-shell" data-auth-method="@InitialAuthMethod">
     <section class="auth-login-showcase">
@@ -11,7 +11,7 @@
     <section class="auth-login-panel">
         <div class="auth-login-card">
             <div class="auth-login-heading">
-                <p class="eyebrow">LMS HA Add-On</p>
+                <p class="eyebrow">LMS HA App</p>
                 <h2>@(ShouldShowPasskeySetup ? "Save a passkey" : "Welcome back!")</h2>
                 <p>@(ShouldShowPasskeySetup ? "Use this device for faster MFA next time." : "Sign in to LMS Edge Gateway for Home Assistant")</p>
             </div>
@@ -235,7 +235,7 @@
             enrollButton.disabled = true;
             setStatus(status, "Waiting for device passkey setup...");
             try {
-                const label = email ? `LMS HA Add-On passkey for ${email}` : "LMS HA Add-On passkey";
+                const label = email ? `LMS HA App passkey for ${email}` : "LMS HA App passkey";
                 const result = await window.lmsEdgePasskeys.enrollCurrentUser(label);
                 if (!result.succeeded) {
                     setStatus(status, result.message || "Passkey setup failed.", true);
