@@ -46,9 +46,14 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     [
         443, 5001, 7443, 8043, 8443, 8920, 9443, 10443
     ];
+
+    // Alternate HTTPS admin UIs often bind Nxxx443 (e.g. 8443, 10443, 11443) without advertising.
+    private static readonly int[] HttpsConventionPorts = BuildHttpsConventionPorts();
+
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMilliseconds(1500);
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(450);
     private static readonly TimeSpan ProbePaceDelay = TimeSpan.Zero;
+    private const int MaxRedirectFollowPortsPerHost = 8;
     private readonly SemaphoreSlim cacheMutationLock = new(1, 1);
 
     private const int MaxFaviconBytes = 32_768;
@@ -538,46 +543,156 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             }
 
             progressState.IncrementLiveCount();
-            var ports = BuildPortsForHost(host, settings);
-            var priorityPorts = ports.Where(CommonHomelabPortSet.Contains).ToArray();
-            var remainingPorts = ports.Where(port => !CommonHomelabPortSet.Contains(port)).ToArray();
+            var candidates = BuildPortsForHost(host, settings);
+            var openPorts = host.ProbeAddress is null
+                ? candidates
+                : await FindOpenTcpPortsAsync(host.ProbeAddress, candidates, tcpConcurrency, cancellationToken);
+            var priorityPorts = openPorts.Where(CommonHomelabPortSet.Contains).ToArray();
+            var remainingPorts = openPorts.Where(port => !CommonHomelabPortSet.Contains(port)).ToArray();
             progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                $"Live host {host.ProbeAddressName}; scanning {ports.Count} HTTP/S port(s) (common homelab ports first).",
+                $"Live host {host.ProbeAddressName}; {openPorts.Count}/{candidates.Count} TCP port(s) open — probing HTTP/S (common ports first).",
                 progressState.CheckedCount,
                 progressState.TotalHostCount,
                 progressState.FoundCount));
 
-            await Task.WhenAll(priorityPorts.Select(port => ProbeServicePortAsync(
+            var probedPorts = new ConcurrentDictionary<int, byte>();
+            var redirectPorts = new ConcurrentBag<int>();
+
+            await ProbePortSetAsync(
                 host,
-                port,
+                priorityPorts,
+                probedPorts,
+                redirectPorts,
                 serviceConcurrency,
                 results,
                 progressState,
                 progress,
-                cancellationToken)));
+                cancellationToken);
 
             if (remainingPorts.Length > 0)
             {
-                await Task.WhenAll(remainingPorts.Select(port => ProbeServicePortAsync(
+                await ProbePortSetAsync(
                     host,
-                    port,
+                    remainingPorts,
+                    probedPorts,
+                    redirectPorts,
                     serviceConcurrency,
                     results,
                     progressState,
                     progress,
-                    cancellationToken)));
+                    cancellationToken);
             }
+
+            await FollowRedirectPortsAsync(
+                host,
+                redirectPorts,
+                probedPorts,
+                tcpConcurrency,
+                serviceConcurrency,
+                results,
+                progressState,
+                progress,
+                cancellationToken);
         }
 
-        private static async Task ProbeServicePortAsync(
+        private static async Task ProbePortSetAsync(
             ProbeHost host,
-            int port,
+            IReadOnlyList<int> ports,
+            ConcurrentDictionary<int, byte> probedPorts,
+            ConcurrentBag<int> redirectPorts,
             SemaphoreSlim serviceConcurrency,
             ConcurrentBag<DiscoveryEvidence> results,
             HostDiscoveryProgressState progressState,
             IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
             CancellationToken cancellationToken)
         {
+            if (ports.Count == 0)
+            {
+                return;
+            }
+
+            await Task.WhenAll(ports.Select(port => ProbeServicePortAsync(
+                host,
+                port,
+                probedPorts,
+                redirectPorts,
+                serviceConcurrency,
+                results,
+                progressState,
+                progress,
+                cancellationToken)));
+        }
+
+        private static async Task FollowRedirectPortsAsync(
+            ProbeHost host,
+            ConcurrentBag<int> redirectPorts,
+            ConcurrentDictionary<int, byte> probedPorts,
+            SemaphoreSlim tcpConcurrency,
+            SemaphoreSlim serviceConcurrency,
+            ConcurrentBag<DiscoveryEvidence> results,
+            HostDiscoveryProgressState progressState,
+            IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
+            CancellationToken cancellationToken)
+        {
+            var pending = new List<int>();
+            while (redirectPorts.TryTake(out var port) && pending.Count < MaxRedirectFollowPortsPerHost)
+            {
+                if (!probedPorts.ContainsKey(port) && !pending.Contains(port))
+                {
+                    pending.Add(port);
+                }
+            }
+
+            if (pending.Count == 0)
+            {
+                return;
+            }
+
+            IReadOnlyList<int> openPending = host.ProbeAddress is null
+                ? pending
+                : await FindOpenTcpPortsAsync(host.ProbeAddress, pending, tcpConcurrency, cancellationToken);
+
+            if (openPending.Count == 0)
+            {
+                return;
+            }
+
+            progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
+                $"Live host {host.ProbeAddressName}; following {openPending.Count} redirect-discovered port(s).",
+                progressState.CheckedCount,
+                progressState.TotalHostCount,
+                progressState.FoundCount));
+
+            // Do not chain further redirects from this pass — one hop is enough to catch moved UIs.
+            var ignoredNested = new ConcurrentBag<int>();
+            await ProbePortSetAsync(
+                host,
+                openPending,
+                probedPorts,
+                ignoredNested,
+                serviceConcurrency,
+                results,
+                progressState,
+                progress,
+                cancellationToken);
+        }
+
+        private static async Task ProbeServicePortAsync(
+            ProbeHost host,
+            int port,
+            ConcurrentDictionary<int, byte> probedPorts,
+            ConcurrentBag<int> redirectPorts,
+            SemaphoreSlim serviceConcurrency,
+            ConcurrentBag<DiscoveryEvidence> results,
+            HostDiscoveryProgressState progressState,
+            IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
+            CancellationToken cancellationToken)
+        {
+            if (!probedPorts.TryAdd(port, 0))
+            {
+                return;
+            }
+
             await serviceConcurrency.WaitAsync(cancellationToken);
             try
             {
@@ -590,6 +705,11 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 foreach (var evidence in probeResults.Where(evidence => evidence is not null).Cast<DiscoveryEvidence>())
                 {
                     results.Add(evidence);
+                    foreach (var redirectPort in ExtractSameHostRedirectPorts(host, evidence))
+                    {
+                        redirectPorts.Add(redirectPort);
+                    }
+
                     var foundCount = progressState.IncrementFoundCount();
                     progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
                         $"HTTP/S response at {evidence.Host}:{evidence.Port}.",
@@ -674,12 +794,15 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
         private static IReadOnlyList<ProbeHost> BuildLocalhostHosts()
         {
+            // Keep every loopback listener — do not filter through the allowlist or services like
+            // UniFi OS (:11443) are discarded before HTTP probing can run.
             var ports = IPGlobalProperties.GetIPGlobalProperties()
                 .GetActiveTcpListeners()
                 .Where(endpoint => IPAddress.IsLoopback(endpoint.Address))
                 .Select(endpoint => endpoint.Port)
+                .Where(port => port is > 0 and <= 65535)
                 .Distinct()
-                .Intersect(CommonHomelabPorts.Concat(ExpandedPorts))
+                .Order()
                 .ToArray();
 
             return ports.Length == 0
@@ -2564,7 +2687,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private static IReadOnlyList<int> BuildBaseScanPorts(DiscoverySettings settings)
     {
-        var ports = new List<int>(CommonHomelabPorts.Length + ExpandedPorts.Length + settings.AdditionalPorts.Count);
+        var ports = new List<int>(CommonHomelabPorts.Length + HttpsConventionPorts.Length + ExpandedPorts.Length + settings.AdditionalPorts.Count);
 
         void AddRange(IEnumerable<int> values)
         {
@@ -2578,6 +2701,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         }
 
         AddRange(CommonHomelabPorts);
+        AddRange(HttpsConventionPorts);
         if (settings.EnableExpandedLanDiscovery)
         {
             AddRange(ExpandedPorts);
@@ -2589,7 +2713,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private static IReadOnlyList<int> BuildPortsForHost(ProbeHost host, DiscoverySettings settings)
     {
-        var ports = new List<int>(CommonHomelabPorts.Length + host.KnownPorts.Count + 8);
+        var ports = new List<int>(CommonHomelabPorts.Length + HttpsConventionPorts.Length + host.KnownPorts.Count + 8);
 
         void AddRange(IEnumerable<int> values)
         {
@@ -2605,6 +2729,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         // Common homelab ports always come first for every IP.
         AddRange(CommonHomelabPorts);
         AddRange(host.KnownPorts);
+        // Learn alternate HTTPS admin ports (Nxxx443) without hardcoding a single product port.
+        AddRange(HttpsConventionPorts);
         if (settings.EnableExpandedLanDiscovery)
         {
             AddRange(ExpandedPorts);
@@ -2614,9 +2740,24 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         return ports;
     }
 
+    private static int[] BuildHttpsConventionPorts()
+    {
+        var ports = new List<int>(64);
+        for (var thousands = 1; thousands <= 64; thousands++)
+        {
+            var port = thousands * 1000 + 443;
+            if (port is > 0 and <= 65535)
+            {
+                ports.Add(port);
+            }
+        }
+
+        return ports.ToArray();
+    }
+
     private static IEnumerable<string> GuessSchemes(int port)
     {
-        if (HttpsPreferredPorts.Contains(port))
+        if (PrefersHttps(port))
         {
             yield return Uri.UriSchemeHttps;
             yield return Uri.UriSchemeHttp;
@@ -2629,7 +2770,65 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     }
 
     private static string GuessSchemeFromPort(int port) =>
-        HttpsPreferredPorts.Contains(port) ? Uri.UriSchemeHttps : Uri.UriSchemeHttp;
+        PrefersHttps(port) ? Uri.UriSchemeHttps : Uri.UriSchemeHttp;
+
+    private static bool PrefersHttps(int port) =>
+        port == 443 ||
+        HttpsPreferredPorts.Contains(port) ||
+        port % 1000 == 443;
+
+    private static async Task<IReadOnlyList<int>> FindOpenTcpPortsAsync(
+        IPAddress address,
+        IReadOnlyList<int> ports,
+        SemaphoreSlim tcpConcurrency,
+        CancellationToken cancellationToken)
+    {
+        var open = new ConcurrentBag<int>();
+        await Task.WhenAll(ports.Distinct().Select(async port =>
+        {
+            if (await CanOpenTcpWithLimitAsync(address, port, tcpConcurrency, cancellationToken))
+            {
+                open.Add(port);
+            }
+        }));
+
+        return ports.Where(open.Contains).Distinct().ToArray();
+    }
+
+    private static IEnumerable<int> ExtractSameHostRedirectPorts(ProbeHost host, DiscoveryEvidence evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence.RedirectLocation) ||
+            !Uri.TryCreate(evidence.RedirectLocation, UriKind.Absolute, out var location) ||
+            location.Scheme is not ("http" or "https") ||
+            location.Port <= 0 ||
+            location.Port == evidence.Port)
+        {
+            yield break;
+        }
+
+        if (!IsSameDiscoveryHost(host, evidence, location.Host))
+        {
+            yield break;
+        }
+
+        yield return location.Port;
+    }
+
+    private static bool IsSameDiscoveryHost(ProbeHost host, DiscoveryEvidence evidence, string redirectHost)
+    {
+        var candidates = new[]
+        {
+            host.ProbeAddressName,
+            host.TargetHost,
+            host.IpAddress,
+            evidence.Host,
+            evidence.IpAddress
+        };
+
+        return candidates.Any(candidate =>
+            !string.IsNullOrWhiteSpace(candidate) &&
+            candidate.Equals(redirectHost, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static async Task<bool> CanOpenTcpAsync(IPAddress address, int port, CancellationToken cancellationToken)
     {

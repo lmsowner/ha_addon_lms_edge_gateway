@@ -284,6 +284,76 @@ public sealed class LocalHttpServiceDiscoveryTests
         Assert.Equal(commonPorts.Take(3), ports.Take(3));
         Assert.Contains(65500, ports);
         Assert.True(Array.IndexOf(ports, 8123) < Array.IndexOf(ports, 65500));
+        Assert.Contains(11443, ports);
+    }
+
+    [Fact]
+    public void Https_convention_ports_cover_alternate_admin_https_without_product_hardcoding()
+    {
+        var field = typeof(LocalHttpServiceDiscoveryService)
+            .GetField("HttpsConventionPorts", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(field);
+        var ports = Assert.IsType<int[]>(field.GetValue(null));
+
+        Assert.Contains(8443, ports);
+        Assert.Contains(10443, ports);
+        Assert.Contains(11443, ports);
+        Assert.DoesNotContain(80, ports);
+        Assert.DoesNotContain(8123, ports);
+    }
+
+    [Fact]
+    public void Same_host_redirect_ports_are_extracted_for_follow_up_probes()
+    {
+        var probeHostType = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("ProbeHost", BindingFlags.NonPublic);
+        Assert.NotNull(probeHostType);
+        var host = Activator.CreateInstance(
+            probeHostType,
+            "192.168.15.20",
+            IPAddress.Parse("192.168.15.20"),
+            "unifi",
+            "LAN",
+            "192.168.15.20",
+            "unifi",
+            false,
+            true,
+            (IReadOnlyList<int>)[8443]);
+        Assert.NotNull(host);
+
+        var evidenceType = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("DiscoveryEvidence", BindingFlags.NonPublic);
+        Assert.NotNull(evidenceType);
+        var evidence = Activator.CreateInstance(
+            evidenceType,
+            "LAN discovery",
+            "LAN",
+            "unifi",
+            8443,
+            "https",
+            "UniFi",
+            "unifi",
+            90,
+            DiscoveryExposure.RequiresManualConfirmation,
+            true,
+            "unifi",
+            302,
+            "UniFi",
+            null,
+            "https://unifi:11443/",
+            null,
+            null,
+            null,
+            "unifi",
+            "192.168.15.20",
+            null);
+        Assert.NotNull(evidence);
+
+        var method = typeof(LocalHttpServiceDiscoveryService)
+            .GetMethod("ExtractSameHostRedirectPorts", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        var ports = Assert.IsAssignableFrom<IEnumerable<int>>(method.Invoke(null, [host, evidence])).ToArray();
+        Assert.Equal([11443], ports);
     }
 
     [Theory]
