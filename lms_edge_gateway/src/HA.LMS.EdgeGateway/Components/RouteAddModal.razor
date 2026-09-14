@@ -1147,7 +1147,8 @@
         services
             .GroupBy(BuildHttpServiceKey, StringComparer.OrdinalIgnoreCase)
             .Select(SelectPreferredHttpServiceEndpoint)
-            .OrderBy(service => service.Exposure switch
+            .OrderBy(service => LocalHttpServiceDiscoveryRanking.TitleQualityRank(service.Title))
+            .ThenBy(service => service.Exposure switch
             {
                 DiscoveryExposure.Publishable => 0,
                 DiscoveryExposure.RequiresManualConfirmation => 1,
@@ -1181,7 +1182,9 @@
 
     private static LocalHttpServiceEndpoint SelectPreferredHttpServiceEndpoint(IEnumerable<LocalHttpServiceEndpoint> services) =>
         services
-            .OrderByDescending(service => service.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(service => LocalHttpServiceDiscoveryRanking.TitleQualityRank(service.Title))
+            .ThenByDescending(service => !string.IsNullOrWhiteSpace(service.FaviconDataUrl))
+            .ThenByDescending(service => service.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             .ThenByDescending(service => service.Confidence)
             .ThenByDescending(service => service.DiscoveredAtUtc ?? DateTimeOffset.MinValue)
             .First();
@@ -1191,10 +1194,13 @@
 
     private static string BuildRouteNameFromDiscoveredService(LocalHttpServiceEndpoint service)
     {
+        var goodTitle = LocalHttpServiceDiscoveryRanking.TitleQualityRank(service.Title) == 0
+            ? service.Title
+            : null;
         var name = FirstNonBlank(
+            goodTitle,
             service.ServiceKind.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ? null : service.ServiceName,
             service.ServiceName,
-            service.Title,
             "Published Service");
         return name ?? "Published Service";
     }

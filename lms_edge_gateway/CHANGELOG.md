@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.14.17.01
+
+- HTTP/S discovery shows stamp cards with title, host/IP:port, and favicon when available; services with real titles sort above empty or error-page titles.
+
+
 ## 2026.09.10.17.46
 
 - Renames user-facing Home Assistant terminology from Add-on to App (Supervisor/API identifiers unchanged).

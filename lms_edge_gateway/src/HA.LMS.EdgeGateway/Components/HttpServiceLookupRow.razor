@@ -1,22 +1,27 @@
 @namespace HA.LMS.EdgeGateway.Components
 
-<section class="http-service-lookup-row" role="listitem" title="@DetailsTitle">
-    <div class="http-service-lookup-fact">
-        <span>Hostname</span>
-        <strong>@Service.Host</strong>
-    </div>
-    <div class="http-service-lookup-fact">
-        <span>Target</span>
-        <strong>@TargetLabel</strong>
-    </div>
-    <button class="http-service-lookup-use"
-            type="button"
-            title="@UseTitle"
-            disabled="@IsBlocked"
-            @onclick="HandleUseAsync">
-        <span>Select</span>
-    </button>
-</section>
+<button class="http-service-stamp @(IsBlocked ? "is-blocked" : null) @(HasPoorTitle ? "is-poor-title" : null)"
+        type="button"
+        role="listitem"
+        title="@DetailsTitle"
+        disabled="@IsBlocked"
+        @onclick="HandleUseAsync">
+    <span class="http-service-stamp-icon" aria-hidden="true">
+        @if (!string.IsNullOrWhiteSpace(Service.FaviconDataUrl))
+        {
+            <img src="@Service.FaviconDataUrl" alt="" loading="lazy" />
+        }
+        else
+        {
+            <span class="http-service-stamp-icon-fallback">@FallbackGlyph</span>
+        }
+    </span>
+    <span class="http-service-stamp-body">
+        <strong class="http-service-stamp-title">@PrimaryLabel</strong>
+        <span class="http-service-stamp-meta">@HostLabel:@Service.Port</span>
+        <span class="http-service-stamp-scheme">@Service.Scheme</span>
+    </span>
+</button>
 
 @code {
     [Parameter, EditorRequired] public LocalHttpServiceEndpoint Service { get; set; } = default!;
@@ -24,8 +29,33 @@
 
     private bool IsBlocked => Service.Exposure == DiscoveryExposure.UnsafeToExpose;
 
-    private string TargetLabel =>
-        $"{Service.Scheme}://{FirstNonBlank(Service.IpAddress, Service.Host) ?? Service.Host}:{Service.Port}";
+    private bool HasPoorTitle => LocalHttpServiceDiscoveryRanking.TitleQualityRank(Service.Title) > 0;
+
+    private string HostLabel =>
+        FirstNonBlank(Service.Host, Service.IpAddress, Service.DisplayName) ?? Service.Host;
+
+    private string PrimaryLabel
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Service.Title) &&
+                !LocalHttpServiceDiscoveryRanking.LooksLikeErrorTitle(Service.Title))
+            {
+                return Service.Title.Trim();
+            }
+
+            return FirstNonBlank(Service.ServiceName, Service.DisplayName, HostLabel) ?? HostLabel;
+        }
+    }
+
+    private string FallbackGlyph
+    {
+        get
+        {
+            var label = PrimaryLabel.Trim();
+            return string.IsNullOrEmpty(label) ? "?" : char.ToUpperInvariant(label[0]).ToString();
+        }
+    }
 
     private string DetailsTitle
     {
@@ -52,10 +82,6 @@
             return string.Join(" | ", parts);
         }
     }
-
-    private string UseTitle => IsBlocked
-        ? "Not selectable by discovery policy."
-        : $"Select {Service.Url}";
 
     private static void AddIfPresent(List<string> parts, string label, string? value)
     {

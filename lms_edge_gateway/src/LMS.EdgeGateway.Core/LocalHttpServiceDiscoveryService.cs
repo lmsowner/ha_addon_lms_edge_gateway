@@ -27,8 +27,16 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     private static readonly TimeSpan ProbePaceDelay = TimeSpan.Zero;
     private readonly SemaphoreSlim cacheMutationLock = new(1, 1);
 
+    private const int MaxFaviconBytes = 32_768;
+
     [GeneratedRegex("<title[^>]*>\\s*(?<title>.*?)\\s*</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex TitleRegex();
+
+    [GeneratedRegex("""<link[^>]+rel\s*=\s*["']?(?:shortcut\s+)?(?:apple-touch-)?icon["']?[^>]*>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex FaviconLinkTagRegex();
+
+    [GeneratedRegex("""href\s*=\s*["'](?<href>[^"']+)["']""", RegexOptions.IgnoreCase)]
+    private static partial Regex FaviconHrefRegex();
 
     public async Task<IReadOnlyList<LocalHttpServiceEndpoint>> GetCachedAsync(CancellationToken cancellationToken = default) =>
         SortEndpoints(await ReadCacheAsync(cancellationToken));
@@ -193,7 +201,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     private static IReadOnlyList<LocalHttpServiceEndpoint> SortEndpoints(IEnumerable<LocalHttpServiceEndpoint> endpoints) =>
         endpoints
             .DistinctBy(BuildEndpointKey, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(endpoint => endpoint.Exposure switch
+            .OrderBy(endpoint => LocalHttpServiceDiscoveryRanking.TitleQualityRank(endpoint.Title))
+            .ThenBy(endpoint => endpoint.Exposure switch
             {
                 DiscoveryExposure.Publishable => 0,
                 DiscoveryExposure.RequiresManualConfirmation => 1,
@@ -1917,6 +1926,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                         ServerHeader = match.ServerHeader,
                         TlsSubject = match.TlsSubject,
                         FaviconHash = match.FaviconHash,
+                        FaviconDataUrl = match.FaviconDataUrl,
                         RedirectLocation = match.RedirectLocation,
                         StatusCode = match.StatusCode,
                         IpAddress = match.IpAddress,
@@ -1978,7 +1988,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 best.ServiceKind,
                 exposure,
                 FirstNonBlank(best.Fingerprint, $"{best.ServiceKind}:{best.Port}") ?? $"{best.ServiceKind}:{best.Port}",
-                group.SelectMany(item => item.Notes ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+                group.SelectMany(item => item.Notes ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                FirstNonBlank(group.Select(item => item.FaviconDataUrl).FirstOrDefault(url => !string.IsNullOrWhiteSpace(url)), best.FaviconDataUrl));
         }
     }
 
@@ -1998,15 +2009,16 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 using var request = new HttpRequestMessage(HttpMethod.Get, $"{probeUrl}/");
                 request.Headers.UserAgent.ParseAdd("LinuxMadeSane-capability-discovery");
                 using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-                var title = await TryReadTitleAsync(response, timeout.Token);
+                var pageHtml = await TryReadPageHtmlAsync(response, timeout.Token);
+                var title = TryExtractTitle(pageHtml);
                 var redirect = response.Headers.Location?.ToString() ?? string.Empty;
                 var server = response.Headers.Server.ToString();
-                var faviconHash = await TryReadFaviconHashAsync(Client, probeUrl, timeout.Token);
+                var favicon = await TryReadFaviconAsync(Client, probeUrl, pageHtml, timeout.Token);
                 var tlsSubject = scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
                     ? await TryReadTlsSubjectAsync(host.ProbeAddressName, port, timeout.Token)
                     : string.Empty;
                 var displayHost = await ResolveHostNameAsync(host, cancellationToken);
-                var fingerprint = FingerprintRules.Fingerprint(title, server, redirect, faviconHash, tlsSubject, port);
+                var fingerprint = FingerprintRules.Fingerprint(title, server, redirect, favicon.Hash, tlsSubject, port);
                 var notes = displayHost.Equals(host.TargetHost, StringComparison.OrdinalIgnoreCase)
                     ? fingerprint.Notes
                     : fingerprint.Notes.Concat([$"DNS hostname: {displayHost}."]).ToArray();
@@ -2030,7 +2042,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     ServerHeader: server,
                     RedirectLocation: redirect,
                     TlsSubject: tlsSubject,
-                    FaviconHash: faviconHash,
+                    FaviconHash: favicon.Hash,
+                    FaviconDataUrl: favicon.DataUrl,
                     DisplayName: host.DisplayName,
                     IpAddress: host.IpAddress,
                     Notes: notes);
@@ -2234,9 +2247,12 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         string? RedirectLocation = null,
         string? TlsSubject = null,
         string? FaviconHash = null,
+        string? FaviconDataUrl = null,
         string? DisplayName = null,
         string? IpAddress = null,
         IReadOnlyList<string>? Notes = null);
+
+    private sealed record FaviconProbeResult(string Hash, string? DataUrl);
 
     private sealed record FingerprintResult(
         string Name,
@@ -2464,7 +2480,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         }
     }
 
-    private static async Task<string?> TryReadTitleAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<string?> TryReadPageHtmlAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.Content.Headers.ContentLength > 128_000)
         {
@@ -2476,14 +2492,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var buffer = new byte[16_384];
             var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            if (read <= 0)
-            {
-                return null;
-            }
-
-            var text = Encoding.UTF8.GetString(buffer, 0, read);
-            var match = TitleRegex().Match(text);
-            return match.Success ? WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()) : null;
+            return read <= 0 ? null : Encoding.UTF8.GetString(buffer, 0, read);
         }
         catch
         {
@@ -2491,25 +2500,165 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         }
     }
 
-    private static async Task<string> TryReadFaviconHashAsync(HttpClient client, string baseUrl, CancellationToken cancellationToken)
+    private static string? TryExtractTitle(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return null;
+        }
+
+        var match = TitleRegex().Match(html);
+        return match.Success ? WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()) : null;
+    }
+
+    private static async Task<FaviconProbeResult> TryReadFaviconAsync(
+        HttpClient client,
+        string baseUrl,
+        string? pageHtml,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidateUrl in BuildFaviconCandidateUrls(baseUrl, pageHtml))
+        {
+            var result = await TryDownloadFaviconAsync(client, candidateUrl, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(result.Hash) || !string.IsNullOrWhiteSpace(result.DataUrl))
+            {
+                return result;
+            }
+        }
+
+        return new FaviconProbeResult(string.Empty, null);
+    }
+
+    private static IEnumerable<string> BuildFaviconCandidateUrls(string baseUrl, string? pageHtml)
+    {
+        yield return $"{baseUrl.TrimEnd('/')}/favicon.ico";
+
+        if (string.IsNullOrWhiteSpace(pageHtml))
+        {
+            yield break;
+        }
+
+        foreach (Match tagMatch in FaviconLinkTagRegex().Matches(pageHtml))
+        {
+            var hrefMatch = FaviconHrefRegex().Match(tagMatch.Value);
+            if (!hrefMatch.Success)
+            {
+                continue;
+            }
+
+            var href = WebUtility.HtmlDecode(hrefMatch.Groups["href"].Value.Trim());
+            if (string.IsNullOrWhiteSpace(href) ||
+                href.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (Uri.TryCreate(href, UriKind.Absolute, out var absolute) &&
+                (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+            {
+                yield return absolute.ToString();
+                continue;
+            }
+
+            if (Uri.TryCreate(new Uri(baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/"), href, out var resolved))
+            {
+                yield return resolved.ToString();
+            }
+        }
+    }
+
+    private static async Task<FaviconProbeResult> TryDownloadFaviconAsync(
+        HttpClient client,
+        string faviconUrl,
+        CancellationToken cancellationToken)
     {
         try
         {
-            using var response = await client.GetAsync($"{baseUrl}/favicon.ico", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await client.GetAsync(faviconUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                return string.Empty;
+                return new FaviconProbeResult(string.Empty, null);
+            }
+
+            var contentType = response.Content.Headers.ContentType?.MediaType?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(contentType) &&
+                !contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) &&
+                !contentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase) &&
+                !contentType.Equals("text/plain", StringComparison.OrdinalIgnoreCase))
+            {
+                // Some servers mislabel ico as text/plain; reject clear HTML/JSON payloads.
+                if (contentType.Contains("html", StringComparison.OrdinalIgnoreCase) ||
+                    contentType.Contains("json", StringComparison.OrdinalIgnoreCase) ||
+                    contentType.Contains("xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new FaviconProbeResult(string.Empty, null);
+                }
             }
 
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            return bytes.Length == 0 || bytes.Length > 128_000
-                ? string.Empty
-                : Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            if (bytes.Length == 0 || bytes.Length > 128_000)
+            {
+                return new FaviconProbeResult(string.Empty, null);
+            }
+
+            var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            if (bytes.Length > MaxFaviconBytes)
+            {
+                return new FaviconProbeResult(hash, null);
+            }
+
+            var mediaType = string.IsNullOrWhiteSpace(contentType) ||
+                            contentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase) ||
+                            contentType.Equals("text/plain", StringComparison.OrdinalIgnoreCase)
+                ? GuessFaviconMediaType(faviconUrl, bytes)
+                : contentType;
+
+            return new FaviconProbeResult(hash, $"data:{mediaType};base64,{Convert.ToBase64String(bytes)}");
         }
         catch
         {
-            return string.Empty;
+            return new FaviconProbeResult(string.Empty, null);
         }
+    }
+
+    private static string GuessFaviconMediaType(string faviconUrl, byte[] bytes)
+    {
+        if (bytes.Length >= 8 &&
+            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+        {
+            return "image/png";
+        }
+
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+        {
+            return "image/jpeg";
+        }
+
+        if (bytes.Length >= 4 &&
+            ((bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) ||
+             (bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0x01 && bytes[3] == 0x00)))
+        {
+            return bytes[0] == 0x47 ? "image/gif" : "image/x-icon";
+        }
+
+        if (faviconUrl.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ||
+            (bytes.Length > 4 && Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 64)).Contains("<svg", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "image/svg+xml";
+        }
+
+        if (faviconUrl.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+        {
+            return "image/png";
+        }
+
+        if (faviconUrl.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            faviconUrl.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+        {
+            return "image/jpeg";
+        }
+
+        return "image/x-icon";
     }
 
     private static async Task<string> TryReadTlsSubjectAsync(string host, int port, CancellationToken cancellationToken)

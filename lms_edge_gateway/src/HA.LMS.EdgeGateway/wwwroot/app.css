@@ -1988,6 +1988,15 @@ textarea {
     line-height: 1.35;
 }
 
+.http-service-lookup-list {
+    display: grid;
+    gap: 0.55rem;
+    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+    max-height: min(50vh, 28rem);
+    overflow: auto;
+    padding-right: 0.1rem;
+}
+
 .edge-http-service-list {
     display: grid;
     gap: 0.24rem;
@@ -1998,6 +2007,93 @@ textarea {
 
 .edge-http-service-empty {
     margin: 0;
+}
+
+.http-service-stamp {
+    align-items: center;
+    background: var(--surface-row);
+    border: 1px solid var(--color-line);
+    border-radius: 0.55rem;
+    color: inherit;
+    cursor: pointer;
+    display: grid;
+    gap: 0.55rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 4.1rem;
+    padding: 0.55rem 0.6rem;
+    text-align: left;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.http-service-stamp:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--surface-row) 82%, var(--color-accent, #3b82f6) 18%);
+    border-color: color-mix(in srgb, var(--color-line) 55%, var(--color-accent, #3b82f6) 45%);
+}
+
+.http-service-stamp:disabled,
+.http-service-stamp.is-blocked {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.http-service-stamp.is-poor-title {
+    opacity: 0.82;
+}
+
+.http-service-stamp-icon {
+    align-items: center;
+    background: color-mix(in srgb, var(--surface-row) 70%, #000 8%);
+    border: 1px solid var(--color-line);
+    border-radius: 0.42rem;
+    display: grid;
+    flex-shrink: 0;
+    height: 2.15rem;
+    justify-items: center;
+    overflow: hidden;
+    width: 2.15rem;
+}
+
+.http-service-stamp-icon img {
+    display: block;
+    height: 100%;
+    object-fit: contain;
+    width: 100%;
+}
+
+.http-service-stamp-icon-fallback {
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.http-service-stamp-body {
+    display: grid;
+    gap: 0.12rem;
+    min-width: 0;
+}
+
+.http-service-stamp-title {
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.http-service-stamp-meta,
+.http-service-stamp-scheme {
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.http-service-stamp-scheme {
+    text-transform: uppercase;
 }
 
 .http-service-lookup-row {
@@ -4348,6 +4444,10 @@ textarea {
 
     .edge-modal-header {
         padding-right: 3.4rem;
+    }
+
+    .http-service-lookup-list {
+        grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
     }
 
     .http-service-lookup-row {

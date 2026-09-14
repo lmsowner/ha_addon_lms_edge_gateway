@@ -231,6 +231,73 @@ public sealed class LocalHttpServiceDiscoveryTests
         Assert.Equal(["192.168.15.1", "192.168.15.2"], addresses.Select(address => address.ToString()));
     }
 
+    [Theory]
+    [InlineData("Home Assistant", 0)]
+    [InlineData("Proxmox Virtual Environment", 0)]
+    [InlineData(null, 2)]
+    [InlineData("", 2)]
+    [InlineData("   ", 2)]
+    [InlineData("404 Not Found", 2)]
+    [InlineData("Error", 2)]
+    [InlineData("403 Forbidden", 2)]
+    [InlineData("HTTP 500 Internal Server Error", 2)]
+    [InlineData("Unauthorized", 2)]
+    public void Title_quality_rank_prefers_real_titles_over_empty_or_error_pages(string? title, int expectedRank)
+    {
+        Assert.Equal(expectedRank, LocalHttpServiceDiscoveryRanking.TitleQualityRank(title));
+    }
+
+    [Fact]
+    public void Sort_endpoints_places_good_titles_before_empty_and_error_titles()
+    {
+        var good = new LocalHttpServiceEndpoint(
+            "http://192.168.1.10:8123",
+            "http",
+            "homeassistant.local",
+            8123,
+            200,
+            "Home Assistant",
+            null,
+            Scope: "LAN",
+            IpAddress: "192.168.1.10",
+            Confidence: 50);
+
+        var empty = new LocalHttpServiceEndpoint(
+            "http://192.168.1.20:8080",
+            "http",
+            "192.168.1.20",
+            8080,
+            200,
+            null,
+            null,
+            Scope: "LAN",
+            IpAddress: "192.168.1.20",
+            Confidence: 90);
+
+        var error = new LocalHttpServiceEndpoint(
+            "http://192.168.1.30:80",
+            "http",
+            "192.168.1.30",
+            80,
+            404,
+            "404 Not Found",
+            null,
+            Scope: "LAN",
+            IpAddress: "192.168.1.30",
+            Confidence: 95);
+
+        var method = typeof(LocalHttpServiceDiscoveryService)
+            .GetMethod("SortEndpoints", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var sorted = Assert.IsAssignableFrom<IReadOnlyList<LocalHttpServiceEndpoint>>(
+            method.Invoke(null, [new[] { error, empty, good }]));
+
+        Assert.Equal("Home Assistant", sorted[0].Title);
+        Assert.All(sorted.Skip(1), endpoint =>
+            Assert.Equal(2, LocalHttpServiceDiscoveryRanking.TitleQualityRank(endpoint.Title)));
+    }
+
     [Fact]
     public void Ws_discovery_uses_xaddrs_and_ignores_schema_urls()
     {
