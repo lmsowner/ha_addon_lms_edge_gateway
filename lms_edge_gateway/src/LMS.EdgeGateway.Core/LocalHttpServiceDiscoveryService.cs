@@ -19,9 +19,33 @@ namespace LMS.EdgeGateway.Core;
 public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewayCoreOptions> options) : ILocalHttpServiceDiscoveryService
 {
     private const int MaxConcurrentCacheValidation = 256;
-    private static readonly int[] ApprovedPorts = [80, 443, 3000, 3001, 5000, 5001, 5080, 7000, 7126, 8000, 8080, 8081, 8123, 8443, 8888, 9000, 9090, 9443, 10000, 11434, 32400];
-    private static readonly int[] ExpandedPorts = [81, 82, 88, 800, 808, 10443, 18080, 1880, 2283, 2342, 50000, 50001];
-    private static readonly int[] HostLivenessPorts = [80, 443, 8080, 8123, 8443, 9443, 5000, 3000, 9000, 10000, 32400, 22, 53, 139, 445];
+    // Priority HTTP/S ports probed first on every live IP (common homelab defaults).
+    private static readonly int[] CommonHomelabPorts =
+    [
+        80, 81, 443, 1880, 1984, 2283, 3000, 3001, 5000, 5001, 5380, 5601,
+        6767, 6789, 7125, 7443, 7745, 7878, 8000, 8006, 8043, 8080, 8083,
+        8096, 8111, 8112, 8123, 8200, 8384, 8443, 8686, 8787, 8920, 8971,
+        8989, 9000, 9001, 9090, 9091, 9443, 9696, 10000, 10443, 15672,
+        18080, 19999, 32400
+    ];
+
+    private static readonly HashSet<int> CommonHomelabPortSet = new(CommonHomelabPorts);
+
+    // Kept for expanded LAN discovery; not required for the first pass on each IP.
+    private static readonly int[] ExpandedPorts =
+    [
+        82, 88, 800, 808, 2342, 5080, 7000, 7126, 8081, 8888, 11434, 50000, 50001
+    ];
+
+    private static readonly int[] HostLivenessPorts =
+    [
+        80, 443, 8080, 8123, 8443, 9443, 5000, 5001, 3000, 8006, 8096, 9000, 9090, 10000, 32400, 22, 53, 139, 445
+    ];
+
+    private static readonly HashSet<int> HttpsPreferredPorts =
+    [
+        443, 5001, 7443, 8043, 8443, 8920, 9443, 10443
+    ];
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMilliseconds(1500);
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(450);
     private static readonly TimeSpan ProbePaceDelay = TimeSpan.Zero;
@@ -418,7 +442,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 AddStage(stages, seenHosts, "Tailnet", await BuildTailnetHostsAsync(cancellationToken));
             }
 
-            var portCount = BuildPortList(settings).Count;
+            var portCount = BuildBaseScanPorts(settings).Count;
             var totalHosts = stages.Sum(stage => stage.Hosts.Count);
             var progressState = new HostDiscoveryProgressState(totalHosts);
             progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
@@ -514,14 +538,16 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             }
 
             progressState.IncrementLiveCount();
-            var ports = host.KnownPorts.Count > 0 ? host.KnownPorts : BuildPortList(settings);
+            var ports = BuildPortsForHost(host, settings);
+            var priorityPorts = ports.Where(CommonHomelabPortSet.Contains).ToArray();
+            var remainingPorts = ports.Where(port => !CommonHomelabPortSet.Contains(port)).ToArray();
             progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                $"Live host {host.ProbeAddressName}; scanning {ports.Count} HTTP/S port(s).",
+                $"Live host {host.ProbeAddressName}; scanning {ports.Count} HTTP/S port(s) (common homelab ports first).",
                 progressState.CheckedCount,
                 progressState.TotalHostCount,
                 progressState.FoundCount));
 
-            await Task.WhenAll(ports.Select(port => ProbeServicePortAsync(
+            await Task.WhenAll(priorityPorts.Select(port => ProbeServicePortAsync(
                 host,
                 port,
                 serviceConcurrency,
@@ -529,6 +555,18 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 progressState,
                 progress,
                 cancellationToken)));
+
+            if (remainingPorts.Length > 0)
+            {
+                await Task.WhenAll(remainingPorts.Select(port => ProbeServicePortAsync(
+                    host,
+                    port,
+                    serviceConcurrency,
+                    results,
+                    progressState,
+                    progress,
+                    cancellationToken)));
+            }
         }
 
         private static async Task ProbeServicePortAsync(
@@ -641,7 +679,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 .Where(endpoint => IPAddress.IsLoopback(endpoint.Address))
                 .Select(endpoint => endpoint.Port)
                 .Distinct()
-                .Intersect(ApprovedPorts.Concat(ExpandedPorts))
+                .Intersect(CommonHomelabPorts.Concat(ExpandedPorts))
                 .ToArray();
 
             return ports.Length == 0
@@ -684,7 +722,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
         private static async Task<LanScanPlan> BuildLanScanPlanAsync(DiscoverySettings settings, CancellationToken cancellationToken)
         {
-            var ports = BuildPortList(settings);
+            var ports = BuildBaseScanPorts(settings);
             var knownAddresses = await LoadLanNeighbourAddressesAsync(cancellationToken);
             var supervisorCidrs = await LoadSupervisorLanCidrsAsync(settings, cancellationToken);
             var configuredCidrs = settings.Cidrs
@@ -1471,7 +1509,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             }
 
             var displayName = peer.TryGetProperty("HostName", out var hostName) ? hostName.GetString() : null;
-            return new ProbeHost(ip, parsed, ip, "Tailnet", ip, displayName, false, true, ApprovedPorts);
+            return new ProbeHost(ip, parsed, ip, "Tailnet", ip, displayName, false, true, CommonHomelabPorts);
         }
 
         private static async Task<HashSet<string>> LoadLanNeighbourAddressesAsync(CancellationToken cancellationToken)
@@ -2157,6 +2195,48 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private static class FingerprintRules
     {
+        private static readonly Dictionary<int, FingerprintResult> DistinctivePortHints = new()
+        {
+            [81] = PortHint("Nginx Proxy Manager", "nginx-proxy-manager", 72, DiscoveryExposure.RequiresManualConfirmation, "nginx-proxy-manager-port"),
+            [1880] = PortHint("Node-RED", "node-red", 72, DiscoveryExposure.RequiresManualConfirmation, "node-red-port"),
+            [1984] = PortHint("go2rtc", "go2rtc", 72, DiscoveryExposure.RequiresManualConfirmation, "go2rtc-port"),
+            [2283] = PortHint("Immich", "immich", 72, DiscoveryExposure.Publishable, "immich-port"),
+            [3001] = PortHint("Uptime Kuma", "uptime-kuma", 72, DiscoveryExposure.Publishable, "uptime-kuma-port"),
+            [5001] = PortHint("Synology DSM", "synology-dsm", 70, DiscoveryExposure.RequiresManualConfirmation, "synology-dsm-port"),
+            [5380] = PortHint("Technitium DNS", "technitium-dns", 72, DiscoveryExposure.RequiresManualConfirmation, "technitium-dns-port"),
+            [5601] = PortHint("Kibana", "kibana", 72, DiscoveryExposure.RequiresManualConfirmation, "kibana-port"),
+            [6767] = PortHint("Bazarr", "bazarr", 74, DiscoveryExposure.RequiresManualConfirmation, "bazarr-port"),
+            [6789] = PortHint("NZBGet", "nzbget", 74, DiscoveryExposure.RequiresManualConfirmation, "nzbget-port"),
+            [7125] = PortHint("Moonraker", "moonraker", 72, DiscoveryExposure.RequiresManualConfirmation, "moonraker-port"),
+            [7443] = PortHint("UniFi Protect", "unifi-protect", 70, DiscoveryExposure.RequiresManualConfirmation, "unifi-protect-port"),
+            [7745] = PortHint("Homebox", "homebox", 72, DiscoveryExposure.Publishable, "homebox-port"),
+            [7878] = PortHint("Radarr", "radarr", 74, DiscoveryExposure.RequiresManualConfirmation, "radarr-port"),
+            [8006] = PortHint("Proxmox VE", "proxmox", 74, DiscoveryExposure.RequiresManualConfirmation, "proxmox-port"),
+            [8043] = PortHint("Omada Controller", "omada-controller", 70, DiscoveryExposure.RequiresManualConfirmation, "omada-controller-port"),
+            [8083] = PortHint("Calibre-Web", "calibre-web", 72, DiscoveryExposure.Publishable, "calibre-web-port"),
+            [8096] = PortHint("Jellyfin / Emby", "jellyfin", 70, DiscoveryExposure.Publishable, "jellyfin-emby-port"),
+            [8111] = PortHint("TeamCity", "teamcity", 70, DiscoveryExposure.RequiresManualConfirmation, "teamcity-port"),
+            [8112] = PortHint("Deluge", "deluge", 72, DiscoveryExposure.RequiresManualConfirmation, "deluge-port"),
+            [8123] = PortHint("Home Assistant", "home-assistant", 76, DiscoveryExposure.RequiresManualConfirmation, "home-assistant-port"),
+            [8200] = PortHint("HashiCorp Vault", "vault", 72, DiscoveryExposure.UnsafeToExpose, "vault-port"),
+            [8384] = PortHint("Syncthing", "syncthing", 72, DiscoveryExposure.RequiresManualConfirmation, "syncthing-port"),
+            [8443] = PortHint("UniFi Network Server", "unifi-network", 68, DiscoveryExposure.RequiresManualConfirmation, "unifi-network-port"),
+            [8686] = PortHint("Lidarr", "lidarr", 74, DiscoveryExposure.RequiresManualConfirmation, "lidarr-port"),
+            [8787] = PortHint("Readarr", "readarr", 74, DiscoveryExposure.RequiresManualConfirmation, "readarr-port"),
+            [8920] = PortHint("Jellyfin / Emby", "jellyfin", 70, DiscoveryExposure.Publishable, "jellyfin-emby-https-port"),
+            [8971] = PortHint("Frigate", "frigate", 74, DiscoveryExposure.RequiresManualConfirmation, "frigate-port"),
+            [8989] = PortHint("Sonarr", "sonarr", 74, DiscoveryExposure.RequiresManualConfirmation, "sonarr-port"),
+            [9001] = PortHint("MinIO Console", "minio", 70, DiscoveryExposure.RequiresManualConfirmation, "minio-console-port"),
+            [9443] = PortHint("Portainer", "portainer", 70, DiscoveryExposure.RequiresManualConfirmation, "portainer-https-port"),
+            [9696] = PortHint("Prowlarr", "prowlarr", 74, DiscoveryExposure.RequiresManualConfirmation, "prowlarr-port"),
+            [10000] = PortHint("Webmin", "webmin", 70, DiscoveryExposure.RequiresManualConfirmation, "webmin-port"),
+            [10443] = PortHint("Scrypted", "scrypted", 72, DiscoveryExposure.RequiresManualConfirmation, "scrypted-port"),
+            [15672] = PortHint("RabbitMQ Management", "rabbitmq", 72, DiscoveryExposure.RequiresManualConfirmation, "rabbitmq-port"),
+            [18080] = PortHint("UniFi Connect", "unifi-connect", 68, DiscoveryExposure.RequiresManualConfirmation, "unifi-connect-port"),
+            [19999] = PortHint("Netdata", "netdata", 72, DiscoveryExposure.RequiresManualConfirmation, "netdata-port"),
+            [32400] = PortHint("Plex", "plex", 74, DiscoveryExposure.Publishable, "plex-port")
+        };
+
         public static FingerprintResult Fingerprint(string? title, string? server, string? redirect, string? faviconHash, string? tlsSubject, int port)
         {
             var haystack = $"{title} {server} {redirect} {faviconHash} {tlsSubject}".ToLowerInvariant();
@@ -2168,6 +2248,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     Known("Portainer", "portainer", 98, DiscoveryExposure.RequiresManualConfirmation, "portainer"),
                 var text when text.Contains("jellyfin", StringComparison.Ordinal) =>
                     Known("Jellyfin", "jellyfin", 94, DiscoveryExposure.Publishable, "jellyfin"),
+                var text when text.Contains("emby", StringComparison.Ordinal) =>
+                    Known("Emby", "emby", 94, DiscoveryExposure.Publishable, "emby"),
                 var text when text.Contains("plex", StringComparison.Ordinal) =>
                     Known("Plex", "plex", 94, DiscoveryExposure.Publishable, "plex"),
                 var text when text.Contains("grafana", StringComparison.Ordinal) =>
@@ -2176,10 +2258,115 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     Known("AdGuard Home", "adguard-home", 90, DiscoveryExposure.RequiresManualConfirmation, "adguard"),
                 var text when text.Contains("uptime kuma", StringComparison.Ordinal) =>
                     Known("Uptime Kuma", "uptime-kuma", 90, DiscoveryExposure.Publishable, "uptime-kuma"),
+                var text when text.Contains("proxmox", StringComparison.Ordinal) =>
+                    Known("Proxmox VE", "proxmox", 94, DiscoveryExposure.RequiresManualConfirmation, "proxmox"),
+                var text when text.Contains("truenas", StringComparison.Ordinal) =>
+                    Known("TrueNAS", "truenas", 92, DiscoveryExposure.RequiresManualConfirmation, "truenas"),
+                var text when text.Contains("unraid", StringComparison.Ordinal) =>
+                    Known("Unraid", "unraid", 92, DiscoveryExposure.RequiresManualConfirmation, "unraid"),
+                var text when text.Contains("openmediavault", StringComparison.Ordinal) || text.Contains("open media vault", StringComparison.Ordinal) =>
+                    Known("OpenMediaVault", "openmediavault", 90, DiscoveryExposure.RequiresManualConfirmation, "openmediavault"),
+                var text when text.Contains("pi-hole", StringComparison.Ordinal) || text.Contains("pihole", StringComparison.Ordinal) =>
+                    Known("Pi-hole", "pihole", 92, DiscoveryExposure.RequiresManualConfirmation, "pihole"),
+                var text when text.Contains("nextcloud", StringComparison.Ordinal) =>
+                    Known("Nextcloud", "nextcloud", 92, DiscoveryExposure.Publishable, "nextcloud"),
+                var text when text.Contains("gitlab", StringComparison.Ordinal) =>
+                    Known("GitLab", "gitlab", 90, DiscoveryExposure.RequiresManualConfirmation, "gitlab"),
+                var text when text.Contains("nginx proxy manager", StringComparison.Ordinal) =>
+                    Known("Nginx Proxy Manager", "nginx-proxy-manager", 94, DiscoveryExposure.RequiresManualConfirmation, "nginx-proxy-manager"),
+                var text when text.Contains("node-red", StringComparison.Ordinal) || text.Contains("nodered", StringComparison.Ordinal) =>
+                    Known("Node-RED", "node-red", 90, DiscoveryExposure.RequiresManualConfirmation, "node-red"),
+                var text when text.Contains("go2rtc", StringComparison.Ordinal) =>
+                    Known("go2rtc", "go2rtc", 90, DiscoveryExposure.RequiresManualConfirmation, "go2rtc"),
+                var text when text.Contains("immich", StringComparison.Ordinal) =>
+                    Known("Immich", "immich", 94, DiscoveryExposure.Publishable, "immich"),
+                var text when text.Contains("gitea", StringComparison.Ordinal) =>
+                    Known("Gitea", "gitea", 90, DiscoveryExposure.Publishable, "gitea"),
+                var text when text.Contains("forgejo", StringComparison.Ordinal) =>
+                    Known("Forgejo", "forgejo", 90, DiscoveryExposure.Publishable, "forgejo"),
+                var text when text.Contains("wiki.js", StringComparison.Ordinal) || text.Contains("wikijs", StringComparison.Ordinal) =>
+                    Known("Wiki.js", "wikijs", 88, DiscoveryExposure.Publishable, "wikijs"),
+                var text when text.Contains("synology", StringComparison.Ordinal) || text.Contains("diskstation", StringComparison.Ordinal) =>
+                    Known("Synology DSM", "synology-dsm", 92, DiscoveryExposure.RequiresManualConfirmation, "synology-dsm"),
+                var text when text.Contains("technitium", StringComparison.Ordinal) =>
+                    Known("Technitium DNS", "technitium-dns", 90, DiscoveryExposure.RequiresManualConfirmation, "technitium-dns"),
+                var text when text.Contains("kibana", StringComparison.Ordinal) =>
+                    Known("Kibana", "kibana", 90, DiscoveryExposure.RequiresManualConfirmation, "kibana"),
+                var text when text.Contains("bazarr", StringComparison.Ordinal) =>
+                    Known("Bazarr", "bazarr", 92, DiscoveryExposure.RequiresManualConfirmation, "bazarr"),
+                var text when text.Contains("nzbget", StringComparison.Ordinal) =>
+                    Known("NZBGet", "nzbget", 90, DiscoveryExposure.RequiresManualConfirmation, "nzbget"),
+                var text when text.Contains("moonraker", StringComparison.Ordinal) =>
+                    Known("Moonraker", "moonraker", 90, DiscoveryExposure.RequiresManualConfirmation, "moonraker"),
+                var text when text.Contains("homebox", StringComparison.Ordinal) =>
+                    Known("Homebox", "homebox", 90, DiscoveryExposure.Publishable, "homebox"),
+                var text when text.Contains("radarr", StringComparison.Ordinal) =>
+                    Known("Radarr", "radarr", 92, DiscoveryExposure.RequiresManualConfirmation, "radarr"),
+                var text when text.Contains("paperless", StringComparison.Ordinal) =>
+                    Known("Paperless-ngx", "paperless", 90, DiscoveryExposure.Publishable, "paperless"),
+                var text when text.Contains("omada", StringComparison.Ordinal) =>
+                    Known("Omada Controller", "omada-controller", 90, DiscoveryExposure.RequiresManualConfirmation, "omada-controller"),
+                var text when text.Contains("qbittorrent", StringComparison.Ordinal) =>
+                    Known("qBittorrent", "qbittorrent", 90, DiscoveryExposure.RequiresManualConfirmation, "qbittorrent"),
+                var text when text.Contains("sabnzbd", StringComparison.Ordinal) =>
+                    Known("SABnzbd", "sabnzbd", 90, DiscoveryExposure.RequiresManualConfirmation, "sabnzbd"),
+                var text when text.Contains("jenkins", StringComparison.Ordinal) =>
+                    Known("Jenkins", "jenkins", 90, DiscoveryExposure.RequiresManualConfirmation, "jenkins"),
+                var text when text.Contains("zigbee2mqtt", StringComparison.Ordinal) =>
+                    Known("Zigbee2MQTT", "zigbee2mqtt", 90, DiscoveryExposure.RequiresManualConfirmation, "zigbee2mqtt"),
+                var text when text.Contains("traefik", StringComparison.Ordinal) =>
+                    Known("Traefik", "traefik", 88, DiscoveryExposure.RequiresManualConfirmation, "traefik"),
+                var text when text.Contains("keycloak", StringComparison.Ordinal) =>
+                    Known("Keycloak", "keycloak", 90, DiscoveryExposure.RequiresManualConfirmation, "keycloak"),
+                var text when text.Contains("calibre", StringComparison.Ordinal) =>
+                    Known("Calibre-Web", "calibre-web", 88, DiscoveryExposure.Publishable, "calibre-web"),
+                var text when text.Contains("teamcity", StringComparison.Ordinal) =>
+                    Known("TeamCity", "teamcity", 88, DiscoveryExposure.RequiresManualConfirmation, "teamcity"),
+                var text when text.Contains("deluge", StringComparison.Ordinal) =>
+                    Known("Deluge", "deluge", 88, DiscoveryExposure.RequiresManualConfirmation, "deluge"),
+                var text when text.Contains("vault", StringComparison.Ordinal) =>
+                    Known("HashiCorp Vault", "vault", 90, DiscoveryExposure.UnsafeToExpose, "vault"),
+                var text when text.Contains("syncthing", StringComparison.Ordinal) =>
+                    Known("Syncthing", "syncthing", 90, DiscoveryExposure.RequiresManualConfirmation, "syncthing"),
+                var text when text.Contains("lidarr", StringComparison.Ordinal) =>
+                    Known("Lidarr", "lidarr", 92, DiscoveryExposure.RequiresManualConfirmation, "lidarr"),
+                var text when text.Contains("readarr", StringComparison.Ordinal) =>
+                    Known("Readarr", "readarr", 92, DiscoveryExposure.RequiresManualConfirmation, "readarr"),
+                var text when text.Contains("frigate", StringComparison.Ordinal) =>
+                    Known("Frigate", "frigate", 94, DiscoveryExposure.RequiresManualConfirmation, "frigate"),
+                var text when text.Contains("sonarr", StringComparison.Ordinal) =>
+                    Known("Sonarr", "sonarr", 92, DiscoveryExposure.RequiresManualConfirmation, "sonarr"),
+                var text when text.Contains("authentik", StringComparison.Ordinal) =>
+                    Known("Authentik", "authentik", 92, DiscoveryExposure.RequiresManualConfirmation, "authentik"),
+                var text when text.Contains("minio", StringComparison.Ordinal) =>
+                    Known("MinIO", "minio", 90, DiscoveryExposure.RequiresManualConfirmation, "minio"),
+                var text when text.Contains("mealie", StringComparison.Ordinal) =>
+                    Known("Mealie", "mealie", 90, DiscoveryExposure.Publishable, "mealie"),
+                var text when text.Contains("prometheus", StringComparison.Ordinal) =>
+                    Known("Prometheus", "prometheus", 90, DiscoveryExposure.RequiresManualConfirmation, "prometheus"),
+                var text when text.Contains("cockpit", StringComparison.Ordinal) =>
+                    Known("Cockpit", "cockpit", 88, DiscoveryExposure.RequiresManualConfirmation, "cockpit"),
+                var text when text.Contains("transmission", StringComparison.Ordinal) =>
+                    Known("Transmission", "transmission", 88, DiscoveryExposure.RequiresManualConfirmation, "transmission"),
+                var text when text.Contains("authelia", StringComparison.Ordinal) =>
+                    Known("Authelia", "authelia", 90, DiscoveryExposure.RequiresManualConfirmation, "authelia"),
+                var text when text.Contains("prowlarr", StringComparison.Ordinal) =>
+                    Known("Prowlarr", "prowlarr", 92, DiscoveryExposure.RequiresManualConfirmation, "prowlarr"),
+                var text when text.Contains("webmin", StringComparison.Ordinal) =>
+                    Known("Webmin", "webmin", 88, DiscoveryExposure.RequiresManualConfirmation, "webmin"),
+                var text when text.Contains("scrypted", StringComparison.Ordinal) =>
+                    Known("Scrypted", "scrypted", 90, DiscoveryExposure.RequiresManualConfirmation, "scrypted"),
+                var text when text.Contains("rabbitmq", StringComparison.Ordinal) =>
+                    Known("RabbitMQ Management", "rabbitmq", 90, DiscoveryExposure.RequiresManualConfirmation, "rabbitmq"),
+                var text when text.Contains("netdata", StringComparison.Ordinal) =>
+                    Known("Netdata", "netdata", 90, DiscoveryExposure.RequiresManualConfirmation, "netdata"),
+                var text when text.Contains("unifi", StringComparison.Ordinal) =>
+                    Known("UniFi", "unifi", 90, DiscoveryExposure.RequiresManualConfirmation, "unifi"),
+                var text when text.Contains("octoprint", StringComparison.Ordinal) =>
+                    Known("OctoPrint", "octoprint", 90, DiscoveryExposure.RequiresManualConfirmation, "octoprint"),
                 var text when text.Contains("docker", StringComparison.Ordinal) && port is 2375 or 2376 =>
                     Known("Docker API", "docker-api", 99, DiscoveryExposure.UnsafeToExpose, "docker-api"),
-                _ when port == 8123 =>
-                    PortHint("Home Assistant", "home-assistant", 76, DiscoveryExposure.RequiresManualConfirmation, "home-assistant-port"),
+                _ when DistinctivePortHints.TryGetValue(port, out var portHint) => portHint,
                 _ => Unknown(port)
             };
         }
@@ -2190,10 +2377,20 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             if (text.Contains("home assistant", StringComparison.Ordinal)) return "home-assistant";
             if (text.Contains("portainer", StringComparison.Ordinal)) return "portainer";
             if (text.Contains("jellyfin", StringComparison.Ordinal)) return "jellyfin";
+            if (text.Contains("emby", StringComparison.Ordinal)) return "emby";
             if (text.Contains("plex", StringComparison.Ordinal)) return "plex";
             if (text.Contains("grafana", StringComparison.Ordinal)) return "grafana";
             if (text.Contains("adguard", StringComparison.Ordinal)) return "adguard-home";
             if (text.Contains("uptime kuma", StringComparison.Ordinal)) return "uptime-kuma";
+            if (text.Contains("proxmox", StringComparison.Ordinal)) return "proxmox";
+            if (text.Contains("truenas", StringComparison.Ordinal)) return "truenas";
+            if (text.Contains("unraid", StringComparison.Ordinal)) return "unraid";
+            if (text.Contains("nextcloud", StringComparison.Ordinal)) return "nextcloud";
+            if (text.Contains("sonarr", StringComparison.Ordinal)) return "sonarr";
+            if (text.Contains("radarr", StringComparison.Ordinal)) return "radarr";
+            if (text.Contains("frigate", StringComparison.Ordinal)) return "frigate";
+            if (text.Contains("immich", StringComparison.Ordinal)) return "immich";
+            if (text.Contains("unifi", StringComparison.Ordinal)) return "unifi";
             if (text.Contains("docker", StringComparison.Ordinal)) return "docker-api";
             return "unknown-http";
         }
@@ -2203,18 +2400,29 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             "home-assistant" => "Home Assistant",
             "portainer" => "Portainer",
             "jellyfin" => "Jellyfin",
+            "emby" => "Emby",
             "plex" => "Plex",
             "grafana" => "Grafana",
             "adguard-home" => "AdGuard Home",
             "uptime-kuma" => "Uptime Kuma",
+            "proxmox" => "Proxmox VE",
+            "truenas" => "TrueNAS",
+            "unraid" => "Unraid",
+            "nextcloud" => "Nextcloud",
+            "sonarr" => "Sonarr",
+            "radarr" => "Radarr",
+            "frigate" => "Frigate",
+            "immich" => "Immich",
+            "unifi" => "UniFi",
             "docker-api" => "Docker API",
             _ => string.IsNullOrWhiteSpace(fallback) ? "unknown HTTP service" : fallback
         };
 
         public static DiscoveryExposure ClassifyExposure(string serviceKind, int confidence) => serviceKind switch
         {
-            "docker-api" => DiscoveryExposure.UnsafeToExpose,
-            "portainer" or "grafana" or "adguard-home" => DiscoveryExposure.RequiresManualConfirmation,
+            "docker-api" or "vault" => DiscoveryExposure.UnsafeToExpose,
+            "portainer" or "grafana" or "adguard-home" or "proxmox" or "truenas" or "unraid" or "unifi" =>
+                DiscoveryExposure.RequiresManualConfirmation,
             "unknown-http" => DiscoveryExposure.RequiresManualConfirmation,
             _ => confidence >= 80 ? DiscoveryExposure.Publishable : DiscoveryExposure.RequiresManualConfirmation
         };
@@ -2354,17 +2562,61 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private sealed record CommandResult(int ExitCode, string StandardOutput, string StandardError);
 
-    private static IReadOnlyList<int> BuildPortList(DiscoverySettings settings) =>
-        ApprovedPorts
-            .Concat(settings.EnableExpandedLanDiscovery ? ExpandedPorts : [])
-            .Concat(settings.EnableExpandedLanDiscovery ? settings.AdditionalPorts : [])
-            .Distinct()
-            .Order()
-            .ToArray();
+    private static IReadOnlyList<int> BuildBaseScanPorts(DiscoverySettings settings)
+    {
+        var ports = new List<int>(CommonHomelabPorts.Length + ExpandedPorts.Length + settings.AdditionalPorts.Count);
+
+        void AddRange(IEnumerable<int> values)
+        {
+            foreach (var port in values)
+            {
+                if (port > 0 && !ports.Contains(port))
+                {
+                    ports.Add(port);
+                }
+            }
+        }
+
+        AddRange(CommonHomelabPorts);
+        if (settings.EnableExpandedLanDiscovery)
+        {
+            AddRange(ExpandedPorts);
+            AddRange(settings.AdditionalPorts);
+        }
+
+        return ports;
+    }
+
+    private static IReadOnlyList<int> BuildPortsForHost(ProbeHost host, DiscoverySettings settings)
+    {
+        var ports = new List<int>(CommonHomelabPorts.Length + host.KnownPorts.Count + 8);
+
+        void AddRange(IEnumerable<int> values)
+        {
+            foreach (var port in values)
+            {
+                if (port > 0 && !ports.Contains(port))
+                {
+                    ports.Add(port);
+                }
+            }
+        }
+
+        // Common homelab ports always come first for every IP.
+        AddRange(CommonHomelabPorts);
+        AddRange(host.KnownPorts);
+        if (settings.EnableExpandedLanDiscovery)
+        {
+            AddRange(ExpandedPorts);
+            AddRange(settings.AdditionalPorts);
+        }
+
+        return ports;
+    }
 
     private static IEnumerable<string> GuessSchemes(int port)
     {
-        if (port is 443 or 5001 or 8443 or 9443 or 10443)
+        if (HttpsPreferredPorts.Contains(port))
         {
             yield return Uri.UriSchemeHttps;
             yield return Uri.UriSchemeHttp;
@@ -2377,7 +2629,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     }
 
     private static string GuessSchemeFromPort(int port) =>
-        port is 443 or 5001 or 8443 or 9443 or 10443 ? Uri.UriSchemeHttps : Uri.UriSchemeHttp;
+        HttpsPreferredPorts.Contains(port) ? Uri.UriSchemeHttps : Uri.UriSchemeHttp;
 
     private static async Task<bool> CanOpenTcpAsync(IPAddress address, int port, CancellationToken cancellationToken)
     {

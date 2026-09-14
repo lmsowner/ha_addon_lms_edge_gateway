@@ -231,6 +231,61 @@ public sealed class LocalHttpServiceDiscoveryTests
         Assert.Equal(["192.168.15.1", "192.168.15.2"], addresses.Select(address => address.ToString()));
     }
 
+    [Fact]
+    public void Common_homelab_ports_include_priority_services_and_stay_ahead_of_known_extras()
+    {
+        var commonField = typeof(LocalHttpServiceDiscoveryService)
+            .GetField("CommonHomelabPorts", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(commonField);
+        var commonPorts = Assert.IsType<int[]>(commonField.GetValue(null));
+
+        Assert.Contains(8123, commonPorts);
+        Assert.Contains(8006, commonPorts);
+        Assert.Contains(8096, commonPorts);
+        Assert.Contains(8989, commonPorts);
+        Assert.Contains(32400, commonPorts);
+        Assert.Equal(80, commonPorts[0]);
+        Assert.Equal(81, commonPorts[1]);
+        Assert.Equal(443, commonPorts[2]);
+
+        var method = typeof(LocalHttpServiceDiscoveryService)
+            .GetMethod("BuildPortsForHost", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var probeHostType = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("ProbeHost", BindingFlags.NonPublic);
+        Assert.NotNull(probeHostType);
+        var host = Activator.CreateInstance(
+            probeHostType,
+            "192.168.1.10",
+            IPAddress.Parse("192.168.1.10"),
+            "192.168.1.10",
+            "LAN",
+            "192.168.1.10",
+            null,
+            false,
+            true,
+            (IReadOnlyList<int>)[65500]);
+        Assert.NotNull(host);
+
+        var settingsType = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("DiscoverySettings", BindingFlags.NonPublic);
+        Assert.NotNull(settingsType);
+        var settings = Activator.CreateInstance(
+            settingsType,
+            false,
+            false,
+            (IReadOnlyList<string>)[],
+            (IReadOnlyList<int>)[],
+            string.Empty);
+        Assert.NotNull(settings);
+
+        var ports = Assert.IsAssignableFrom<IReadOnlyList<int>>(method.Invoke(null, [host, settings])).ToArray();
+        Assert.Equal(commonPorts.Take(3), ports.Take(3));
+        Assert.Contains(65500, ports);
+        Assert.True(Array.IndexOf(ports, 8123) < Array.IndexOf(ports, 65500));
+    }
+
     [Theory]
     [InlineData("Home Assistant", 0)]
     [InlineData("Proxmox Virtual Environment", 0)]

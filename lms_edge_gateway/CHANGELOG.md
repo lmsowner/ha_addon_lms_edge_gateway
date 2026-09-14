@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.14.17.15
+
+- Probe common homelab HTTP/S ports first on every live IP (Proxmox, *arr, UniFi, Plex, etc.), with stronger title/port fingerprints.
+
+
 ## 2026.09.14.17.01
 
 - HTTP/S discovery shows stamp cards with title, host/IP:port, and favicon when available; services with real titles sort above empty or error-page titles.
