@@ -2093,7 +2093,7 @@ textarea {
 }
 
 .http-service-stamp-scheme {
-    text-transform: uppercase;
+    letter-spacing: 0.01em;
 }
 
 .http-service-lookup-row {

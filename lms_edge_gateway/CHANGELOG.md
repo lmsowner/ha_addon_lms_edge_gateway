@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.14.17.21
+
+- Discovery stamp cards show scheme and port on one line so the host/IP has room and is less truncated.
+
+
 ## 2026.09.14.17.15
 
 - Probe common homelab HTTP/S ports first on every live IP (Proxmox, *arr, UniFi, Plex, etc.), with stronger title/port fingerprints.

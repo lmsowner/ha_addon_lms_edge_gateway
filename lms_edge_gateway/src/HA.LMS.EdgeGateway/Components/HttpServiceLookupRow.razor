@@ -18,8 +18,8 @@
     </span>
     <span class="http-service-stamp-body">
         <strong class="http-service-stamp-title">@PrimaryLabel</strong>
-        <span class="http-service-stamp-meta">@HostLabel:@Service.Port</span>
-        <span class="http-service-stamp-scheme">@Service.Scheme</span>
+        <span class="http-service-stamp-meta">@HostLabel</span>
+        <span class="http-service-stamp-scheme">@Service.Scheme.ToUpperInvariant() · @Service.Port</span>
     </span>
 </button>
 
