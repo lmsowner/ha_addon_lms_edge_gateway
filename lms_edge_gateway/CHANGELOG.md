@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.08.18
+
+- Scan the full LAN subnet(s) from Supervisor/host NIC (e.g. a /20 end-to-end); remove the address cap and /24-only truncation while keeping cheap liveness and concurrency limits.
+
 ## 2026.09.15.08.11
 
 - Fix LAN discovery SYN-flood: unknown IPs get cheap liveness first, host/TCP concurrency is capped, subnet expansion is limited, and previous cards stay visible during Scan so real HTTP probes are not starved.

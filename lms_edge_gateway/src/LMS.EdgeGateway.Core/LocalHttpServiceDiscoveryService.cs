@@ -56,7 +56,6 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     private static readonly TimeSpan LanConnectTimeout = TimeSpan.FromMilliseconds(180);
     private static readonly TimeSpan ProbePaceDelay = TimeSpan.Zero;
     private const int MaxRedirectFollowPortsPerHost = 8;
-    private const int MaxLanScanAddresses = 384;
     private readonly SemaphoreSlim cacheMutationLock = new(1, 1);
 
     private const int MaxFaviconBytes = 32_768;
@@ -895,7 +894,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 : string.Empty;
 
             progress.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                $"LAN scan plan: {source}; {scanPlan.KnownHosts.Count} ARP/neighbour host(s), {scanPlan.ScanHosts.Count} targeted host(s){fallback}.",
+                $"LAN scan plan: {source}; scanning {scanPlan.KnownHosts.Count + scanPlan.ScanHosts.Count} address(es) from the LAN subnet(s) ({scanPlan.KnownHosts.Count} ARP/neighbour, {scanPlan.ScanHosts.Count} remaining){fallback}.",
                 0,
                 scanPlan.KnownHosts.Count + scanPlan.ScanHosts.Count,
                 0));
@@ -912,26 +911,25 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         {
             var knownAddresses = await LoadLanNeighbourAddressesAsync(cancellationToken);
             var supervisorCidrs = await LoadSupervisorLanCidrsAsync(settings, cancellationToken);
+            var localInterfaceCidrs = BuildLocalInterfaceCidrs();
+            // Prefer the real LAN subnet from Supervisor / app options; always include interface
+            // CIDRs so a /20 (etc.) is scanned in full even when ARP only knows a few neighbours.
             var configuredCidrs = settings.Cidrs
                 .Concat(supervisorCidrs)
+                .Concat(localInterfaceCidrs)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            // Always expand supervisor/configured CIDRs AND local interface subnets so Scan
-            // covers every LAN IP, not only ARP neighbours.
-            var cidrAddresses = configuredCidrs.Length > 0 ? ExpandCidrs(configuredCidrs) : Array.Empty<IPAddress>();
-            var localInterfaceAddresses = ExpandLocalInterfaceCidrs();
+            var cidrAddresses = configuredCidrs.Length > 0
+                ? ExpandCidrs(configuredCidrs)
+                : Array.Empty<IPAddress>();
             var neighbourAddresses = knownAddresses
                 .Select(value => IPAddress.TryParse(value, out var address) ? address : null)
                 .Where(address => address is not null)
                 .Cast<IPAddress>();
-            var addresses = neighbourAddresses
-                .Concat(cidrAddresses)
-                .Concat(localInterfaceAddresses);
+            // Every host in the LAN subnet(s) — no /24-only shortcut and no address cap.
+            var addresses = neighbourAddresses.Concat(cidrAddresses);
 
             var ports = BuildBaseScanPorts(settings);
-            var localAddresses = GetLocalIPv4Interfaces()
-                .Select(item => item.Address)
-                .ToHashSet(IPAddressComparer.Instance);
             var hosts = addresses
                 .Where(IsPrivateIPv4)
                 .Distinct(IPAddressComparer.Instance)
@@ -950,45 +948,15 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                         isKnownLive,
                         ports);
                 })
-                // Prefer ARP/neighbours and same-/24 as the host NIC; hard-cap so a /16 never
-                // schedules tens of thousands of TCP sweeps.
                 .OrderByDescending(host => host.IsKnownLive)
-                .ThenBy(host => host.ProbeAddress is null
-                    ? uint.MaxValue
-                    : DistanceToNearestLocalNetwork(host.ProbeAddress, localAddresses))
                 .ThenBy(host => host.ProbeAddress is null ? uint.MaxValue : AddressToUInt32(host.ProbeAddress))
-                .Take(MaxLanScanAddresses)
                 .ToArray();
 
             return new LanScanPlan(
                 hosts.Where(host => host.IsKnownLive).ToArray(),
                 hosts.Where(host => !host.IsKnownLive).ToArray(),
                 configuredCidrs,
-                localInterfaceAddresses.Count);
-        }
-
-        private static uint DistanceToNearestLocalNetwork(IPAddress address, IReadOnlyCollection<IPAddress> localAddresses)
-        {
-            if (localAddresses.Count == 0)
-            {
-                return AddressToUInt32(address);
-            }
-
-            var value = AddressToUInt32(address);
-            var best = uint.MaxValue;
-            foreach (var local in localAddresses)
-            {
-                var localValue = AddressToUInt32(local);
-                // Prefer same Class-C neighbourhood as the HA host interface.
-                var sameClassC = (value & 0xFFFFFF00) == (localValue & 0xFFFFFF00) ? 0u : 1u;
-                var distance = sameClassC << 24 | (value > localValue ? value - localValue : localValue - value);
-                if (distance < best)
-                {
-                    best = distance;
-                }
-            }
-
-            return best;
+                localInterfaceCidrs.Count);
         }
 
         private static async Task<IReadOnlyList<ProbeHost>> DiscoverSsdpHostsAsync(
@@ -3218,11 +3186,9 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         }
     }
 
-    private static IReadOnlyList<IPAddress> ExpandLocalInterfaceCidrs()
+    private static IReadOnlyList<string> BuildLocalInterfaceCidrs()
     {
-        // Reuse ExpandCidrs so wide masks (/8, /16) get the same Class-C-first / prefix floor
-        // as supervisor CIDRs instead of enumerating millions of hosts.
-        var cidrs = GetLocalIPv4Interfaces()
+        return GetLocalIPv4Interfaces()
             .Select(localInterface =>
             {
                 var prefix = PrefixLengthFromIPv4Mask(localInterface.Mask) ?? 24;
@@ -3232,11 +3198,10 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             .Where(IsPrivateCidr)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-
-        return ExpandCidrs(cidrs)
-            .Where(IsPrivateIPv4)
-            .ToArray();
     }
+
+    private static IReadOnlyList<IPAddress> ExpandLocalInterfaceCidrs() =>
+        ExpandCidrs(BuildLocalInterfaceCidrs()).Where(IsPrivateIPv4).ToArray();
 
     private static int? PrefixLengthFromIPv4Mask(IPAddress mask)
     {

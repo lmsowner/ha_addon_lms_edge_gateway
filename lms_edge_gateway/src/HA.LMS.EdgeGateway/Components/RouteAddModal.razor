@@ -475,7 +475,7 @@
                         <div class="table-header edge-http-service-picker-header">
                             <div>
                                 <strong>Staged service discovery</strong>
-                                <p class="meta-text">Scan checks live LAN hosts across well-known HTTP/S ports (ARP neighbours first, then the local subnet). Opening this dialog only rechecks the last saved results.</p>
+                                <p class="meta-text">Scan walks every IP in the LAN subnet(s) reported by Home Assistant / the host NIC across well-known HTTP/S ports. Opening this dialog only rechecks the last saved results.</p>
                             </div>
                             <div class="edge-http-service-actions">
                                 <LmsButton Label="@(isDiscoveringHttpServices ? "Scanning..." : "Scan")"
