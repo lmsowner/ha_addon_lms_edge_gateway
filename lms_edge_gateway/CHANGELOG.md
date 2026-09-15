@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.08.03
+
+- Full LAN sweep on Scan: every private LAN IP (ARP + supervisor/configured CIDRs + local interface subnets) is TCP-probed across the full well-known HTTP/S port set, without the old ping/tiny-liveness gate that skipped hosts only listening on ports like :11443.
+
 ## 2026.09.15.07.56
 
 - Make Scan a true full rediscovery: clear previous cards immediately, replace cached scopes with fresh probes, and dedupe by host/port so stale labels cannot linger.

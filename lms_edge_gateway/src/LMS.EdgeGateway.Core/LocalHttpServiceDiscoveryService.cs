@@ -31,10 +31,10 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private static readonly HashSet<int> CommonHomelabPortSet = new(CommonHomelabPorts);
 
-    // Kept for expanded LAN discovery; not required for the first pass on each IP.
+    // Always probed on every LAN IP (not gated behind expanded_lan_discovery).
     private static readonly int[] ExpandedPorts =
     [
-        82, 88, 800, 808, 2342, 5080, 7000, 7126, 8081, 8888, 11434, 50000, 50001
+        82, 88, 800, 808, 8008, 8009, 2342, 5080, 7000, 7126, 8081, 8888, 11434, 50000, 50001
     ];
 
     private static readonly int[] HostLivenessPorts =
@@ -473,7 +473,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             foreach (var stage in stages)
             {
                 progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                    $"{stage.Name}: checking {stage.Hosts.Count} target(s) across {portCount} approved HTTP/S port(s).",
+                    $"{stage.Name}: sweeping {stage.Hosts.Count} address(es) across {portCount} well-known HTTP/S port(s).",
                     progressState.CheckedCount,
                     progressState.TotalHostCount,
                     progressState.FoundCount));
@@ -509,7 +509,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         }
 
         private static string BuildProbeHostKey(ProbeHost host) =>
-            $"{host.ProbeAddressName}|{host.TargetHost}|{string.Join(",", host.KnownPorts.Order())}";
+            FirstNonBlank(host.IpAddress, host.ProbeAddressName, host.TargetHost)?.Trim().TrimEnd('.').ToLowerInvariant()
+            ?? host.TargetHost;
 
         private static async Task ProbeHostWhenReachableAsync(
             ProbeHost host,
@@ -522,49 +523,59 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             IProgress<LocalHttpServiceDiscoveryProgressUpdate>? progress,
             CancellationToken cancellationToken)
         {
-            bool isReachable;
+            IReadOnlyList<int> openPorts = [];
             await hostConcurrency.WaitAsync(cancellationToken);
             try
             {
-                isReachable = host.IsLocalProbe ||
-                              host.IsKnownLive ||
-                              host.ProbeAddress is not null &&
-                              (await CanPingAsync(host.ProbeAddress, cancellationToken) ||
-                               await CanOpenAnyTcpAsync(host.ProbeAddress, HostLivenessPorts, tcpConcurrency, cancellationToken));
-            }
-            finally
-            {
+                var candidates = BuildPortsForHost(host, settings);
+                if (host.IsLocalProbe && host.ProbeAddress is null)
+                {
+                    openPorts = candidates;
+                }
+                else if (host.ProbeAddress is not null)
+                {
+                    // Full well-known TCP sweep per IP — do not require ping or a tiny liveness set.
+                    // Hosts that only expose ports like :11443 / :8989 were previously skipped.
+                    openPorts = await FindOpenTcpPortsAsync(host.ProbeAddress, candidates, tcpConcurrency, cancellationToken);
+                }
+                else
+                {
+                    openPorts = candidates;
+                }
+
                 var checkedCount = progressState.IncrementCheckedCount();
+                if (openPorts.Count > 0)
+                {
+                    progressState.IncrementLiveCount();
+                }
+
                 if (checkedCount == progressState.TotalHostCount || checkedCount % 16 == 0)
                 {
                     progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                        $"Checked {checkedCount}/{progressState.TotalHostCount} local address(es), {progressState.LiveCount} live, {progressState.FoundCount} service(s).",
+                        $"Swept {checkedCount}/{progressState.TotalHostCount} LAN address(es), {progressState.LiveCount} with open well-known port(s), {progressState.FoundCount} HTTP/S service(s).",
                         checkedCount,
                         progressState.TotalHostCount,
                         progressState.FoundCount));
                 }
-
+            }
+            finally
+            {
                 hostConcurrency.Release();
             }
 
-            if (!isReachable)
+            if (openPorts.Count == 0)
             {
                 return;
             }
 
-            progressState.IncrementLiveCount();
-            var candidates = BuildPortsForHost(host, settings);
-            var openPorts = host.ProbeAddress is null
-                ? candidates
-                : await FindOpenTcpPortsAsync(host.ProbeAddress, candidates, tcpConcurrency, cancellationToken);
-            var priorityPorts = openPorts.Where(CommonHomelabPortSet.Contains).ToArray();
-            var remainingPorts = openPorts.Where(port => !CommonHomelabPortSet.Contains(port)).ToArray();
             progress?.Report(new LocalHttpServiceDiscoveryProgressUpdate(
-                $"Live host {host.ProbeAddressName}; {openPorts.Count}/{candidates.Count} TCP port(s) open — probing HTTP/S (common ports first).",
+                $"Host {host.ProbeAddressName}: {openPorts.Count} well-known TCP port(s) open — probing HTTP/S.",
                 progressState.CheckedCount,
                 progressState.TotalHostCount,
                 progressState.FoundCount));
 
+            var priorityPorts = openPorts.Where(CommonHomelabPortSet.Contains).ToArray();
+            var remainingPorts = openPorts.Where(port => !CommonHomelabPortSet.Contains(port)).ToArray();
             var probedPorts = new ConcurrentDictionary<int, byte>();
             var redirectPorts = new ConcurrentBag<int>();
 
@@ -855,24 +866,27 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
         private static async Task<LanScanPlan> BuildLanScanPlanAsync(DiscoverySettings settings, CancellationToken cancellationToken)
         {
-            var ports = BuildBaseScanPorts(settings);
             var knownAddresses = await LoadLanNeighbourAddressesAsync(cancellationToken);
             var supervisorCidrs = await LoadSupervisorLanCidrsAsync(settings, cancellationToken);
             var configuredCidrs = settings.Cidrs
                 .Concat(supervisorCidrs)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            var cidrAddresses = configuredCidrs.Length > 0 ? ExpandCidrs(configuredCidrs) : [];
-            var fallbackAddresses = cidrAddresses.Count == 0 ? ExpandLocalInterfaceCidrs() : [];
+            // Always expand supervisor/configured CIDRs AND local interface subnets so Scan
+            // covers every LAN IP, not only ARP neighbours.
+            var cidrAddresses = configuredCidrs.Length > 0 ? ExpandCidrs(configuredCidrs) : Array.Empty<IPAddress>();
+            var localInterfaceAddresses = ExpandLocalInterfaceCidrs();
             var neighbourAddresses = knownAddresses
                 .Select(value => IPAddress.TryParse(value, out var address) ? address : null)
                 .Where(address => address is not null)
                 .Cast<IPAddress>();
             var addresses = neighbourAddresses
                 .Concat(cidrAddresses)
-                .Concat(fallbackAddresses);
+                .Concat(localInterfaceAddresses);
 
+            var ports = BuildBaseScanPorts(settings);
             var hosts = addresses
+                .Where(IsPrivateIPv4)
                 .Distinct(IPAddressComparer.Instance)
                 .Select(address =>
                 {
@@ -895,7 +909,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 hosts.Where(host => host.IsKnownLive).ToArray(),
                 hosts.Where(host => !host.IsKnownLive).ToArray(),
                 configuredCidrs,
-                fallbackAddresses.Count);
+                localInterfaceAddresses.Count);
         }
 
         private static async Task<IReadOnlyList<ProbeHost>> DiscoverSsdpHostsAsync(
@@ -2695,18 +2709,15 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
         AddRange(CommonHomelabPorts);
         AddRange(HttpsConventionPorts);
-        if (settings.EnableExpandedLanDiscovery)
-        {
-            AddRange(ExpandedPorts);
-            AddRange(settings.AdditionalPorts);
-        }
+        AddRange(ExpandedPorts);
+        AddRange(settings.AdditionalPorts);
 
         return ports;
     }
 
     private static IReadOnlyList<int> BuildPortsForHost(ProbeHost host, DiscoverySettings settings)
     {
-        var ports = new List<int>(CommonHomelabPorts.Length + HttpsConventionPorts.Length + host.KnownPorts.Count + 8);
+        var ports = new List<int>(CommonHomelabPorts.Length + HttpsConventionPorts.Length + ExpandedPorts.Length + host.KnownPorts.Count + 8);
 
         void AddRange(IEnumerable<int> values)
         {
@@ -2724,11 +2735,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         AddRange(host.KnownPorts);
         // Learn alternate HTTPS admin ports (Nxxx443) without hardcoding a single product port.
         AddRange(HttpsConventionPorts);
-        if (settings.EnableExpandedLanDiscovery)
-        {
-            AddRange(ExpandedPorts);
-            AddRange(settings.AdditionalPorts);
-        }
+        AddRange(ExpandedPorts);
+        AddRange(settings.AdditionalPorts);
 
         return ports;
     }
@@ -3125,27 +3133,53 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private static IReadOnlyList<IPAddress> ExpandLocalInterfaceCidrs()
     {
-        var interfaces = GetLocalIPv4Interfaces();
-        var result = new List<IPAddress>();
-        foreach (var localInterface in interfaces)
-        {
-            var addressValue = AddressToUInt32(localInterface.Address);
-            var maskValue = AddressToUInt32(localInterface.Mask);
-            var networkValue = addressValue & maskValue;
-            var broadcastValue = networkValue | ~maskValue;
-            var availableHosts = broadcastValue > networkValue ? broadcastValue - networkValue - 1 : 0;
-
-            for (var offset = 1u; offset <= availableHosts; offset++)
+        // Reuse ExpandCidrs so wide masks (/8, /16) get the same Class-C-first / prefix floor
+        // as supervisor CIDRs instead of enumerating millions of hosts.
+        var cidrs = GetLocalIPv4Interfaces()
+            .Select(localInterface =>
             {
-                var candidate = UInt32ToAddress(networkValue + offset);
-                if (!candidate.Equals(localInterface.Address))
-                {
-                    result.Add(candidate);
-                }
+                var prefix = PrefixLengthFromIPv4Mask(localInterface.Mask) ?? 24;
+                prefix = Math.Clamp(prefix, 16, 30);
+                return $"{localInterface.Address}/{prefix}";
+            })
+            .Where(IsPrivateCidr)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return ExpandCidrs(cidrs)
+            .Where(IsPrivateIPv4)
+            .ToArray();
+    }
+
+    private static int? PrefixLengthFromIPv4Mask(IPAddress mask)
+    {
+        if (mask.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return null;
+        }
+
+        var value = AddressToUInt32(mask);
+        var prefixLength = 0;
+        var seenZero = false;
+        for (var bit = 31; bit >= 0; bit--)
+        {
+            var isSet = (value & (1u << bit)) != 0;
+            if (isSet && seenZero)
+            {
+                return null;
+            }
+
+            if (isSet)
+            {
+                prefixLength++;
+            }
+            else
+            {
+                seenZero = true;
             }
         }
 
-        return result;
+        return prefixLength is > 0 and <= 32 ? prefixLength : null;
     }
 
     private static bool IsPrivateIPv4(IPAddress address)
