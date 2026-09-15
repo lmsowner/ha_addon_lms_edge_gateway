@@ -24,7 +24,7 @@ public sealed record LocalHttpServiceEndpoint(
     DateTimeOffset? DiscoveredAtUtc = null,
     int Confidence = 0,
     string ServiceName = "",
-    string ServiceKind = "unknown-http",
+    string ServiceKind = "unknown",
     DiscoveryExposure Exposure = DiscoveryExposure.RequiresManualConfirmation,
     string Fingerprint = "",
     IReadOnlyList<string>? Evidence = null,

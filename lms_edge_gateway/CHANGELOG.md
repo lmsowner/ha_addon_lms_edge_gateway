@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.15.07.53
+
+- Stop guessing service names from port numbers (Chromecasts were mislabeled UniFi); label unmatched services as Unknown and identify only from title/TLS/server evidence.
+
+
 ## 2026.09.14.19.01
 
 - Fix missed HTTP/S services on alternate HTTPS ports (e.g. UniFi OS :11443) by learning open Nxxx443 ports, localhost listeners, and same-host redirect targets instead of allowlist-only probing.

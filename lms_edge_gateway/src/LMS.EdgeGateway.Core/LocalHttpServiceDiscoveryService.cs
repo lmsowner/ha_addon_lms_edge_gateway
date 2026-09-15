@@ -2131,7 +2131,9 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 exposure = DiscoveryExposure.RequiresManualConfirmation;
             }
 
-            var displayName = FirstNonBlank(best.ServiceName, $"{best.Host}:{best.Port}") ?? $"{best.Host}:{best.Port}";
+            var displayName = FingerprintRules.IsUnknownLabel(best.ServiceName)
+                ? FirstNonBlank(best.Title, $"{best.Host}:{best.Port}") ?? $"{best.Host}:{best.Port}"
+                : FirstNonBlank(best.ServiceName, best.Title, $"{best.Host}:{best.Port}") ?? $"{best.Host}:{best.Port}";
             return new LocalHttpServiceEndpoint(
                 BuildUrl(best.Scheme, best.Host, best.Port),
                 best.Scheme,
@@ -2318,51 +2320,10 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private static class FingerprintRules
     {
-        private static readonly Dictionary<int, FingerprintResult> DistinctivePortHints = new()
-        {
-            [81] = PortHint("Nginx Proxy Manager", "nginx-proxy-manager", 72, DiscoveryExposure.RequiresManualConfirmation, "nginx-proxy-manager-port"),
-            [1880] = PortHint("Node-RED", "node-red", 72, DiscoveryExposure.RequiresManualConfirmation, "node-red-port"),
-            [1984] = PortHint("go2rtc", "go2rtc", 72, DiscoveryExposure.RequiresManualConfirmation, "go2rtc-port"),
-            [2283] = PortHint("Immich", "immich", 72, DiscoveryExposure.Publishable, "immich-port"),
-            [3001] = PortHint("Uptime Kuma", "uptime-kuma", 72, DiscoveryExposure.Publishable, "uptime-kuma-port"),
-            [5001] = PortHint("Synology DSM", "synology-dsm", 70, DiscoveryExposure.RequiresManualConfirmation, "synology-dsm-port"),
-            [5380] = PortHint("Technitium DNS", "technitium-dns", 72, DiscoveryExposure.RequiresManualConfirmation, "technitium-dns-port"),
-            [5601] = PortHint("Kibana", "kibana", 72, DiscoveryExposure.RequiresManualConfirmation, "kibana-port"),
-            [6767] = PortHint("Bazarr", "bazarr", 74, DiscoveryExposure.RequiresManualConfirmation, "bazarr-port"),
-            [6789] = PortHint("NZBGet", "nzbget", 74, DiscoveryExposure.RequiresManualConfirmation, "nzbget-port"),
-            [7125] = PortHint("Moonraker", "moonraker", 72, DiscoveryExposure.RequiresManualConfirmation, "moonraker-port"),
-            [7443] = PortHint("UniFi Protect", "unifi-protect", 70, DiscoveryExposure.RequiresManualConfirmation, "unifi-protect-port"),
-            [7745] = PortHint("Homebox", "homebox", 72, DiscoveryExposure.Publishable, "homebox-port"),
-            [7878] = PortHint("Radarr", "radarr", 74, DiscoveryExposure.RequiresManualConfirmation, "radarr-port"),
-            [8006] = PortHint("Proxmox VE", "proxmox", 74, DiscoveryExposure.RequiresManualConfirmation, "proxmox-port"),
-            [8043] = PortHint("Omada Controller", "omada-controller", 70, DiscoveryExposure.RequiresManualConfirmation, "omada-controller-port"),
-            [8083] = PortHint("Calibre-Web", "calibre-web", 72, DiscoveryExposure.Publishable, "calibre-web-port"),
-            [8096] = PortHint("Jellyfin / Emby", "jellyfin", 70, DiscoveryExposure.Publishable, "jellyfin-emby-port"),
-            [8111] = PortHint("TeamCity", "teamcity", 70, DiscoveryExposure.RequiresManualConfirmation, "teamcity-port"),
-            [8112] = PortHint("Deluge", "deluge", 72, DiscoveryExposure.RequiresManualConfirmation, "deluge-port"),
-            [8123] = PortHint("Home Assistant", "home-assistant", 76, DiscoveryExposure.RequiresManualConfirmation, "home-assistant-port"),
-            [8200] = PortHint("HashiCorp Vault", "vault", 72, DiscoveryExposure.UnsafeToExpose, "vault-port"),
-            [8384] = PortHint("Syncthing", "syncthing", 72, DiscoveryExposure.RequiresManualConfirmation, "syncthing-port"),
-            [8443] = PortHint("UniFi Network Server", "unifi-network", 68, DiscoveryExposure.RequiresManualConfirmation, "unifi-network-port"),
-            [8686] = PortHint("Lidarr", "lidarr", 74, DiscoveryExposure.RequiresManualConfirmation, "lidarr-port"),
-            [8787] = PortHint("Readarr", "readarr", 74, DiscoveryExposure.RequiresManualConfirmation, "readarr-port"),
-            [8920] = PortHint("Jellyfin / Emby", "jellyfin", 70, DiscoveryExposure.Publishable, "jellyfin-emby-https-port"),
-            [8971] = PortHint("Frigate", "frigate", 74, DiscoveryExposure.RequiresManualConfirmation, "frigate-port"),
-            [8989] = PortHint("Sonarr", "sonarr", 74, DiscoveryExposure.RequiresManualConfirmation, "sonarr-port"),
-            [9001] = PortHint("MinIO Console", "minio", 70, DiscoveryExposure.RequiresManualConfirmation, "minio-console-port"),
-            [9443] = PortHint("Portainer", "portainer", 70, DiscoveryExposure.RequiresManualConfirmation, "portainer-https-port"),
-            [9696] = PortHint("Prowlarr", "prowlarr", 74, DiscoveryExposure.RequiresManualConfirmation, "prowlarr-port"),
-            [10000] = PortHint("Webmin", "webmin", 70, DiscoveryExposure.RequiresManualConfirmation, "webmin-port"),
-            [10443] = PortHint("Scrypted", "scrypted", 72, DiscoveryExposure.RequiresManualConfirmation, "scrypted-port"),
-            [15672] = PortHint("RabbitMQ Management", "rabbitmq", 72, DiscoveryExposure.RequiresManualConfirmation, "rabbitmq-port"),
-            [18080] = PortHint("UniFi Connect", "unifi-connect", 68, DiscoveryExposure.RequiresManualConfirmation, "unifi-connect-port"),
-            [19999] = PortHint("Netdata", "netdata", 72, DiscoveryExposure.RequiresManualConfirmation, "netdata-port"),
-            [32400] = PortHint("Plex", "plex", 74, DiscoveryExposure.Publishable, "plex-port")
-        };
-
         public static FingerprintResult Fingerprint(string? title, string? server, string? redirect, string? faviconHash, string? tlsSubject, int port)
         {
-            var haystack = $"{title} {server} {redirect} {faviconHash} {tlsSubject}".ToLowerInvariant();
+            // Identify only from response evidence — never from port number alone.
+            var haystack = $"{title} {server} {redirect} {tlsSubject}".ToLowerInvariant();
             return haystack switch
             {
                 var text when text.Contains("home assistant", StringComparison.Ordinal) =>
@@ -2483,16 +2444,31 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     Known("RabbitMQ Management", "rabbitmq", 90, DiscoveryExposure.RequiresManualConfirmation, "rabbitmq"),
                 var text when text.Contains("netdata", StringComparison.Ordinal) =>
                     Known("Netdata", "netdata", 90, DiscoveryExposure.RequiresManualConfirmation, "netdata"),
-                var text when text.Contains("unifi", StringComparison.Ordinal) =>
+                var text when text.Contains("chromecast", StringComparison.Ordinal) ||
+                             text.Contains("google cast", StringComparison.Ordinal) ||
+                             text.Contains("eureka", StringComparison.Ordinal) =>
+                    Known("Chromecast", "chromecast", 90, DiscoveryExposure.RequiresManualConfirmation, "chromecast"),
+                var text when text.Contains("opnsense", StringComparison.Ordinal) =>
+                    Known("OPNsense", "opnsense", 92, DiscoveryExposure.RequiresManualConfirmation, "opnsense"),
+                var text when text.Contains("pfsense", StringComparison.Ordinal) =>
+                    Known("pfSense", "pfsense", 92, DiscoveryExposure.RequiresManualConfirmation, "pfsense"),
+                var text when LooksLikeUnifiEvidence(text) =>
                     Known("UniFi", "unifi", 90, DiscoveryExposure.RequiresManualConfirmation, "unifi"),
                 var text when text.Contains("octoprint", StringComparison.Ordinal) =>
                     Known("OctoPrint", "octoprint", 90, DiscoveryExposure.RequiresManualConfirmation, "octoprint"),
                 var text when text.Contains("docker", StringComparison.Ordinal) && port is 2375 or 2376 =>
                     Known("Docker API", "docker-api", 99, DiscoveryExposure.UnsafeToExpose, "docker-api"),
-                _ when DistinctivePortHints.TryGetValue(port, out var portHint) => portHint,
                 _ => Unknown(port)
             };
         }
+
+        private static bool LooksLikeUnifiEvidence(string text) =>
+            text.Contains("unifi os", StringComparison.Ordinal) ||
+            text.Contains("unifi network", StringComparison.Ordinal) ||
+            text.Contains("unifi protect", StringComparison.Ordinal) ||
+            text.Contains("unifi connect", StringComparison.Ordinal) ||
+            text.Contains("ubiquiti", StringComparison.Ordinal) ||
+            Regex.IsMatch(text, @"\bunifi\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         public static string NormalizeServiceKind(params string?[] values)
         {
@@ -2513,9 +2489,10 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             if (text.Contains("radarr", StringComparison.Ordinal)) return "radarr";
             if (text.Contains("frigate", StringComparison.Ordinal)) return "frigate";
             if (text.Contains("immich", StringComparison.Ordinal)) return "immich";
-            if (text.Contains("unifi", StringComparison.Ordinal)) return "unifi";
+            if (text.Contains("chromecast", StringComparison.Ordinal)) return "chromecast";
+            if (LooksLikeUnifiEvidence(text)) return "unifi";
             if (text.Contains("docker", StringComparison.Ordinal)) return "docker-api";
-            return "unknown-http";
+            return "unknown";
         }
 
         public static string BuildFriendlyName(string serviceKind, string fallback) => serviceKind switch
@@ -2536,9 +2513,11 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             "radarr" => "Radarr",
             "frigate" => "Frigate",
             "immich" => "Immich",
+            "chromecast" => "Chromecast",
             "unifi" => "UniFi",
             "docker-api" => "Docker API",
-            _ => string.IsNullOrWhiteSpace(fallback) ? "unknown HTTP service" : fallback
+            "unknown" or "unknown-http" => "Unknown",
+            _ => string.IsNullOrWhiteSpace(fallback) || IsUnknownLabel(fallback) ? "Unknown" : fallback
         };
 
         public static DiscoveryExposure ClassifyExposure(string serviceKind, int confidence) => serviceKind switch
@@ -2546,18 +2525,22 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             "docker-api" or "vault" => DiscoveryExposure.UnsafeToExpose,
             "portainer" or "grafana" or "adguard-home" or "proxmox" or "truenas" or "unraid" or "unifi" =>
                 DiscoveryExposure.RequiresManualConfirmation,
-            "unknown-http" => DiscoveryExposure.RequiresManualConfirmation,
+            "unknown" or "unknown-http" => DiscoveryExposure.RequiresManualConfirmation,
             _ => confidence >= 80 ? DiscoveryExposure.Publishable : DiscoveryExposure.RequiresManualConfirmation
         };
+
+        public static bool IsUnknownLabel(string? value) =>
+            string.IsNullOrWhiteSpace(value) ||
+            value.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("unknown http service", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("unknown http", StringComparison.OrdinalIgnoreCase);
 
         private static FingerprintResult Known(string name, string kind, int confidence, DiscoveryExposure exposure, string fingerprint) =>
             new(name, kind, confidence, exposure, fingerprint, [$"{name} fingerprint matched from HTTP/TLS metadata."]);
 
-        private static FingerprintResult PortHint(string name, string kind, int confidence, DiscoveryExposure exposure, string fingerprint) =>
-            new(name, kind, confidence, exposure, fingerprint, [$"{name} common port matched without response metadata."]);
-
         private static FingerprintResult Unknown(int port) =>
-            new("unknown HTTP service", "unknown-http", 45, DiscoveryExposure.RequiresManualConfirmation, $"unknown:{port}", ["HTTP/S response found, but no known service fingerprint matched."]);
+            new("Unknown", "unknown", 45, DiscoveryExposure.RequiresManualConfirmation, $"unknown:{port}", ["HTTP/S response found, but no known service fingerprint matched."]);
     }
 
     private sealed record DiscoveryEvidence(

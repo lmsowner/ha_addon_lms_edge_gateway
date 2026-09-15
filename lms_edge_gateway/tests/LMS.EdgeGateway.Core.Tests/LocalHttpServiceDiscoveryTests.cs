@@ -356,6 +356,28 @@ public sealed class LocalHttpServiceDiscoveryTests
         Assert.Equal([11443], ports);
     }
 
+    [Fact]
+    public void Fingerprint_does_not_infer_service_from_port_alone()
+    {
+        var method = typeof(LocalHttpServiceDiscoveryService)
+            .GetNestedType("FingerprintRules", BindingFlags.NonPublic)!
+            .GetMethod("Fingerprint", BindingFlags.Public | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method.Invoke(null, [null, null, null, null, null, 8443]);
+        Assert.NotNull(result);
+        Assert.Equal("Unknown", GetProperty<string>(result, "Name"));
+        Assert.Equal("unknown", GetProperty<string>(result, "Kind"));
+
+        var unifi = method.Invoke(null, ["UniFi OS", null, null, null, null, 8008]);
+        Assert.NotNull(unifi);
+        Assert.Equal("UniFi", GetProperty<string>(unifi, "Name"));
+
+        var cast = method.Invoke(null, ["Chromecast", null, null, null, null, 8443]);
+        Assert.NotNull(cast);
+        Assert.Equal("Chromecast", GetProperty<string>(cast, "Name"));
+    }
+
     [Theory]
     [InlineData("Home Assistant", 0)]
     [InlineData("Proxmox Virtual Environment", 0)]

@@ -1199,8 +1199,7 @@
             : null;
         var name = FirstNonBlank(
             goodTitle,
-            service.ServiceKind.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ? null : service.ServiceName,
-            service.ServiceName,
+            IsUnknownDiscoveredService(service) ? null : service.ServiceName,
             "Published Service");
         return name ?? "Published Service";
     }
@@ -1208,12 +1207,20 @@
     private static string BuildRouteHostLabelFromDiscoveredService(LocalHttpServiceEndpoint service)
     {
         var source = FirstNonBlank(
-            service.ServiceKind.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ? null : service.ServiceKind,
-            service.ServiceName,
+            IsUnknownDiscoveredService(service) ? null : service.ServiceKind,
+            IsUnknownDiscoveredService(service) ? null : service.ServiceName,
             service.Title,
             service.Host);
         return SlugifyHostLabel(source ?? "service");
     }
+
+    private static bool IsUnknownDiscoveredService(LocalHttpServiceEndpoint service) =>
+        string.IsNullOrWhiteSpace(service.ServiceKind) ||
+        service.ServiceKind.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
+        service.ServiceKind.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ||
+        string.IsNullOrWhiteSpace(service.ServiceName) ||
+        service.ServiceName.Equals("Unknown", StringComparison.OrdinalIgnoreCase) ||
+        service.ServiceName.StartsWith("unknown http", StringComparison.OrdinalIgnoreCase);
 
     private static string? FirstNonBlank(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();

@@ -44,7 +44,13 @@
                 return Service.Title.Trim();
             }
 
-            return FirstNonBlank(Service.ServiceName, Service.DisplayName, HostLabel) ?? HostLabel;
+            if (!FingerprintRulesIsUnknown(Service.ServiceName) &&
+                !FingerprintRulesIsUnknown(Service.ServiceKind))
+            {
+                return Service.ServiceName.Trim();
+            }
+
+            return "Unknown";
         }
     }
 
@@ -53,9 +59,18 @@
         get
         {
             var label = PrimaryLabel.Trim();
-            return string.IsNullOrEmpty(label) ? "?" : char.ToUpperInvariant(label[0]).ToString();
+            return string.IsNullOrEmpty(label) || label.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+                ? "?"
+                : char.ToUpperInvariant(label[0]).ToString();
         }
     }
+
+    private static bool FingerprintRulesIsUnknown(string? value) =>
+        string.IsNullOrWhiteSpace(value) ||
+        value.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("unknown-http", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("unknown http service", StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith("unknown http", StringComparison.OrdinalIgnoreCase);
 
     private string DetailsTitle
     {
