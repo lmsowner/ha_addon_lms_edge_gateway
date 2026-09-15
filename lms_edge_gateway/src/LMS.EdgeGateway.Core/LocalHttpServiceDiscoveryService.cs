@@ -25,7 +25,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         80, 81, 443, 1880, 1984, 2283, 3000, 3001, 5000, 5001, 5380, 5601,
         6767, 6789, 7125, 7443, 7745, 7878, 8000, 8006, 8043, 8080, 8083,
         8096, 8111, 8112, 8123, 8200, 8384, 8443, 8686, 8787, 8920, 8971,
-        8989, 9000, 9001, 9090, 9091, 9443, 9696, 10000, 10443, 15672,
+        8989, 9000, 9001, 9090, 9091, 9443, 9696, 10000, 10443, 11443, 15672,
         18080, 19999, 32400
     ];
 
@@ -550,12 +550,14 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                     }
                     else
                     {
+                        // Live hosts get a full inventory with the normal connect budget.
+                        // Keep the aggressive timeout only for the cheap liveness pass.
                         openPorts = await FindOpenTcpPortsAsync(
                             host.ProbeAddress,
                             candidates,
                             tcpConcurrency,
                             cancellationToken,
-                            LanConnectTimeout);
+                            ConnectTimeout);
                     }
                 }
                 else
@@ -2248,11 +2250,30 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 var title = TryExtractTitle(pageHtml);
                 var redirect = response.Headers.Location?.ToString() ?? string.Empty;
                 var server = response.Headers.Server.ToString();
-                var favicon = await TryReadFaviconAsync(Client, probeUrl, pageHtml, timeout.Token);
-                var tlsSubject = scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-                    ? await TryReadTlsSubjectAsync(host.ProbeAddressName, port, timeout.Token)
-                    : string.Empty;
-                var displayHost = await ResolveHostNameAsync(host, cancellationToken);
+                var statusCode = (int)response.StatusCode;
+
+                // Enrichment is best-effort. Favicon / TLS / reverse-DNS used to share the probe
+                // timeout and discard a successful HTTP hit when they ran long (common on UniFi :11443).
+                var favicon = FaviconProbeResult.Empty;
+                var tlsSubject = string.Empty;
+                var displayHost = host.TargetHost;
+                try
+                {
+                    using var enrichTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    enrichTimeout.CancelAfter(TimeSpan.FromMilliseconds(900));
+                    favicon = await TryReadFaviconAsync(Client, probeUrl, pageHtml, enrichTimeout.Token);
+                    if (scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                    {
+                        tlsSubject = await TryReadTlsSubjectAsync(host.ProbeAddressName, port, enrichTimeout.Token);
+                    }
+
+                    displayHost = await ResolveHostNameAsync(host, enrichTimeout.Token);
+                }
+                catch
+                {
+                    // Keep the HTTP evidence even when enrichment times out or fails.
+                }
+
                 var fingerprint = FingerprintRules.Fingerprint(title, server, redirect, favicon.Hash, tlsSubject, port);
                 var notes = displayHost.Equals(host.TargetHost, StringComparison.OrdinalIgnoreCase)
                     ? fingerprint.Notes
@@ -2272,7 +2293,7 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                         : fingerprint.Exposure,
                     Reachable: true,
                     Fingerprint: fingerprint.Fingerprint,
-                    StatusCode: (int)response.StatusCode,
+                    StatusCode: statusCode,
                     Title: title,
                     ServerHeader: server,
                     RedirectLocation: redirect,
@@ -2638,7 +2659,10 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         string? IpAddress = null,
         IReadOnlyList<string>? Notes = null);
 
-    private sealed record FaviconProbeResult(string Hash, string? DataUrl);
+    private sealed record FaviconProbeResult(string Hash, string? DataUrl)
+    {
+        public static FaviconProbeResult Empty { get; } = new(string.Empty, null);
+    }
 
     private sealed record FingerprintResult(
         string Name,

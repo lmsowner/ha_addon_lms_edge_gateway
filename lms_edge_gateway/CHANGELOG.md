@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.09.01
+
+- Keep successful HTTP/S hits when favicon/TLS/DNS enrichment times out (UniFi :11443 was being discarded); probe 11443 in the priority port set; use a normal TCP connect budget for live-host port inventory.
+
 ## 2026.09.15.08.44
 
 - Discovery stamp hover uses a fixed opaque dock flyout above the scroll container so magnified details are no longer clipped or see-through.
