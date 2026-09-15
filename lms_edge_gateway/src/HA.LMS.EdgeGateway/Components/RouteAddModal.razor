@@ -1,6 +1,7 @@
 @namespace HA.LMS.EdgeGateway.Components
 @implements IDisposable
 @using System.Net
+@using System.Net.Sockets
 @using System.Text
 @inject IEdgeGatewayRelayProvisioningService RelayProvisioningService
 @inject ILocalHttpServiceDiscoveryService HttpServiceDiscovery
@@ -1236,12 +1237,53 @@
 
     private static string BuildRouteHostLabelFromDiscoveredService(LocalHttpServiceEndpoint service)
     {
-        var source = FirstNonBlank(
-            IsUnknownDiscoveredService(service) ? null : service.ServiceKind,
-            IsUnknownDiscoveredService(service) ? null : service.ServiceName,
-            service.Title,
-            service.Host);
-        return SlugifyHostLabel(source ?? "service");
+        // Prefer the machine hostname (pve / pve2), never the product title (Proxmox).
+        // Titles collide across identical appliances and overwrite existing public routes.
+        var hostCandidate = FirstNonBlank(service.Host, service.DisplayName);
+        if (!string.IsNullOrWhiteSpace(hostCandidate) && !LooksLikeIpOrLocalAddress(hostCandidate))
+        {
+            var shortLabel = TakeDnsLeftLabel(hostCandidate);
+            if (!string.IsNullOrWhiteSpace(shortLabel))
+            {
+                return SlugifyHostLabel(shortLabel);
+            }
+        }
+
+        var addressText = FirstNonBlank(service.IpAddress, service.Host);
+        if (IPAddress.TryParse(addressText, out var address) && address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+            return $"host-{bytes[0]}-{bytes[1]}-{bytes[2]}-{bytes[3]}";
+        }
+
+        return SlugifyHostLabel(FirstNonBlank(addressText, "service") ?? "service");
+    }
+
+    private static string TakeDnsLeftLabel(string host)
+    {
+        var normalized = host.Trim().TrimEnd('.').ToLowerInvariant();
+        if (normalized.Contains("://", StringComparison.Ordinal) &&
+            Uri.TryCreate(normalized, UriKind.Absolute, out var uri) &&
+            !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            normalized = uri.Host.Trim().TrimEnd('.').ToLowerInvariant();
+        }
+
+        var label = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+        return label ?? string.Empty;
+    }
+
+    private static bool LooksLikeIpOrLocalAddress(string value)
+    {
+        var normalized = value.Trim().TrimEnd('.');
+        if (IPAddress.TryParse(normalized, out _))
+        {
+            return true;
+        }
+
+        return normalized.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsUnknownDiscoveredService(LocalHttpServiceEndpoint service) =>

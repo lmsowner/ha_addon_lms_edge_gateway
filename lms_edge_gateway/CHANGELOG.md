@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.11.05
+
+- When picking a discovered service, prefill the public hostname from the machine DNS name (left label), not the product title, so identical appliances do not collide.
+
 ## 2026.09.15.10.07
 
 - Close the New route dialog after a successful save so the freshly created FQDN is not shown as already used.
