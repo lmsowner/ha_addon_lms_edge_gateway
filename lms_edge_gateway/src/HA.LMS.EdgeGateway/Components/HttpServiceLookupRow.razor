@@ -26,7 +26,7 @@
 
     @if (!IsBlocked)
     {
-        <div class="http-service-stamp-dock" aria-hidden="true" @onclick="HandleUseAsync" @onclick:stopPropagation="true">
+        <div class="http-service-stamp-dock" aria-hidden="true">
             <span class="http-service-stamp-icon" aria-hidden="true">
                 @if (!string.IsNullOrWhiteSpace(Service.FaviconDataUrl))
                 {

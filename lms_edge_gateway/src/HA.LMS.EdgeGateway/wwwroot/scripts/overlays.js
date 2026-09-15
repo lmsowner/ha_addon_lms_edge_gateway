@@ -107,6 +107,7 @@
         const bounds = boundsFor(root);
         const rect = trigger.getBoundingClientRect();
         const width = clamp(Math.max(rect.width * 1.55, 15.5 * 16), 12 * 16, Math.min(22 * 16, bounds.width - pad * 2));
+        const gap = 10;
 
         dock.style.position = "fixed";
         dock.style.zIndex = "250";
@@ -114,18 +115,20 @@
         dock.style.maxWidth = `${Math.round(width)}px`;
         dock.style.right = "auto";
         dock.style.bottom = "auto";
-        dock.style.left = `${Math.round(rect.left + rect.width / 2 - width / 2)}px`;
-        dock.style.top = `${Math.round(rect.top - 8)}px`;
+        dock.style.visibility = "hidden";
+        dock.style.left = `${Math.round(rect.left)}px`;
+        dock.style.top = `${Math.round(rect.top)}px`;
         dock.classList.add("is-placed");
 
         const dockHeight = dock.getBoundingClientRect().height;
         const spaceAbove = rect.top - bounds.top - pad;
         const spaceBelow = bounds.bottom - rect.bottom - pad;
-        const placeAbove = spaceAbove >= dockHeight * 0.55 && spaceAbove > spaceBelow;
+        // Prefer above the stamp so the flyout never covers the icon you are choosing.
+        const placeAbove = spaceAbove >= dockHeight + gap || spaceAbove >= spaceBelow;
 
         let top = placeAbove
-            ? rect.bottom - dockHeight + 4
-            : rect.top - 4;
+            ? rect.top - dockHeight - gap
+            : rect.bottom + gap;
         let left = rect.left + rect.width / 2 - width / 2;
 
         const minLeft = bounds.left + pad;
@@ -138,6 +141,10 @@
 
         dock.style.left = `${Math.round(left)}px`;
         dock.style.top = `${Math.round(top)}px`;
+        dock.style.transformOrigin = placeAbove ? "center bottom" : "center top";
+        dock.classList.toggle("is-above", placeAbove);
+        dock.classList.toggle("is-below", !placeAbove);
+        dock.style.visibility = "visible";
     };
 
     const placeHovered = event => {

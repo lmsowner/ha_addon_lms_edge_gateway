@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.09.22
+
+- Hostname field fills the row with the domain suffix right-aligned; discovery stamp previews open above the card and do not intercept clicks.
+
 ## 2026.09.15.09.11
 
 - New route dialog primary button switches to Overwrite service when the hostname/path already exists.

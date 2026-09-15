@@ -1535,26 +1535,27 @@ textarea {
 .edge-host-label-compose {
     align-items: center;
     align-self: end;
-    display: grid;
-    gap: 0.28rem;
-    grid-template-columns: minmax(4.75rem, 7.25rem) minmax(0, 1fr);
+    display: flex;
+    gap: 0.35rem;
     min-height: var(--edge-route-field-control-row);
     width: 100%;
 }
 
 .edge-host-label-compose > .edge-host-label-input {
+    flex: 1 1 auto;
     min-height: var(--edge-route-field-control-row);
     min-width: 0;
-    width: 100%;
+    width: auto;
 }
 
 .edge-host-label-domain {
     color: var(--color-text-muted);
+    flex: 0 0 auto;
     font-size: 0.86rem;
     font-weight: 600;
     letter-spacing: 0.01em;
     line-height: 1.2;
-    min-width: 0;
+    max-width: 46%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2104,6 +2105,7 @@ textarea {
     grid-template-columns: auto minmax(0, 1fr);
     opacity: 0;
     padding: 0.75rem 0.8rem;
+    /* Preview only — never steal clicks from the stamp grid underneath. */
     pointer-events: none;
     transform: scale(0.92);
     transform-origin: center bottom;
@@ -2113,13 +2115,15 @@ textarea {
     z-index: 250;
 }
 
+.http-service-stamp-dock.is-below {
+    transform-origin: center top;
+}
+
 .http-service-stamp-shell:hover .http-service-stamp-dock.is-placed,
 .http-service-stamp-shell:focus-within .http-service-stamp-dock.is-placed {
-    cursor: pointer;
     display: grid;
     opacity: 1;
-    pointer-events: auto;
-    transform: scale(1.08);
+    transform: scale(1.06);
 }
 
 .http-service-stamp-icon {
