@@ -10,7 +10,7 @@
 
 ## 2026.09.15.09.01
 
-- Keep successful HTTP/S hits when favicon/TLS/DNS enrichment times out (UniFi :11443 was being discarded); probe 11443 in the priority port set; use a normal TCP connect budget for live-host port inventory.
+- Keep successful HTTP/S hits when favicon/TLS/DNS enrichment times out (slow admin UIs were being discarded); prioritize alternate admin HTTPS ports; use a normal TCP connect budget for live-host port inventory.
 
 ## 2026.09.15.08.44
 
@@ -34,7 +34,7 @@
 
 ## 2026.09.15.08.03
 
-- Full LAN sweep on Scan: every private LAN IP (ARP + supervisor/configured CIDRs + local interface subnets) is TCP-probed across the full well-known HTTP/S port set, without the old ping/tiny-liveness gate that skipped hosts only listening on ports like :11443.
+- Full LAN sweep on Scan: every private LAN IP (ARP + supervisor/configured CIDRs + local interface subnets) is TCP-probed across the full well-known HTTP/S port set, without the old ping/tiny-liveness gate that skipped hosts only listening on alternate admin HTTPS ports.
 
 ## 2026.09.15.07.56
 
@@ -43,12 +43,12 @@
 
 ## 2026.09.15.07.53
 
-- Stop guessing service names from port numbers (Chromecasts were mislabeled UniFi); label unmatched services as Unknown and identify only from title/TLS/server evidence.
+- Stop guessing service names from port numbers (devices were mislabeled from port guesses); label unmatched services as Unknown and identify only from title/TLS/server evidence.
 
 
 ## 2026.09.14.19.01
 
-- Fix missed HTTP/S services on alternate HTTPS ports (e.g. UniFi OS :11443) by learning open Nxxx443 ports, localhost listeners, and same-host redirect targets instead of allowlist-only probing.
+- Fix missed HTTP/S services on alternate HTTPS ports (alternate Nxxx443 HTTPS admin ports) by learning open Nxxx443 ports, localhost listeners, and same-host redirect targets instead of allowlist-only probing.
 
 
 ## 2026.09.14.17.21
@@ -58,7 +58,7 @@
 
 ## 2026.09.14.17.15
 
-- Probe common homelab HTTP/S ports first on every live IP (Proxmox, *arr, UniFi, Plex, etc.), with stronger title/port fingerprints.
+- Probe common homelab HTTP/S ports first on every live IP (common homelab services), with stronger title/port fingerprints.
 
 
 ## 2026.09.14.17.01
