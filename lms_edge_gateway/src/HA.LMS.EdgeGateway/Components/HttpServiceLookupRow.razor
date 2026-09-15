@@ -1,32 +1,55 @@
 @namespace HA.LMS.EdgeGateway.Components
 
-<button class="http-service-stamp @(IsBlocked ? "is-blocked" : null) @(HasPoorTitle ? "is-poor-title" : null)"
-        type="button"
-        role="listitem"
-        title="@DetailsTitle"
-        disabled="@IsBlocked"
-        @onclick="HandleUseAsync">
-    <span class="http-service-stamp-icon" aria-hidden="true">
-        @if (!string.IsNullOrWhiteSpace(Service.FaviconDataUrl))
-        {
-            <img src="@Service.FaviconDataUrl" alt="" loading="lazy" />
-        }
-        else
-        {
-            <span class="http-service-stamp-icon-fallback">@FallbackGlyph</span>
-        }
-    </span>
-    <span class="http-service-stamp-body">
-        <strong class="http-service-stamp-title">@PrimaryLabel</strong>
-        <span class="http-service-stamp-meta">@HostLabel</span>
-        @if (ShowIpLine)
-        {
-            <span class="http-service-stamp-ip">@Service.IpAddress</span>
-        }
-        <span class="http-service-stamp-scheme">@Service.Scheme.ToUpperInvariant() · @Service.Port</span>
-        <span class="http-service-stamp-url">@Service.Url</span>
-    </span>
-</button>
+<div class="http-service-stamp-shell @(IsBlocked ? "is-blocked" : null)">
+    <button class="http-service-stamp @(IsBlocked ? "is-blocked" : null) @(HasPoorTitle ? "is-poor-title" : null)"
+            type="button"
+            role="listitem"
+            title="@DetailsTitle"
+            disabled="@IsBlocked"
+            @onclick="HandleUseAsync">
+        <span class="http-service-stamp-icon" aria-hidden="true">
+            @if (!string.IsNullOrWhiteSpace(Service.FaviconDataUrl))
+            {
+                <img src="@Service.FaviconDataUrl" alt="" loading="lazy" />
+            }
+            else
+            {
+                <span class="http-service-stamp-icon-fallback">@FallbackGlyph</span>
+            }
+        </span>
+        <span class="http-service-stamp-body">
+            <strong class="http-service-stamp-title">@PrimaryLabel</strong>
+            <span class="http-service-stamp-meta">@HostLabel</span>
+            <span class="http-service-stamp-scheme">@Service.Scheme.ToUpperInvariant() · @Service.Port</span>
+        </span>
+    </button>
+
+    @if (!IsBlocked)
+    {
+        <div class="http-service-stamp-dock" aria-hidden="true" @onclick="HandleUseAsync" @onclick:stopPropagation="true">
+            <span class="http-service-stamp-icon" aria-hidden="true">
+                @if (!string.IsNullOrWhiteSpace(Service.FaviconDataUrl))
+                {
+                    <img src="@Service.FaviconDataUrl" alt="" loading="lazy" />
+                }
+                else
+                {
+                    <span class="http-service-stamp-icon-fallback">@FallbackGlyph</span>
+                }
+            </span>
+            <span class="http-service-stamp-body">
+                <strong class="http-service-stamp-title">@PrimaryLabel</strong>
+                <span class="http-service-stamp-meta">@HostLabel</span>
+                @if (ShowIpLine)
+                {
+                    <span class="http-service-stamp-ip">@Service.IpAddress</span>
+                }
+                <span class="http-service-stamp-scheme">@Service.Scheme.ToUpperInvariant() · @Service.Port</span>
+                <span class="http-service-stamp-url">@Service.Url</span>
+            </span>
+        </div>
+    }
+</div>
 
 @code {
     [Parameter, EditorRequired] public LocalHttpServiceEndpoint Service { get; set; } = default!;

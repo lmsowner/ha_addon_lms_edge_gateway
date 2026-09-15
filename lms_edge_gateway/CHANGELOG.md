@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.08.44
+
+- Discovery stamp hover uses a fixed opaque dock flyout above the scroll container so magnified details are no longer clipped or see-through.
+
 ## 2026.09.15.08.33
 
 - Sort discovered HTTP/S stamps so known/identified services appear before Unknown entries.

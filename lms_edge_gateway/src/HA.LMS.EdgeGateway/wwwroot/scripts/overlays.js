@@ -97,17 +97,66 @@
         menu.style.top = `${Math.round(top)}px`;
     };
 
+    const placeStampDock = root => {
+        const trigger = root.querySelector(".http-service-stamp");
+        const dock = root.querySelector(".http-service-stamp-dock");
+        if (!trigger || !dock) {
+            return;
+        }
+
+        const bounds = boundsFor(root);
+        const rect = trigger.getBoundingClientRect();
+        const width = clamp(Math.max(rect.width * 1.55, 15.5 * 16), 12 * 16, Math.min(22 * 16, bounds.width - pad * 2));
+
+        dock.style.position = "fixed";
+        dock.style.zIndex = "250";
+        dock.style.width = `${Math.round(width)}px`;
+        dock.style.maxWidth = `${Math.round(width)}px`;
+        dock.style.right = "auto";
+        dock.style.bottom = "auto";
+        dock.style.left = `${Math.round(rect.left + rect.width / 2 - width / 2)}px`;
+        dock.style.top = `${Math.round(rect.top - 8)}px`;
+        dock.classList.add("is-placed");
+
+        const dockHeight = dock.getBoundingClientRect().height;
+        const spaceAbove = rect.top - bounds.top - pad;
+        const spaceBelow = bounds.bottom - rect.bottom - pad;
+        const placeAbove = spaceAbove >= dockHeight * 0.55 && spaceAbove > spaceBelow;
+
+        let top = placeAbove
+            ? rect.bottom - dockHeight + 4
+            : rect.top - 4;
+        let left = rect.left + rect.width / 2 - width / 2;
+
+        const minLeft = bounds.left + pad;
+        const maxLeft = bounds.right - pad - width;
+        left = maxLeft >= minLeft ? clamp(left, minLeft, maxLeft) : minLeft;
+
+        const minTop = bounds.top + pad;
+        const maxTop = bounds.bottom - pad - Math.min(dockHeight, bounds.height - pad * 2);
+        top = maxTop >= minTop ? clamp(top, minTop, maxTop) : minTop;
+
+        dock.style.left = `${Math.round(left)}px`;
+        dock.style.top = `${Math.round(top)}px`;
+    };
+
     const placeHovered = event => {
         document.querySelectorAll(".lms-field-info:hover, .lms-field-info:focus-within").forEach(root => {
             placeFieldInfo(root, event);
         });
         document.querySelectorAll(".lms-multi-select.open").forEach(placeMultiSelect);
+        document.querySelectorAll(".http-service-stamp-shell:hover, .http-service-stamp-shell:focus-within").forEach(placeStampDock);
     };
 
     document.addEventListener("pointerover", event => {
         const root = event.target?.closest?.(".lms-field-info");
         if (root) {
             placeFieldInfo(root, event);
+        }
+
+        const stamp = event.target?.closest?.(".http-service-stamp-shell");
+        if (stamp && !stamp.classList.contains("is-blocked")) {
+            placeStampDock(stamp);
         }
     }, true);
 
