@@ -721,6 +721,9 @@
             }
 
             await OnSaved.InvokeAsync(result.Summary);
+            // Clear the busy flag before close — otherwise CloseAsync no-ops and the dialog
+            // stays open with the freshly saved FQDN flagged as "already used".
+            isAddingApp = false;
             await CloseAsync();
         }
         catch (Exception exception)
