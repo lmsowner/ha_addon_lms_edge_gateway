@@ -865,20 +865,17 @@ public sealed class EdgeGatewayRelayProvisioningService(
             var normalizedPathPrefix = NormalizeRoutePathPrefix(targetPathPrefix);
             var targetOrigin = NormalizeTargetOrigin(targetScheme, targetHost, targetPort);
             var publicHostname = $"{normalizedHostLabel}.{normalizedDomain}";
-            if (configuration.Applications.Any(route =>
-                    route.PublicHostname.Equals(publicHostname, StringComparison.OrdinalIgnoreCase) &&
-                    NormalizeRoutePathPrefix(route.TargetPathPrefix).Equals(normalizedPathPrefix, StringComparison.OrdinalIgnoreCase)))
+            var existing = configuration.Applications.FirstOrDefault(route =>
+                route.PublicHostname.Equals(publicHostname, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeRoutePathPrefix(route.TargetPathPrefix).Equals(normalizedPathPrefix, StringComparison.OrdinalIgnoreCase));
+            var isOverwrite = existing is not null;
+            if (isOverwrite)
             {
-                return new EdgeGatewayApplicationSaveResult(
-                    false,
-                    null,
-                    $"{BuildRouteUrlDisplay(publicHostname, normalizedPathPrefix)} is already saved.",
-                    steps,
-                    warnings);
+                steps.Add($"Overwriting existing route {BuildRouteUrlDisplay(publicHostname, normalizedPathPrefix)}.");
             }
 
             var application = new PublishedApplicationDefinition(
-                Guid.NewGuid(),
+                existing?.Id ?? Guid.NewGuid(),
                 normalizedName,
                 publicHostname,
                 targetOrigin,
@@ -910,8 +907,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
 
             var updatedConfiguration = configuration with
             {
-                Applications = configuration.Applications
-                    .Append(application)
+                Applications = (isOverwrite
+                        ? configuration.Applications.Select(route => route.Id == application.Id ? application : route)
+                        : configuration.Applications.Append(application))
                     .OrderBy(route => route.PublicHostname, StringComparer.OrdinalIgnoreCase)
                     .ToArray()
             };
@@ -945,7 +943,9 @@ public sealed class EdgeGatewayRelayProvisioningService(
             return new EdgeGatewayApplicationSaveResult(
                 true,
                 publishResult.Application ?? application,
-                $"{normalizedName} is available at {BuildRouteUrlDisplay(publicHostname, normalizedPathPrefix)}.",
+                isOverwrite
+                    ? $"{normalizedName} overwritten and available at {BuildRouteUrlDisplay(publicHostname, normalizedPathPrefix)}."
+                    : $"{normalizedName} is available at {BuildRouteUrlDisplay(publicHostname, normalizedPathPrefix)}.",
                 steps,
                 warnings);
         }

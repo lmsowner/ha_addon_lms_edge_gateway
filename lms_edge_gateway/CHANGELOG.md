@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.09.10
+
+- New route dialog shows the selected domain after a shorter hostname field and warns when the FQDN is already used; saving overwrites the existing host/path route instead of failing.
+
 ## 2026.09.15.09.01
 
 - Keep successful HTTP/S hits when favicon/TLS/DNS enrichment times out (UniFi :11443 was being discarded); probe 11443 in the priority port set; use a normal TCP connect budget for live-host port inventory.

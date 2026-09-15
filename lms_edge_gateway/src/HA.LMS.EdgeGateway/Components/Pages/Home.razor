@@ -592,6 +592,7 @@
         @if (addAppRelay is not null)
         {
             <RouteAddModal Relay="addAppRelay"
+                           ExistingApplications="@(status?.Configuration.Applications ?? [])"
                            OnClose="CloseAddAppModal"
                            OnSaved="HandleAddAppSavedAsync" />
         }

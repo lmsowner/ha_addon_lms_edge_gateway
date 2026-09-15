@@ -45,14 +45,34 @@
                             </span>
                             <input @bind="addAppName" placeholder="Home Assistant" />
                         </div>
-                        <div class="ui-field">
+                        <div class="ui-field edge-host-label-field">
                             <span class="ui-field-label">
                                 Hostname / subdomain
                                 <LmsFieldInfo Title="Hostname / subdomain">
-                                    <p>Use a short label such as hassio, or a full hostname inside the selected Edge Gateway namespace. This becomes the public host: label.your-domain.</p>
+                                    <p>Use a short label such as hassio. The selected Edge Gateway domain is appended automatically to form the public FQDN.</p>
                                 </LmsFieldInfo>
                             </span>
-                            <input @bind="addAppHostLabel" placeholder="hassio" />
+                            <div class="edge-host-label-compose">
+                                <input class="edge-host-label-input"
+                                       @bind="addAppHostLabel"
+                                       @bind:event="oninput"
+                                       placeholder="hassio"
+                                       autocomplete="off"
+                                       spellcheck="false" />
+                                <span class="edge-host-label-domain" title="@RelayDomainSuffix">@RelayDomainSuffix</span>
+                            </div>
+                            @if (HostnameConflict is not null)
+                            {
+                                <p class="ui-field-helper edge-host-label-overwrite-warning">
+                                    @HostnameConflict.PublicHostname is already used@(string.IsNullOrWhiteSpace(HostnameConflict.Name) ? "" : $" ({HostnameConflict.Name})"). Saving will overwrite that route.
+                                </p>
+                            }
+                            else if (HostnameAlreadyUsed is not null)
+                            {
+                                <p class="ui-field-helper edge-host-label-overwrite-warning">
+                                    @HostnameAlreadyUsed.PublicHostname is already used@(string.IsNullOrWhiteSpace(HostnameAlreadyUsed.Name) ? "" : $" ({HostnameAlreadyUsed.Name})"). Saving will add another path on this hostname.
+                                </p>
+                            }
                         </div>
                         <div class="ui-field">
                             <span class="ui-field-label">
@@ -527,6 +547,7 @@
 
 @code {
     [Parameter] public EdgeGatewayRelayZone? Relay { get; set; }
+    [Parameter] public IReadOnlyList<PublishedApplicationDefinition> ExistingApplications { get; set; } = [];
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback<string> OnSaved { get; set; }
 
@@ -1268,6 +1289,32 @@
 
         return $"{label}.{Relay.DomainName}";
     }
+
+    private string RelayDomainSuffix =>
+        Relay is null || string.IsNullOrWhiteSpace(Relay.DomainName)
+            ? string.Empty
+            : $".{Relay.DomainName.Trim().Trim('.')}";
+
+    private PublishedApplicationDefinition? HostnameConflict
+    {
+        get
+        {
+            if (ExistingApplications.Count == 0 || string.IsNullOrWhiteSpace(BuildAddAppPreviewPublicHost()))
+            {
+                return null;
+            }
+
+            var fqdn = BuildAddAppPreviewPublicHost();
+            var path = NormalizeRoutePathPrefix(addAppTargetPathPrefix);
+            return ExistingApplications.FirstOrDefault(route =>
+                route.PublicHostname.Equals(fqdn, StringComparison.OrdinalIgnoreCase) &&
+                NormalizeRoutePathPrefix(route.TargetPathPrefix).Equals(path, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private PublishedApplicationDefinition? HostnameAlreadyUsed =>
+        ExistingApplications.FirstOrDefault(route =>
+            route.PublicHostname.Equals(BuildAddAppPreviewPublicHost(), StringComparison.OrdinalIgnoreCase));
 
     private string BuildAddAppPreviewRelayHost()
     {
