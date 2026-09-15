@@ -52,8 +52,11 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMilliseconds(1500);
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(450);
+    // Aggressive LAN connect budget so dead IPs fail fast instead of SYN-flooding the network.
+    private static readonly TimeSpan LanConnectTimeout = TimeSpan.FromMilliseconds(180);
     private static readonly TimeSpan ProbePaceDelay = TimeSpan.Zero;
     private const int MaxRedirectFollowPortsPerHost = 8;
+    private const int MaxLanScanAddresses = 384;
     private readonly SemaphoreSlim cacheMutationLock = new(1, 1);
 
     private const int MaxFaviconBytes = 32_768;
@@ -421,9 +424,11 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
 
     private sealed class LanDiscoveryAdapter(DiscoverySettings settings) : IDiscoveryAdapter
     {
-        private const int MaxConcurrentHostChecks = 512;
-        private const int MaxConcurrentTcpLivenessChecks = 2048;
-        private const int MaxConcurrentProbes = 512;
+        // Keep host/TCP fan-out modest — sweeping every LAN IP at 512-wide floods conntrack and
+        // makes live HTTP probes time out (fewer results, not more).
+        private const int MaxConcurrentHostChecks = 32;
+        private const int MaxConcurrentTcpLivenessChecks = 256;
+        private const int MaxConcurrentProbes = 64;
         private static readonly TimeSpan MulticastDiscoveryTimeout = TimeSpan.FromMilliseconds(1250);
         public string Name => "LAN discovery";
 
@@ -534,9 +539,24 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 }
                 else if (host.ProbeAddress is not null)
                 {
-                    // Full well-known TCP sweep per IP — do not require ping or a tiny liveness set.
-                    // Hosts that only expose ports like :11443 / :8989 were previously skipped.
-                    openPorts = await FindOpenTcpPortsAsync(host.ProbeAddress, candidates, tcpConcurrency, cancellationToken);
+                    // Unknown CIDR IPs: cheap liveness first (ping / any well-known port), then full
+                    // port inventory. Blind full sweeps of every dead IP SYN-flood the LAN and
+                    // starve real HTTP probes. Liveness uses the full candidate set so :11443-only
+                    // hosts are still found — just not by hammering empty addresses first.
+                    if (!host.IsKnownLive &&
+                        !await IsLanHostReachableAsync(host.ProbeAddress, candidates, tcpConcurrency, cancellationToken))
+                    {
+                        openPorts = [];
+                    }
+                    else
+                    {
+                        openPorts = await FindOpenTcpPortsAsync(
+                            host.ProbeAddress,
+                            candidates,
+                            tcpConcurrency,
+                            cancellationToken,
+                            LanConnectTimeout);
+                    }
                 }
                 else
                 {
@@ -614,6 +634,30 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 progressState,
                 progress,
                 cancellationToken);
+        }
+
+        private static async Task<bool> IsLanHostReachableAsync(
+            IPAddress address,
+            IReadOnlyList<int> candidatePorts,
+            SemaphoreSlim tcpConcurrency,
+            CancellationToken cancellationToken)
+        {
+            if (await CanPingAsync(address, cancellationToken))
+            {
+                return true;
+            }
+
+            // Probe common ports first (fast reject for empty IPs), then alternate HTTPS / expanded.
+            var common = candidatePorts.Where(CommonHomelabPortSet.Contains).ToArray();
+            if (common.Length > 0 &&
+                await CanOpenAnyTcpAsync(address, common, tcpConcurrency, cancellationToken, LanConnectTimeout))
+            {
+                return true;
+            }
+
+            var remaining = candidatePorts.Where(port => !CommonHomelabPortSet.Contains(port)).ToArray();
+            return remaining.Length > 0 &&
+                   await CanOpenAnyTcpAsync(address, remaining, tcpConcurrency, cancellationToken, LanConnectTimeout);
         }
 
         private static async Task ProbePortSetAsync(
@@ -885,6 +929,9 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 .Concat(localInterfaceAddresses);
 
             var ports = BuildBaseScanPorts(settings);
+            var localAddresses = GetLocalIPv4Interfaces()
+                .Select(item => item.Address)
+                .ToHashSet(IPAddressComparer.Instance);
             var hosts = addresses
                 .Where(IsPrivateIPv4)
                 .Distinct(IPAddressComparer.Instance)
@@ -903,6 +950,14 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                         isKnownLive,
                         ports);
                 })
+                // Prefer ARP/neighbours and same-/24 as the host NIC; hard-cap so a /16 never
+                // schedules tens of thousands of TCP sweeps.
+                .OrderByDescending(host => host.IsKnownLive)
+                .ThenBy(host => host.ProbeAddress is null
+                    ? uint.MaxValue
+                    : DistanceToNearestLocalNetwork(host.ProbeAddress, localAddresses))
+                .ThenBy(host => host.ProbeAddress is null ? uint.MaxValue : AddressToUInt32(host.ProbeAddress))
+                .Take(MaxLanScanAddresses)
                 .ToArray();
 
             return new LanScanPlan(
@@ -910,6 +965,30 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
                 hosts.Where(host => !host.IsKnownLive).ToArray(),
                 configuredCidrs,
                 localInterfaceAddresses.Count);
+        }
+
+        private static uint DistanceToNearestLocalNetwork(IPAddress address, IReadOnlyCollection<IPAddress> localAddresses)
+        {
+            if (localAddresses.Count == 0)
+            {
+                return AddressToUInt32(address);
+            }
+
+            var value = AddressToUInt32(address);
+            var best = uint.MaxValue;
+            foreach (var local in localAddresses)
+            {
+                var localValue = AddressToUInt32(local);
+                // Prefer same Class-C neighbourhood as the HA host interface.
+                var sameClassC = (value & 0xFFFFFF00) == (localValue & 0xFFFFFF00) ? 0u : 1u;
+                var distance = sameClassC << 24 | (value > localValue ? value - localValue : localValue - value);
+                if (distance < best)
+                {
+                    best = distance;
+                }
+            }
+
+            return best;
         }
 
         private static async Task<IReadOnlyList<ProbeHost>> DiscoverSsdpHostsAsync(
@@ -2782,12 +2861,14 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         IPAddress address,
         IReadOnlyList<int> ports,
         SemaphoreSlim tcpConcurrency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? connectTimeout = null)
     {
         var open = new ConcurrentBag<int>();
+        var timeout = connectTimeout ?? ConnectTimeout;
         await Task.WhenAll(ports.Distinct().Select(async port =>
         {
-            if (await CanOpenTcpWithLimitAsync(address, port, tcpConcurrency, cancellationToken))
+            if (await CanOpenTcpWithLimitAsync(address, port, tcpConcurrency, cancellationToken, timeout))
             {
                 open.Add(port);
             }
@@ -2831,11 +2912,15 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
             candidate.Equals(redirectHost, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static async Task<bool> CanOpenTcpAsync(IPAddress address, int port, CancellationToken cancellationToken)
+    private static async Task<bool> CanOpenTcpAsync(
+        IPAddress address,
+        int port,
+        CancellationToken cancellationToken,
+        TimeSpan? connectTimeout = null)
     {
         using var client = new TcpClient(address.AddressFamily);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(ConnectTimeout);
+        timeout.CancelAfter(connectTimeout ?? ConnectTimeout);
         try
         {
             await client.ConnectAsync(address, port, timeout.Token);
@@ -2851,12 +2936,13 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         IPAddress address,
         IReadOnlyList<int> ports,
         SemaphoreSlim tcpConcurrency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? connectTimeout = null)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var tasks = ports
             .Distinct()
-            .Select(port => CanOpenTcpWithLimitAsync(address, port, tcpConcurrency, linked.Token))
+            .Select(port => CanOpenTcpWithLimitAsync(address, port, tcpConcurrency, linked.Token, connectTimeout))
             .ToList();
 
         try
@@ -2891,14 +2977,15 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         IPAddress address,
         int port,
         SemaphoreSlim tcpConcurrency,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? connectTimeout = null)
     {
         try
         {
             await tcpConcurrency.WaitAsync(cancellationToken);
             try
             {
-                return await CanOpenTcpAsync(address, port, cancellationToken);
+                return await CanOpenTcpAsync(address, port, cancellationToken, connectTimeout);
             }
             finally
             {

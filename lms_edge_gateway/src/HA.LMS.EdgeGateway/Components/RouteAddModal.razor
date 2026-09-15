@@ -475,7 +475,7 @@
                         <div class="table-header edge-http-service-picker-header">
                             <div>
                                 <strong>Staged service discovery</strong>
-                                <p class="meta-text">Scan sweeps every LAN IP across well-known HTTP/S ports. Opening this dialog only rechecks the last saved results.</p>
+                                <p class="meta-text">Scan checks live LAN hosts across well-known HTTP/S ports (ARP neighbours first, then the local subnet). Opening this dialog only rechecks the last saved results.</p>
                             </div>
                             <div class="edge-http-service-actions">
                                 <LmsButton Label="@(isDiscoveringHttpServices ? "Scanning..." : "Scan")"
@@ -884,8 +884,10 @@
 
         isDiscoveringHttpServices = true;
         CancelHttpServiceValidation();
-        httpServiceSuggestions = [];
-        httpServiceDiscoveryMessage = "Full rediscovery running. Previous results cleared — probing the network now.";
+        // Keep previous cards visible while scanning — clearing them made long LAN sweeps look empty/dead.
+        httpServiceDiscoveryMessage = httpServiceSuggestions.Count == 0
+            ? "Full rediscovery running — probing the network now."
+            : $"Full rediscovery running — keeping {httpServiceSuggestions.Count} previous result(s) until fresh finds arrive.";
         httpServiceDiscoveryStatus = "Starting staged service discovery...";
         httpServiceScanFoundCount = 0;
         httpServiceScanProbedCount = 0;
@@ -928,6 +930,7 @@
                     return;
                 }
 
+                // Replace the working set with the completed scan (not a merge of old+new).
                 httpServiceSuggestions = SortHttpServiceSuggestions(results.Where(IsLocalHttpServiceCandidate));
                 httpServiceDiscoveryMessage = httpServiceSuggestions.Count == 0
                     ? "No service candidates responded in the latest scan."

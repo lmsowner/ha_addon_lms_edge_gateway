@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.08.11
+
+- Fix LAN discovery SYN-flood: unknown IPs get cheap liveness first, host/TCP concurrency is capped, subnet expansion is limited, and previous cards stay visible during Scan so real HTTP probes are not starved.
+
 ## 2026.09.15.08.03
 
 - Full LAN sweep on Scan: every private LAN IP (ARP + supervisor/configured CIDRs + local interface subnets) is TCP-probed across the full well-known HTTP/S port set, without the old ping/tiny-liveness gate that skipped hosts only listening on ports like :11443.
