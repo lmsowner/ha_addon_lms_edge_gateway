@@ -1992,9 +1992,11 @@ textarea {
     display: grid;
     gap: 0.55rem;
     grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+    isolation: isolate;
     max-height: min(50vh, 28rem);
     overflow: auto;
-    padding-right: 0.1rem;
+    /* Room for dock-style magnification so scaled stamps are not clipped hard. */
+    padding: 1.1rem 0.85rem 1.35rem 0.35rem;
 }
 
 .edge-http-service-list {
@@ -2021,13 +2023,29 @@ textarea {
     grid-template-columns: auto minmax(0, 1fr);
     min-height: 4.1rem;
     padding: 0.55rem 0.6rem;
+    position: relative;
     text-align: left;
-    transition: border-color 120ms ease, background-color 120ms ease;
+    transform: scale(1);
+    transform-origin: center bottom;
+    transition:
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        border-color 140ms ease,
+        background-color 140ms ease,
+        box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        z-index 0s;
+    will-change: transform;
+    z-index: 1;
 }
 
-.http-service-stamp:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--surface-row) 82%, var(--color-accent, #3b82f6) 18%);
-    border-color: color-mix(in srgb, var(--color-line) 55%, var(--color-accent, #3b82f6) 45%);
+.http-service-stamp:hover:not(:disabled),
+.http-service-stamp:focus-visible:not(:disabled) {
+    background: color-mix(in srgb, var(--surface-row) 78%, var(--color-accent, #3b82f6) 22%);
+    border-color: color-mix(in srgb, var(--color-line) 40%, var(--color-accent, #3b82f6) 60%);
+    box-shadow:
+        0 0.85rem 1.6rem rgba(15, 23, 42, 0.18),
+        0 0.2rem 0.45rem rgba(15, 23, 42, 0.08);
+    transform: scale(1.48);
+    z-index: 40;
 }
 
 .http-service-stamp:disabled,
@@ -2050,7 +2068,14 @@ textarea {
     height: 2.15rem;
     justify-items: center;
     overflow: hidden;
+    transition: height 180ms cubic-bezier(0.22, 1, 0.36, 1), width 180ms cubic-bezier(0.22, 1, 0.36, 1);
     width: 2.15rem;
+}
+
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-icon,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-icon {
+    height: 3.1rem;
+    width: 3.1rem;
 }
 
 .http-service-stamp-icon img {
@@ -2065,6 +2090,11 @@ textarea {
     font-size: 0.92rem;
     font-weight: 700;
     line-height: 1;
+}
+
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-icon-fallback,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-icon-fallback {
+    font-size: 1.2rem;
 }
 
 .http-service-stamp-body {
@@ -2083,7 +2113,9 @@ textarea {
 }
 
 .http-service-stamp-meta,
-.http-service-stamp-scheme {
+.http-service-stamp-scheme,
+.http-service-stamp-ip,
+.http-service-stamp-url {
     color: var(--color-text-muted);
     font-size: 0.72rem;
     line-height: 1.15;
@@ -2092,8 +2124,59 @@ textarea {
     white-space: nowrap;
 }
 
+.http-service-stamp-ip,
+.http-service-stamp-url {
+    display: none;
+}
+
 .http-service-stamp-scheme {
     letter-spacing: 0.01em;
+}
+
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-title,
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-meta,
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-scheme,
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-ip,
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-url,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-title,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-meta,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-scheme,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-ip,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-url {
+    overflow: visible;
+    text-overflow: unset;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-ip,
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-url,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-ip,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-url {
+    display: block;
+}
+
+.http-service-stamp:hover:not(:disabled) .http-service-stamp-title,
+.http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-title {
+    font-size: 0.92rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .http-service-stamp,
+    .http-service-stamp-icon {
+        transition: border-color 120ms ease, background-color 120ms ease;
+    }
+
+    .http-service-stamp:hover:not(:disabled),
+    .http-service-stamp:focus-visible:not(:disabled) {
+        transform: none;
+    }
+
+    .http-service-stamp:hover:not(:disabled) .http-service-stamp-icon,
+    .http-service-stamp:focus-visible:not(:disabled) .http-service-stamp-icon {
+        height: 2.15rem;
+        width: 2.15rem;
+    }
 }
 
 .http-service-lookup-row {

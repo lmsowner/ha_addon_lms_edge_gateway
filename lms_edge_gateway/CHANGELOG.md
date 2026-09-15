@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.08.32
+
+- Discovery stamps magnify on hover like a macOS Dock icon and reveal the full title, host, IP, and URL instead of truncated text.
+
 ## 2026.09.15.08.18
 
 - Scan the full LAN subnet(s) from Supervisor/host NIC (e.g. a /20 end-to-end); remove the address cap and /24-only truncation while keeping cheap liveness and concurrency limits.

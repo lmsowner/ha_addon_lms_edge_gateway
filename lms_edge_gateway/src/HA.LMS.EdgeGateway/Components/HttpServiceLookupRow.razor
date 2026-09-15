@@ -19,7 +19,12 @@
     <span class="http-service-stamp-body">
         <strong class="http-service-stamp-title">@PrimaryLabel</strong>
         <span class="http-service-stamp-meta">@HostLabel</span>
+        @if (ShowIpLine)
+        {
+            <span class="http-service-stamp-ip">@Service.IpAddress</span>
+        }
         <span class="http-service-stamp-scheme">@Service.Scheme.ToUpperInvariant() · @Service.Port</span>
+        <span class="http-service-stamp-url">@Service.Url</span>
     </span>
 </button>
 
@@ -33,6 +38,10 @@
 
     private string HostLabel =>
         FirstNonBlank(Service.Host, Service.IpAddress, Service.DisplayName) ?? Service.Host;
+
+    private bool ShowIpLine =>
+        !string.IsNullOrWhiteSpace(Service.IpAddress) &&
+        !Service.IpAddress.Equals(HostLabel, StringComparison.OrdinalIgnoreCase);
 
     private string PrimaryLabel
     {
@@ -85,6 +94,8 @@
             };
 
             AddIfPresent(parts, "Service", Service.ServiceName);
+            AddIfPresent(parts, "Host", Service.Host);
+            AddIfPresent(parts, "IP", Service.IpAddress);
             AddIfPresent(parts, "HTTP", Service.StatusCode > 0 ? Service.StatusCode.ToString() : null);
             AddIfPresent(parts, "Title", Service.Title);
             AddIfPresent(parts, "Server", Service.ServerHeader);
