@@ -461,7 +461,7 @@
             </div>
 
             <footer class="edge-modal-footer">
-                <LmsButton Label="@(isAddingApp ? "Adding..." : "Add service")"
+                <LmsButton Label="@(isAddingApp ? "Saving..." : HostnameConflict is not null ? "Overwrite service" : "Add service")"
                            Icon="save"
                            Primary="true"
                            Disabled="@isAddingApp"

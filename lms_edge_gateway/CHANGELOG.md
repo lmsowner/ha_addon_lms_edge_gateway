@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.09.11
+
+- New route dialog primary button switches to Overwrite service when the hostname/path already exists.
+
 ## 2026.09.15.09.10
 
 - New route dialog shows the selected domain after a shorter hostname field and warns when the FQDN is already used; saving overwrites the existing host/path route instead of failing.
