@@ -173,10 +173,17 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
         try
         {
             var existing = await ReadCacheAsync(cancellationToken);
+            // Replace every scope included in this scan with fresh probes — do not keep stale
+            // fingerprints/labels from the previous cache for those scopes.
             var merged = existing
                 .Where(endpoint => !requestedScopes.Contains(endpoint.Scope))
                 .Concat(correlated)
-                .DistinctBy(BuildEndpointKey, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(BuildEndpointKey, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group
+                    .OrderBy(endpoint => FingerprintRules.IsUnknownLabel(endpoint.ServiceName) ? 1 : 0)
+                    .ThenByDescending(endpoint => endpoint.Confidence)
+                    .ThenByDescending(endpoint => endpoint.DiscoveredAtUtc ?? DateTimeOffset.MinValue)
+                    .First())
                 .ToArray();
 
             await WriteCacheAsync(merged, cancellationToken);
@@ -367,7 +374,10 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     }
 
     private static string BuildEndpointKey(LocalHttpServiceEndpoint endpoint) =>
-        $"{endpoint.Scheme}|{FirstNonBlank(endpoint.IpAddress, endpoint.Host)}|{endpoint.Port}|{endpoint.ServiceKind}|{endpoint.Fingerprint}";
+        $"{endpoint.Scheme}|{NormalizeEndpointAddress(endpoint)}|{endpoint.Port}";
+
+    private static string NormalizeEndpointAddress(LocalHttpServiceEndpoint endpoint) =>
+        (FirstNonBlank(endpoint.IpAddress, endpoint.Host) ?? endpoint.Host).Trim().TrimEnd('.').ToLowerInvariant();
 
     private static string ResolvePath(string path) =>
         Path.IsPathRooted(path) ? path : Path.GetFullPath(path);

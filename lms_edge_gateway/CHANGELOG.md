@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.09.15.07.56
+
+- Make Scan a true full rediscovery: clear previous cards immediately, replace cached scopes with fresh probes, and dedupe by host/port so stale labels cannot linger.
+
+
 ## 2026.09.15.07.53
 
 - Stop guessing service names from port numbers (Chromecasts were mislabeled UniFi); label unmatched services as Unknown and identify only from title/TLS/server evidence.
