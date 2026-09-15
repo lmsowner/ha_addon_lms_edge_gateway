@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.15.08.33
+
+- Sort discovered HTTP/S stamps so known/identified services appear before Unknown entries.
+
 ## 2026.09.15.08.32
 
 - Discovery stamps magnify on hover like a macOS Dock icon and reveal the full title, host, IP, and URL instead of truncated text.

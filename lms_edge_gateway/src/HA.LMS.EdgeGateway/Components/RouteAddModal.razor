@@ -1151,7 +1151,8 @@
         services
             .GroupBy(BuildHttpServiceKey, StringComparer.OrdinalIgnoreCase)
             .Select(SelectPreferredHttpServiceEndpoint)
-            .OrderBy(service => LocalHttpServiceDiscoveryRanking.TitleQualityRank(service.Title))
+            .OrderBy(service => IsUnknownDiscoveredService(service) ? 1 : 0)
+            .ThenBy(service => LocalHttpServiceDiscoveryRanking.TitleQualityRank(service.Title))
             .ThenBy(service => service.Exposure switch
             {
                 DiscoveryExposure.Publishable => 0,

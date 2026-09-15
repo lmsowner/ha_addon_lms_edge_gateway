@@ -239,7 +239,8 @@ public sealed partial class LocalHttpServiceDiscoveryService(IOptions<EdgeGatewa
     private static IReadOnlyList<LocalHttpServiceEndpoint> SortEndpoints(IEnumerable<LocalHttpServiceEndpoint> endpoints) =>
         endpoints
             .DistinctBy(BuildEndpointKey, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(endpoint => LocalHttpServiceDiscoveryRanking.TitleQualityRank(endpoint.Title))
+            .OrderBy(endpoint => FingerprintRules.IsUnknownLabel(endpoint.ServiceName) ? 1 : 0)
+            .ThenBy(endpoint => LocalHttpServiceDiscoveryRanking.TitleQualityRank(endpoint.Title))
             .ThenBy(endpoint => endpoint.Exposure switch
             {
                 DiscoveryExposure.Publishable => 0,
