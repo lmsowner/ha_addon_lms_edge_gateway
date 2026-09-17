@@ -385,6 +385,7 @@ public sealed class LocalHttpServiceDiscoveryTests
     [InlineData("", 2)]
     [InlineData("   ", 2)]
     [InlineData("404 Not Found", 2)]
+    [InlineData("302 Found", 2)]
     [InlineData("Error", 2)]
     [InlineData("403 Forbidden", 2)]
     [InlineData("HTTP 500 Internal Server Error", 2)]
@@ -392,6 +393,43 @@ public sealed class LocalHttpServiceDiscoveryTests
     public void Title_quality_rank_prefers_real_titles_over_empty_or_error_pages(string? title, int expectedRank)
     {
         Assert.Equal(expectedRank, LocalHttpServiceDiscoveryRanking.TitleQualityRank(title));
+    }
+
+    [Fact]
+    public void Presentation_rank_orders_titles_then_favicon_then_bare_then_errors()
+    {
+        var titled = new LocalHttpServiceEndpoint(
+            "http://192.168.1.10:8123", "http", "homeassistant.local", 8123, 200, "Home Assistant", null,
+            Scope: "LAN", IpAddress: "192.168.1.10", ServiceName: "Home Assistant", ServiceKind: "home-assistant");
+        var faviconOnly = new LocalHttpServiceEndpoint(
+            "http://192.168.1.20:80", "http", "gadget.local", 80, 200, null, null,
+            Scope: "LAN", IpAddress: "192.168.1.20", ServiceName: "Unknown", ServiceKind: "unknown",
+            FaviconDataUrl: "data:image/png;base64,abc");
+        var bare = new LocalHttpServiceEndpoint(
+            "http://192.168.1.21:80", "http", "bare.local", 80, 200, null, null,
+            Scope: "LAN", IpAddress: "192.168.1.21", ServiceName: "Unknown", ServiceKind: "unknown");
+        var redirect = new LocalHttpServiceEndpoint(
+            "http://192.168.1.30:80", "http", "redir.local", 80, 302, "302 Found", null,
+            Scope: "LAN", IpAddress: "192.168.1.30", ServiceName: "Unknown", ServiceKind: "unknown");
+
+        Assert.Equal(0, LocalHttpServiceDiscoveryRanking.PresentationRank(titled));
+        Assert.Equal(1, LocalHttpServiceDiscoveryRanking.PresentationRank(faviconOnly));
+        Assert.Equal(2, LocalHttpServiceDiscoveryRanking.PresentationRank(bare));
+        Assert.Equal(3, LocalHttpServiceDiscoveryRanking.PresentationRank(redirect));
+
+        var method = typeof(LocalHttpServiceDiscoveryService)
+            .GetMethod("SortEndpoints", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var sorted = Assert.IsAssignableFrom<IReadOnlyList<LocalHttpServiceEndpoint>>(
+            method.Invoke(null, [new[] { redirect, bare, faviconOnly, titled }]));
+
+        Assert.Equal("Home Assistant", sorted[0].Title);
+        Assert.Null(sorted[1].Title);
+        Assert.False(string.IsNullOrWhiteSpace(sorted[1].FaviconDataUrl));
+        Assert.Null(sorted[2].Title);
+        Assert.True(string.IsNullOrWhiteSpace(sorted[2].FaviconDataUrl));
+        Assert.Equal("302 Found", sorted[3].Title);
     }
 
     [Fact]
@@ -441,8 +479,8 @@ public sealed class LocalHttpServiceDiscoveryTests
             method.Invoke(null, [new[] { error, empty, good }]));
 
         Assert.Equal("Home Assistant", sorted[0].Title);
-        Assert.All(sorted.Skip(1), endpoint =>
-            Assert.Equal(2, LocalHttpServiceDiscoveryRanking.TitleQualityRank(endpoint.Title)));
+        Assert.Null(sorted[1].Title);
+        Assert.Equal("404 Not Found", sorted[2].Title);
     }
 
     [Fact]

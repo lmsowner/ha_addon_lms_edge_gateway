@@ -32,6 +32,37 @@ public sealed record LocalHttpServiceEndpoint(
 
 public static class LocalHttpServiceDiscoveryRanking
 {
+    /// <summary>
+    /// Lower is better for picker ordering:
+    /// 0 = real page title, 1 = no title but has favicon, 2 = bare response, 3 = redirect/error titles.
+    /// </summary>
+    public static int PresentationRank(LocalHttpServiceEndpoint endpoint)
+    {
+        var hasFavicon = !string.IsNullOrWhiteSpace(endpoint.FaviconDataUrl);
+        var title = endpoint.Title?.Trim();
+        var hasTitle = !string.IsNullOrWhiteSpace(title);
+        var isErrorOrRedirect =
+            IsErrorOrRedirectStatusCode(endpoint.StatusCode) ||
+            (hasTitle && LooksLikeErrorTitle(title!));
+
+        if (isErrorOrRedirect)
+        {
+            return 3;
+        }
+
+        if (hasTitle && TitleQualityRank(title) == 0)
+        {
+            return 0;
+        }
+
+        if (hasFavicon)
+        {
+            return 1;
+        }
+
+        return 2;
+    }
+
     public static int TitleQualityRank(string? title)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -68,6 +99,9 @@ public static class LocalHttpServiceDiscoveryRanking
                LooksLikeHttpStatusTitle(text);
     }
 
+    public static bool IsErrorOrRedirectStatusCode(int statusCode) =>
+        statusCode is >= 300 and <= 399 or >= 400 and <= 599;
+
     private static bool LooksLikeHttpStatusTitle(string title)
     {
         ReadOnlySpan<char> text = title.AsSpan().Trim();
@@ -76,7 +110,7 @@ public static class LocalHttpServiceDiscoveryRanking
             return false;
         }
 
-        // Common status-page titles: "404", "404 Not Found", "HTTP 500", "403 - Forbidden"
+        // Status-page titles: "302 Found", "404", "HTTP 500", "403 - Forbidden"
         for (var i = 0; i <= text.Length - 3; i++)
         {
             if (!char.IsDigit(text[i]) || !char.IsDigit(text[i + 1]) || !char.IsDigit(text[i + 2]))
@@ -95,7 +129,7 @@ public static class LocalHttpServiceDiscoveryRanking
             }
 
             var code = (text[i] - '0') * 100 + (text[i + 1] - '0') * 10 + (text[i + 2] - '0');
-            if (code is >= 400 and <= 599)
+            if (code is >= 300 and <= 599)
             {
                 return true;
             }

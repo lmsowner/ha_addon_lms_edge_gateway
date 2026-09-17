@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.09.17.07.19
+
+- Sort discovered HTTP/S stamps by real titles, then Unknown with favicons, then bare Unknown, then redirect/error responses (302/4xx/5xx).
+
 ## 2026.09.15.11.05
 
 - When picking a discovered service, prefill the public hostname from the machine DNS name (left label), not the product title, so identical appliances do not collide.

@@ -1176,8 +1176,8 @@
         services
             .GroupBy(BuildHttpServiceKey, StringComparer.OrdinalIgnoreCase)
             .Select(SelectPreferredHttpServiceEndpoint)
-            .OrderBy(service => IsUnknownDiscoveredService(service) ? 1 : 0)
-            .ThenBy(service => LocalHttpServiceDiscoveryRanking.TitleQualityRank(service.Title))
+            .OrderBy(service => LocalHttpServiceDiscoveryRanking.PresentationRank(service))
+            .ThenBy(service => IsUnknownDiscoveredService(service) ? 1 : 0)
             .ThenBy(service => service.Exposure switch
             {
                 DiscoveryExposure.Publishable => 0,
@@ -1212,7 +1212,7 @@
 
     private static LocalHttpServiceEndpoint SelectPreferredHttpServiceEndpoint(IEnumerable<LocalHttpServiceEndpoint> services) =>
         services
-            .OrderBy(service => LocalHttpServiceDiscoveryRanking.TitleQualityRank(service.Title))
+            .OrderBy(service => LocalHttpServiceDiscoveryRanking.PresentationRank(service))
             .ThenBy(service => IsUnknownDiscoveredService(service) ? 1 : 0)
             .ThenByDescending(service => !string.IsNullOrWhiteSpace(service.FaviconDataUrl))
             .ThenByDescending(service => service.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
