@@ -26,3 +26,18 @@ services:
       - ./local-tesla-data:/data
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+  lms-energy-studio:
+    build:
+      context: ./lms_energy_studio
+      args:
+        BUILD_ARCH: amd64
+        BUILD_VERSION: 0.1.0
+    ports:
+      - "127.0.0.1:5066:5066"
+    volumes:
+      - ./local-energy-data:/data
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      EnergyStudio__HomeAssistantUrl: ${ENERGY_STUDIO_HA_URL:-http://host.docker.internal:8123}
+      EnergyStudio__HomeAssistantToken: ${ENERGY_STUDIO_HA_TOKEN:-}
+      EnergyStudio__AccessToken: ${ENERGY_STUDIO_ACCESS_TOKEN:-}

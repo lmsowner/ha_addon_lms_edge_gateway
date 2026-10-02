@@ -15,3 +15,7 @@ local-tesla-data/
 *.user
 *.rsuser
 *.suo
+
+local-energy-data/
+
+node_modules/

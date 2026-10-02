@@ -19,6 +19,45 @@ jobs:
       - name: Build
         run: dotnet build HA.LMS.EdgeGateway.slnx --configuration Release --no-restore
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Energy browser contracts
+        run: |
+          npm ci --prefix lms_energy_studio/tests --ignore-scripts
+          npm test --prefix lms_energy_studio/tests
+          python3 lms_energy_studio/tests/host-smoke.py
+      - name: Test
+        run: dotnet test HA.LMS.EdgeGateway.slnx --configuration Release --no-build
+
+  energy-docker:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Energy Studio image
+        run: |
+          platform=linux/amd64
+          if [ "${{ matrix.arch }}" = aarch64 ]; then platform=linux/arm64; fi
+          docker buildx build --platform "$platform" --load \
+            --build-arg BUILD_FROM=ghcr.io/home-assistant/${{ matrix.arch }}-base:latest \
+            --build-arg BUILD_ARCH=${{ matrix.arch }} \
+            --build-arg BUILD_VERSION=0.1.0 \
+            -t local/lms-energy-studio:0.1.0 lms_energy_studio
+      - name: Smoke test image
+        run: |
+          docker run -d --name energy -p 5066:5066 local/lms-energy-studio:0.1.0
+          for attempt in $(seq 1 30); do
+            if curl --fail http://localhost:5066/healthz; then exit 0; fi
+            sleep 2
+          done
+          docker logs energy
+          exit 1
+
   docker:
     runs-on: ubuntu-latest
     steps:

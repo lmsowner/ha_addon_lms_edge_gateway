@@ -1,0 +1,25 @@
+name: LMS Energy Studio
+version: "0.1.0"
+slug: lms_energy_studio
+description: "Live Home Assistant energy topology, entity mappings, recorded histories and tariffs."
+url: https://github.com/lmsowner/ha_addon_lms_edge_gateway
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: manual
+init: false
+ingress: true
+ingress_port: 5066
+ingress_stream: true
+homeassistant_api: true
+panel_icon: mdi:home-lightning-bolt
+panel_title: Energy Studio
+panel_admin: true
+watchdog: http://[HOST]:[PORT:5066]/healthz
+options:
+  edge_gateway_proxy_ip: ""
+  public_path_prefix: ""
+schema:
+  edge_gateway_proxy_ip: str?
+  public_path_prefix: str?

@@ -1,0 +1,7 @@
+configuration:
+  edge_gateway_proxy_ip:
+    name: Edge Gateway proxy IP
+    description: "Optional exact address of your authenticated Caddy proxy. Keep empty for ingress only. Require authentication on the published route."
+  public_path_prefix:
+    name: Published path prefix
+    description: "Optional path passed by Edge Gateway, for example /energy. Leave empty for ingress only."

@@ -12,4 +12,11 @@
   <Folder Name="/lms_tesla_fleet_helper/src/">
     <Project Path="lms_tesla_fleet_helper/src/HA.LMS.TeslaFleetHelper/HA.LMS.TeslaFleetHelper.csproj" />
   </Folder>
+  <Folder Name="/lms_energy_studio/src/">
+    <Project Path="lms_energy_studio/src/HA.LMS.EnergyStudio/HA.LMS.EnergyStudio.csproj" />
+    <Project Path="lms_energy_studio/src/LMS.Energy.Core/LMS.Energy.Core.csproj" />
+  </Folder>
+  <Folder Name="/lms_energy_studio/tests/">
+    <Project Path="lms_energy_studio/tests/LMS.Energy.Core.Tests/LMS.Energy.Core.Tests.csproj" />
+  </Folder>
 </Solution>

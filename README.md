@@ -3,6 +3,7 @@
 This repository contains Linux Made Sane Home Assistant Apps (formerly known as Add-ons).
 
 - **LMS Edge Gateway for Home Assistant**: secure self-hosted application publishing through Cloudflare Tunnel, Caddy, and LMS authentication policy.
+- **LMS Energy Studio**: a separate energy dashboard with server-side Home Assistant mappings, live measurements, Recorder history and reviewed tariffs. See [installation and validation notes](lms_energy_studio/README.md).
 - **LMS Tesla Fleet Helper**: a companion Tesla Fleet key helper that uses Edge Gateway for public HTTPS publishing.
 
 ## Project links

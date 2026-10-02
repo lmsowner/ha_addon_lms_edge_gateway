@@ -11,5 +11,14 @@
         "Action": "Start"
       }
     ]
+  },
+  {
+    "Name": "Start Energy Studio",
+    "Projects": [
+      {
+        "Path": "lms_energy_studio/src/HA.LMS.EnergyStudio/HA.LMS.EnergyStudio.csproj",
+        "Action": "Start"
+      }
+    ]
   }
 ]

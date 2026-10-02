@@ -1,0 +1,1 @@
+{"name":"lms-energy-studio-browser-tests","private":true,"scripts":{"test":"node ha-bindings.test.cjs && node dashboard.test.cjs"},"devDependencies":{"jsdom":"26.1.0"}}
