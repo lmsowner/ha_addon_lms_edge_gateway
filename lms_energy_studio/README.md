@@ -2,13 +2,13 @@
 
 Energy Studio is a separate .NET 10 companion app. Edge Gateway continues to publish applications; Tesla Fleet Helper remains independent. All supplied photographs, topology animation, layout controls, battery instruments and explicit demo scenarios are bundled locally.
 
-Home Assistant release version: **2026.10.02.17.34**. Energy Studio is published from `main` using the same architecture-specific GHCR pattern as Edge Gateway. The publish workflow builds and smoke-tests each image before pushing. Image publishing runs in the background after the version commit; local Docker and real Supervisor validation remain unverified.
+Home Assistant release version: **2026.10.02.18.44**. Energy Studio is published from `main` using the same architecture-specific GHCR pattern as Edge Gateway. The publish workflow builds and smoke-tests each image before pushing. Image publishing runs in the background after the version commit; local Docker and real Supervisor validation remain unverified.
 
 ## Install from your Home Assistant repository
 
 1. Open Settings → Apps → App store. Your existing repository URL is `https://github.com/lmsowner/ha_addon_lms_edge_gateway`.
 2. Use **Check for updates** / reload the store repository so Home Assistant fetches the new `main` metadata.
-3. Select **LMS Energy Studio**, version **2026.10.02.17.34**, and install. HA pulls `ghcr.io/lmsowner/lms_energy_studio-{arch}:2026.10.02.17.34` instead of building locally.
+3. Select **LMS Energy Studio**, version **2026.10.02.18.44**, and install. HA pulls `ghcr.io/lmsowner/lms_energy_studio-{arch}:2026.10.02.18.44` instead of building locally.
 4. If the version appears before its background image publish has finished, retry installation once publishing completes. Images are built for amd64 and aarch64.
 5. Start it and open **Web UI** through ingress. No HA token is entered in the browser or app options: the host uses Supervisor's server-side token and Core REST/WebSocket proxies.
 6. Use **Customise** for physical devices, then **Home Assistant entities** for readings. Configure and review your real contract under **Daily energy history → Tariff** before enabling costing; defaults start unconfirmed.

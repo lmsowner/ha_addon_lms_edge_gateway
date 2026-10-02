@@ -127,10 +127,9 @@ public sealed class LanClientTrustTests
             "http://192.168.1.20:8123",
             "MFA/Passkey",
             true,
-            AllowKnownIps: "203.0.113.10",
             SkipAuthenticationForKnownIps: true);
         var service = new EdgeGatewayRouteAuthService(
-            new InMemoryConfigurationStore(Configuration(route)),
+            new InMemoryConfigurationStore(Configuration(route, "203.0.113.10")),
             new MemoryEdgeGatewayAccessCheckPageStore());
 
         var result = await service.EvaluateAuthAsync(new EdgeGatewayAuthCheckContext(
@@ -157,10 +156,9 @@ public sealed class LanClientTrustTests
             "http://192.168.1.20:8123",
             "MFA/Passkey",
             true,
-            AllowKnownIps: "203.0.113.10",
             SkipAuthenticationForKnownIps: true);
         var service = new EdgeGatewayRouteAuthService(
-            new InMemoryConfigurationStore(Configuration(route)),
+            new InMemoryConfigurationStore(Configuration(route, "203.0.113.10")),
             new MemoryEdgeGatewayAccessCheckPageStore());
 
         var result = await service.EvaluateAuthAsync(new EdgeGatewayAuthCheckContext(
@@ -190,12 +188,15 @@ public sealed class LanClientTrustTests
             LanTrustDnsSuffixes: "example.home",
             LanTrustRequireForwardConfirm: true);
 
-    private static EdgeGatewayConfiguration Configuration(PublishedApplicationDefinition route) =>
+    private static EdgeGatewayConfiguration Configuration(
+        PublishedApplicationDefinition route,
+        string trustedSourceIps = "") =>
         new(
             [route],
             [],
             new CloudflareTunnelState("tunnel", "account", "tunnel-id", true, DateTimeOffset.UtcNow, "account-id"),
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            TrustedSourceIps: trustedSourceIps);
 
     private static EdgeGatewayAuthCheckContext Context(string sourceIp) =>
         new(

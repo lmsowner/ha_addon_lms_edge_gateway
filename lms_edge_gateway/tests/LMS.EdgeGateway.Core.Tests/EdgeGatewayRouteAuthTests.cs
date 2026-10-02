@@ -107,11 +107,10 @@ public sealed class EdgeGatewayRouteAuthTests
             new TemporaryIpApprovalEvaluationResult(false, "Temporary IP approval email sent. Retry after approving the request.", EmailAttempted: true, EmailSucceeded: true));
         var route = Route(EdgeGatewayAccessPolicies.TemporaryIpApproval) with
         {
-            AllowKnownIps = "198.51.100.44",
             SkipAuthenticationForKnownIps = false
         };
         var service = CreateService(
-            new InMemoryConfigurationStore(Configuration(route)),
+            new InMemoryConfigurationStore(Configuration(route, "198.51.100.44")),
             accessCheckStore,
             approvalService);
 
@@ -123,8 +122,8 @@ public sealed class EdgeGatewayRouteAuthTests
         Assert.Equal(302, result.StatusCode);
         var token = result.RedirectLocation!["/edge-auth/access-check?token=".Length..];
         var html = EdgeGatewayAccessDiagnosticsPage.Render(accessCheckStore.TryGet(token)!);
-        Assert.Contains("Skip auth for known source IPs is off", html, StringComparison.Ordinal);
-        Assert.Contains("Known source IPs vs CF-Connecting-IP", html, StringComparison.Ordinal);
+        Assert.Contains("Skip auth for trusted IPs is off", html, StringComparison.Ordinal);
+        Assert.Contains("Trusted IPs (global) vs CF-Connecting-IP", html, StringComparison.Ordinal);
         Assert.Contains("CF-Connecting-IP (Cloudflare client IP)", html, StringComparison.Ordinal);
     }
 
@@ -421,12 +420,15 @@ public sealed class EdgeGatewayRouteAuthTests
             ],
             "Cookies"));
 
-    private static EdgeGatewayConfiguration Configuration(PublishedApplicationDefinition route) =>
+    private static EdgeGatewayConfiguration Configuration(
+        PublishedApplicationDefinition route,
+        string trustedSourceIps = "") =>
         new(
             [route],
             [],
             new CloudflareTunnelState("tunnel", "account", "tunnel-id", true, DateTimeOffset.UtcNow, "account-id"),
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            TrustedSourceIps: trustedSourceIps);
 
     private static PublishedApplicationDefinition Route(string accessPolicy) =>
         new(

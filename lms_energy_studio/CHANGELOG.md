@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.02.18.44
+
+- Republish Energy Studio so Home Assistant can install this version from the App store.
+
 ## 2026.10.02.17.34
 
 - Publish Energy Studio in the Home Assistant repository with versioned amd64/aarch64 GHCR images.

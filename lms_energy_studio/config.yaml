@@ -1,5 +1,5 @@
 name: LMS Energy Studio
-version: "2026.10.02.17.34"
+version: "2026.10.02.18.44"
 slug: lms_energy_studio
 description: "Live Home Assistant energy topology, entity mappings, recorded histories and tariffs."
 url: https://github.com/lmsowner/ha_addon_lms_edge_gateway

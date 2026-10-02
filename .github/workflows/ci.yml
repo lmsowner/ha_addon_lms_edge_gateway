@@ -55,9 +55,15 @@ jobs:
             -t local/lms-energy-studio:${{ steps.energy-version.outputs.version }} lms_energy_studio
       - name: Smoke test image
         run: |
-          docker run -d --name energy -p 5066:5066 local/lms-energy-studio:${{ steps.energy-version.outputs.version }}
-          for attempt in $(seq 1 30); do
-            if curl --fail http://localhost:5066/healthz; then exit 0; fi
+          platform=linux/amd64
+          attempts=30
+          if [ "${{ matrix.arch }}" = aarch64 ]; then
+            platform=linux/arm64
+            attempts=90
+          fi
+          docker run -d --platform "$platform" --name energy -p 5066:5066 local/lms-energy-studio:${{ steps.energy-version.outputs.version }}
+          for attempt in $(seq 1 "$attempts"); do
+            if curl --fail --silent http://localhost:5066/healthz; then exit 0; fi
             sleep 2
           done
           docker logs energy
