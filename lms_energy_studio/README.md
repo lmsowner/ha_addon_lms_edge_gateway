@@ -2,20 +2,18 @@
 
 Energy Studio is a separate .NET 10 companion app. Edge Gateway continues to publish applications; Tesla Fleet Helper remains independent. All supplied photographs, topology animation, layout controls, battery instruments and explicit demo scenarios are bundled locally.
 
-The implementation includes an installable-source HA app manifest and Docker packaging. **The target images and a real Supervisor installation have not been validated in this checkout.** CI builds and smoke-tests amd64/aarch64 images. There is no prebuilt image release or claim that these image checks have already passed.
+Home Assistant release version: **2026.10.02.17.34**. Energy Studio is published from `main` using the same architecture-specific GHCR pattern as Edge Gateway. The publish workflow builds and smoke-tests each image before pushing. Image publishing runs in the background after the version commit; local Docker and real Supervisor validation remain unverified.
 
-## Install this feature branch for testing
+## Install from your Home Assistant repository
 
-This work is on `feature/lms-energy-studio`; adding the repository's normal `main` URL will not expose an unmerged feature branch.
+1. Open Settings → Apps → App store. Your existing repository URL is `https://github.com/lmsowner/ha_addon_lms_edge_gateway`.
+2. Use **Check for updates** / reload the store repository so Home Assistant fetches the new `main` metadata.
+3. Select **LMS Energy Studio**, version **2026.10.02.17.34**, and install. HA pulls `ghcr.io/lmsowner/lms_energy_studio-{arch}:2026.10.02.17.34` instead of building locally.
+4. If the version appears before its background image publish has finished, retry installation once publishing completes. Images are built for amd64 and aarch64.
+5. Start it and open **Web UI** through ingress. No HA token is entered in the browser or app options: the host uses Supervisor's server-side token and Core REST/WebSocket proxies.
+6. Use **Customise** for physical devices, then **Home Assistant entities** for readings. Configure and review your real contract under **Daily energy history → Tariff** before enabling costing; defaults start unconfirmed.
 
-1. Check out that branch on a machine that can copy files to your HA installation.
-2. Copy the complete `lms_energy_studio` directory into `/addons/lms_energy_studio` on HA OS / Supervised (the local apps directory). Keep `src`, Dockerfile, build.yaml and rootfs together.
-3. In Settings → Apps → App store, reload/check for updates. Under **Local apps**, select **LMS Energy Studio**, build/install, and start it.
-4. Open **Web UI** through ingress. No HA token is entered in the browser or app options: the host uses Supervisor's server-side token and Core REST/WebSocket proxies.
-5. Use **Customise** to describe physical devices, then **Home Assistant entities** to map their actual readings. Save mappings. Use a separate browser to check the shared revisioned configuration.
-6. Configure and review the actual contract under **Daily energy history → Tariff** before enabling costing. Default rates are illustrative and start unconfirmed.
-
-After merge, users can add `https://github.com/lmsowner/ha_addon_lms_edge_gateway` in the app store and select Energy Studio. Unlike the Gateway's published images, Energy Studio currently builds from source.
+For source-only local testing, copy the complete `lms_energy_studio` directory into `/addons/lms_energy_studio` and remove `image` from that local manifest to request a Supervisor source build.
 
 Data is stored atomically in `/data/lms-energy-studio/configuration.json`. Back up app data using HA's app backup. Tokens are never part of this file. No HA service/control calls are exposed.
 
@@ -92,6 +90,6 @@ Verified locally: full solution build; Energy Studio core/connection tests; dash
 
 The existing Edge Gateway suite has three failures in unchanged tests: `Route_auth_skips_mfa_when_cloudflare_connecting_ip_is_ipv4_mapped`, `Route_auth_skips_mfa_for_configured_known_source_ip`, and `Temporary_ip_denial_diagnostics_explain_known_ip_skip_off` (144 other tests passed).
 
-Not validated: real Supervisor ingress, Recorder retention/exclusion behavior, installed supplier schemas, actual BMS/V2G hardware, simultaneous real browsers, rendered browser visual QA (computer-use timed out), and target Docker images (local Docker daemon unavailable). There is no live HA credential/connection in this session. When raw counter history is absent, supported energy-state mappings fall back to hourly reset-adjusted statistics sums in kWh. Statistics API/version behavior still requires live validation; attribute-only histories have no statistics fallback. Unavailable history remains empty. CI includes amd64/aarch64 image builds and health smoke tests, which must pass before a release is described as tested/installable.
+Not validated: real Supervisor ingress, Recorder retention/exclusion behavior, installed supplier schemas, actual BMS/V2G hardware, simultaneous real browsers, rendered browser visual QA (computer-use timed out), and target Docker images (local Docker daemon unavailable). There is no live HA credential/connection in this session. When raw counter history is absent, supported energy-state mappings fall back to hourly reset-adjusted statistics sums in kWh. Statistics API/version behavior still requires live validation; attribute-only histories have no statistics fallback. Unavailable history remains empty. The GHCR publication workflow includes amd64/aarch64 image builds and health/access smoke tests before each architecture is pushed. Publication status is not polled after the version push, following this repository’s testing-release convention.
 
 Protocol references: [HA WebSocket API](https://developers.home-assistant.io/docs/api/websocket/), [REST/Recorder history](https://developers.home-assistant.io/docs/api/rest/), [Supervisor app communication](https://developers.home-assistant.io/docs/apps/communication/).

@@ -1,7 +1,7 @@
 /* Production HA adapter. All requests stay below document.baseURI; no browser HA token. */
 (()=>{'use strict';
 const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let applying=false,demo=false,saving=false,dirty=null,timer,historyDate='',historyRows=[],historyError='',historyLoading=false;
+let appVersion='';let applying=false,demo=false,saving=false,dirty=null,timer,historyDate='',historyRows=[],historyError='',historyLoading=false;
 const request=async(path,options={})=>{const r=await fetch(new URL(path,document.baseURI),{credentials:'same-origin',...options});if(!r.ok){const data=await r.json().catch(()=>({}));throw Error(data.error||'HTTP '+r.status)}return r.json()};
 const status=document.createElement('p');status.className='settings-note';status.setAttribute('role','status');document.querySelector('header').after(status);
 const returnButton=document.createElement('button');returnButton.className='button';returnButton.textContent='Live Home Assistant';document.querySelector('header').append(returnButton);returnButton.onclick=()=>{demo=false;load()};
@@ -38,7 +38,7 @@ async function loadBms(){
  result[b.id]=[...rows.values()].sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));}live.bmsHistory=result;
 }
 async function load(){try{
- applying=true;live.config=await request('api/energy/config');const layout=Object.keys(live.config.layout).length?live.config.layout:window.LMSEnergy.getConfig();
+ applying=true;appVersion=(await request('healthz')).version||'';live.config=await request('api/energy/config');const layout=Object.keys(live.config.layout).length?live.config.layout:window.LMSEnergy.getConfig();
  if(!Object.keys(live.config.layout).length){layout.tariff.confirmed=false;live.config=await request('api/energy/config',{method:'PUT',headers:{'Content-Type':'application/json','X-Energy-Studio':'1'},body:JSON.stringify({layout,cells:{},mappings:{},expectedRevision:live.config.revision})})}
  window.LMSEnergy.applyServerConfig(live.config.layout);historyDate='';loadBms();
  }catch(e){status.textContent='Configuration: '+e.message}finally{applying=false}}
@@ -52,7 +52,7 @@ window.addEventListener('energy-layout-change',e=>{if(applying||demo)return;dirt
 window.addEventListener('energy-demo',()=>{demo=true;status.textContent='DEMO · Synthetic telemetry and histories';document.querySelectorAll('.live-label').forEach(e=>e.textContent='DEMO')});
 // Keep live and demo explicit; SSE never resumes simulation on disconnect.
 const stream=new EventSource(new URL('api/energy/live',document.baseURI));
-stream.onmessage=e=>{if(demo)return;const snapshot=JSON.parse(e.data);if(live.config&&snapshot.revision!==live.config.revision&&!saving&&!dirty)load();window.LMSEnergy.updateSnapshot(snapshot);status.textContent='Home Assistant '+snapshot.connection+' · observed '+new Date(snapshot.observedAt).toLocaleTimeString();document.querySelectorAll('.live-label').forEach(e=>e.textContent='LIVE');};
+stream.onmessage=e=>{if(demo)return;const snapshot=JSON.parse(e.data);if(live.config&&snapshot.revision!==live.config.revision&&!saving&&!dirty)load();window.LMSEnergy.updateSnapshot(snapshot);status.textContent='Energy Studio '+appVersion+' · Home Assistant '+snapshot.connection+' · observed '+new Date(snapshot.observedAt).toLocaleTimeString();document.querySelectorAll('.live-label').forEach(e=>e.textContent='LIVE');};
 stream.onerror=()=>{if(!demo){status.textContent='Home Assistant transport disconnected · reconnecting';window.LMSEnergy.updateSnapshot({connection:'disconnected',readings:{},residual:{value:null,quality:'disconnected'}})}};
 document.querySelectorAll('[class*="demo"],.live-pill').forEach(e=>{if(e.textContent.trim()==='DEMO'){e.classList.add('live-label');e.textContent='LIVE'}});
 // Detailed per-field qualities remain reviewable without claiming that an unmapped reading is zero.

@@ -5,7 +5,7 @@ const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'h
 const w=dom.window;w.structuredClone=structuredClone;w.matchMedia=()=>({matches:true,addEventListener(){}});w.setInterval=()=>0;
 w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};
 let config={revision:0,layout:{},cells:{},mappings:{}},stream,requests=[];
-w.fetch=async(url,options={})=>{requests.push({url:String(url),options});const p=new URL(url).pathname;assert.ok(p.startsWith('/nested/energy/api/energy/'));
+w.fetch=async(url,options={})=>{requests.push({url:String(url),options});const p=new URL(url).pathname;if(p.endsWith('/healthz'))return {ok:true,json:async()=>({version:'test'})};assert.ok(p.startsWith('/nested/energy/api/energy/'));
  if(p.endsWith('/config')){if(options.method==='PUT'){const body=JSON.parse(options.body);assert.equal(options.headers['X-Energy-Studio'],'1');config={...body,revision:config.revision+1};delete config.expectedRevision;}return {ok:true,json:async()=>structuredClone(config)}}
  if(p.endsWith('/entities'))return {ok:true,json:async()=>[{entity_id:'sensor.meter',registry_id:'meter-identity',state:'1200',last_updated:new Date().toISOString(),attributes:{unit_of_measurement:'W',friendly_name:'Home meter'}}]};
  if(p.endsWith('/history'))return {ok:true,json:async()=>({points:[],intervals:[],totalKwh:0,coverageSeconds:0,costMinor:null})};

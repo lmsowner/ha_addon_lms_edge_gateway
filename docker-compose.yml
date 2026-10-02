@@ -31,7 +31,7 @@ services:
       context: ./lms_energy_studio
       args:
         BUILD_ARCH: amd64
-        BUILD_VERSION: 0.1.0
+        BUILD_VERSION: 2026.10.02.17.34
     ports:
       - "127.0.0.1:5066:5066"
     volumes:
