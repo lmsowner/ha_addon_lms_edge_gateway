@@ -26,5 +26,13 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  w.document.querySelector('[data-ha-entity="sensor.meter"]').click();w.document.getElementById('ha-save').click();await new Promise(r=>setTimeout(r,20));assert.equal(config.mappings.home.entityId,'sensor.meter');assert.equal(config.mappings.home.registryId,'meter-identity');w.document.getElementById('ha-sample').click();w.document.getElementById('ha-save').click();assert.ok(w.document.getElementById('ha-message').textContent.includes('Sample mapping preview only'));
  assert.equal(requests.filter(r=>r.options.method==='PUT').length,2);
  w.LMSEnergy.resumeDemo();assert.ok(w.document.querySelector('header + p').textContent.includes('DEMO'));
+ w.LMSEnergy.configure({batteries:1,storage:[{id:'bank',name:'House bank',array:true,units:3,capacity:13.5,soc:50,connection:'ac',model:'generic'}]});
+ const bank=w.LMSEnergy.getConfig().storage[0];assert.equal(bank.array,true);assert.equal(bank.units,3);assert.equal(bank.totalCapacity,40.5);
+ const demo=w.LMSEnergy.getState();assert.equal(demo.capacity,40.5);assert.equal(demo.stored,20.25);assert.equal(demo.batterySoc,50);
+ assert.ok(w.document.getElementById('scene').textContent.includes('3 batteries · one combined SoC and power'));
+ w.document.querySelector('[data-ha-edit="storage:bank"]').dispatchEvent(new w.MouseEvent('click',{bubbles:true}));await new Promise(r=>setTimeout(r,20));
+ assert.equal(w.document.getElementById('ha-flyout-title').textContent,'House bank');
+ assert.ok(w.document.getElementById('ha-blurb').textContent.includes('Array of 3 batteries'));
+ assert.ok([...w.document.querySelectorAll('.ha-reading strong')].some(el=>el.textContent==='Combined state of charge'));
  dom.window.close();console.log('PASS: production startup, partial rendering, no fictional BMS/history, stable IDs, nested relative URLs and sample write isolation.');
 })().catch(e=>{console.error(e);dom.window.close();process.exitCode=1});

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.10.18.49
+
+- A battery can be an array of batteries that share one state of charge and one import/export power.
+
 ## 2026.10.10.17.51
 
 - The entity picker can hide unavailable sensors, and does so unless that filter is turned off.

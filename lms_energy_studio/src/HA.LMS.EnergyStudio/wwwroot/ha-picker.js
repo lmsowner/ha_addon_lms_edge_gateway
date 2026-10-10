@@ -7,7 +7,7 @@ function fillDevices(list){const groups=new Map();for(const d of b.devices(list)
 let entities=[],state,pending={},demo=false,partId='',reading='',series=null,search='',device='',hideUnavailable=true;
 try{hideUnavailable=sessionStorage.getItem('lms-energy-hide-unavailable')!=='0';}catch{}
 const request=async(path,options={})=>{const r=await fetch(new URL(path,document.baseURI),{credentials:'same-origin',...options});if(!r.ok)throw Error(r.status===409?'Mappings changed elsewhere. Reload before saving.':'Energy backend returned HTTP '+r.status);return r.status===204?null:r.json()};
-const layout=()=>state?.layout||window.LMSEnergy.getConfig();
+const layout=()=>window.LMSEnergy.getConfig();
 const cellsOf=pack=>(state?.cells?.[pack])||[];
 function spec(id){
  const c=layout(),all=b.fields(c,state?.cells||{}),take=(...keys)=>all.filter(f=>keys.some(k=>f.key===k||f.key.startsWith(k)));
@@ -15,11 +15,11 @@ function spec(id){
  if(id==='home')return {title:'Home consumption',blurb:'Map the meter for the whole house. Each circuit below the flow has its own edit icon.',fields:take('home'),accounting:true};
  if(id==='grid')return {title:'Grid',blurb:'Use the net sensor, or the import and export sensors. Do not map both.',fields:take('grid','grid.import','grid.export','grid.importEnergy','grid.exportEnergy')};
  if(id==='solar')return {title:'Solar total',blurb:'Optional combined solar sensor. Each array on the diagram has its own mappings.',fields:take('solar'),links:(c.arrayRoutes||[]).map(a=>link('array:'+a.id,a.name))};
- if(id==='battery')return {title:'Battery reserve',blurb:'Optional combined battery power. Open each battery for pack and cell sensors.',fields:take('battery'),links:(c.storage||[]).map(a=>link('storage:'+a.id,a.name))};
+ if(id==='battery')return {title:'Battery reserve',blurb:'Optional combined power across every battery and battery array. Open each one for its own sensors.',fields:take('battery'),links:(c.storage||[]).map(a=>link('storage:'+a.id,a.name))};
  if(id==='tariff')return {title:'Tariff',blurb:'The current import price used by this dashboard.',fields:take('tariff.currentPrice')};
  if(id.startsWith('array:')){const a=(c.arrayRoutes||[]).find(v=>v.id===id.slice(6));if(!a)return null;return {title:a.name,blurb:'Sensors that belong to this array only.',fields:take('arrays.'+a.id,'arrayEnergy.'+a.id)};}
  if(id.startsWith('inverter:')){const inv=(c.inverters||[]).find(v=>v.id===id.slice(9));if(!inv)return null;const links=[...(c.arrayRoutes||[]).filter(a=>a.inverter===inv.id).map(a=>link('array:'+a.id,a.name)),...(c.storage||[]).filter(a=>a.connection==='inverter'&&a.inverter===inv.id).map(a=>link('storage:'+a.id,a.name)),...(c.sources||[]).filter(a=>a.connection==='inverter'&&a.inverter===inv.id).map(a=>link('source:'+a.id,a.name))];return {title:inv.name,blurb:'The inverter’s own AC output. Arrays, batteries and generators attached to it are mapped on their own.',fields:take('inverters.'+inv.id),links};}
- if(id.startsWith('storage:')){const pack=(c.storage||[]).find(v=>v.id===id.slice(8));if(!pack)return null;const prefix='batteries.'+pack.id+'.';return {title:pack.name,blurb:'Pack sensors for this battery. Cell voltages and resistances can be mapped as a numbered run.',fields:all.filter(f=>f.key.startsWith(prefix)),pack};}
+ if(id.startsWith('storage:')){const pack=(c.storage||[]).find(v=>v.id===id.slice(8));if(!pack)return null;const prefix='batteries.'+pack.id+'.';const blurb=pack.array?`Array of ${pack.units} batteries. Map one combined state of charge, and one combined power: the signed reading, or separate import and export. Those sensors cover every battery in the array.`:'Pack sensors for this battery. Cell voltages and resistances can be mapped as a numbered run.';return {title:pack.name,blurb,fields:all.filter(f=>f.key.startsWith(prefix)),pack};}
  if(id.startsWith('source:')){const src=(c.sources||[]).find(v=>v.id===id.slice(7));if(!src)return null;return {title:src.name,blurb:'Generation sensor for this input.',fields:take('sources.'+src.id)};}
  if(id.startsWith('load:')){const load=(c.loads||[]).find(v=>v.id===id.slice(5));if(!load)return null;return {title:load.name,blurb:'Power and energy for this circuit only.',fields:take('loads.'+load.id,'loadEnergy.'+load.id)};}
  if(id.startsWith('charger:')){const index=Number(id.slice(8));return {title:(c.chargerNames||[])[index]||'Charger',blurb:'Power for this charger.',fields:take('chargers.charger-'+(index+1))};}

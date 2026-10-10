@@ -36,5 +36,11 @@ assert.deepEqual(b.numberedSeries(numbered,'sensor.cell_voltage_1',3).map(e=>e.e
 const deviceList=b.devices([{device_id:'z',device_name:'Zebra',area_name:'Utility'},{device_id:'a',device_name:'Alpha',area_name:'Garden'},{device_id:'m',device_name:'Meter',area_name:'Garden'},{device_id:'n',device_name:'Loose',area_name:''}]);
 assert.deepEqual(deviceList.map(d=>d.name),['Alpha','Meter','Zebra','Loose']);
 assert.equal(b.fields({arrayRoutes:[{id:'roof',name:'Roof'}],loads:[],storage:[],vehicles:[],cars:0},{}).some(f=>f.key==='arrayEnergy.roof'),true);
+const arrayFields=b.fields({storage:[{id:'bank',name:'House bank',array:true,units:3}],loads:[],vehicles:[],cars:0},{});
+assert.equal(arrayFields.find(f=>f.key==='batteries.bank.soc').label,'Combined state of charge');
+assert.equal(arrayFields.find(f=>f.key==='batteries.bank.power').label,'Combined power · positive export');
+assert.equal(arrayFields.find(f=>f.key==='batteries.bank.charge').label,'Combined import power');
+assert.equal(arrayFields.find(f=>f.key==='batteries.bank.discharge').label,'Combined export power');
+assert.equal(b.fields({storage:[{id:'one',name:'Shed'}],loads:[],vehicles:[],cars:0},{}).find(f=>f.key==='batteries.one.soc').label,'Pack SoC');
 assert.equal(b.evaluate({},[],fields)['loads.heat'].quality,'unmapped');
 console.log('PASS: units, signs, null quality, BMS attribute arrays, availability, freshness, paired flows and picker filters.');
