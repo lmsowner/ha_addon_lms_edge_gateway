@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.10.17.51
+
+- The entity picker can hide unavailable sensors, and does so unless that filter is turned off.
+
 ## 2026.10.10.17.42
 
 - Open the entity picker as a full-width dialog so sensor names and entity ids have room to read.
