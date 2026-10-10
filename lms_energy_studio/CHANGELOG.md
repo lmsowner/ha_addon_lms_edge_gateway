@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.10.17.42
+
+- Open the entity picker as a full-width dialog so sensor names and entity ids have room to read.
+
 ## 2026.10.10.16.51
 
 - Sort the mapping device list by area, then by device name.

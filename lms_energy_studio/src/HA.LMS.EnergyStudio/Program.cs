@@ -39,7 +39,7 @@ app.Use(async(context,next)=>
 });
 app.UseRouting();
 app.UseDefaultFiles();app.UseStaticFiles();
-app.MapGet("/healthz",()=>Results.Ok(new{status="ok",version=builder.Configuration["EnergyStudio:AddonVersion"]??"2026.10.10.16.51"}));
+app.MapGet("/healthz",()=>Results.Ok(new{status="ok",version=builder.Configuration["EnergyStudio:AddonVersion"]??"2026.10.10.17.42"}));
 app.MapGet("/api/energy/entities",(HomeAssistantConnection ha)=>ha.Catalogue().Values);
 app.MapGet("/api/energy/config",(HomeAssistantConnection ha)=>ha.ResolvedConfiguration());
 app.MapPut("/api/energy/config",async(ConfigurationUpdate update,ConfigurationStore store,HomeAssistantConnection ha,CancellationToken ct)=>await store.Save(update,ha.Catalogue(),ct));
