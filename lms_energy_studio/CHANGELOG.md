@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.10.16.51
+
+- Sort the mapping device list by area, then by device name.
+
 ## 2026.10.10.14.23
 
 - Edit mode puts a mapping control on each dashboard part, so solar, inverters, batteries, loads and the grid are mapped on their own.

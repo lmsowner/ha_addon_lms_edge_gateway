@@ -3,6 +3,7 @@
 const $=id=>document.getElementById(id);
 const b=window.HAEnergyBindings;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fillDevices(list){const groups=new Map();for(const d of b.devices(list)){const area=d.area||'No area';if(!groups.has(area))groups.set(area,[]);groups.get(area).push(d);}$('ha-device').innerHTML='<option value="">All devices</option>'+[...groups].map(([area,devices])=>`<optgroup label="${esc(area)}">${devices.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('')}</optgroup>`).join('');}
 let entities=[],state,pending={},demo=false,partId='',reading='',series=null,search='',device='';
 const request=async(path,options={})=>{const r=await fetch(new URL(path,document.baseURI),{credentials:'same-origin',...options});if(!r.ok)throw Error(r.status===409?'Mappings changed elsewhere. Reload before saving.':'Energy backend returned HTTP '+r.status);return r.status===204?null:r.json()};
 const layout=()=>state?.layout||window.LMSEnergy.getConfig();
@@ -45,7 +46,7 @@ function renderCandidates(){
  $('ha-result-count').textContent=matches.length+' matching sensors'+(matches.length>80?' · first 80 shown':'');
  const current=pending[reading]||{};$('ha-pointer').value=current.pointer||'';$('ha-unit').value=current.sourceUnit||'';$('ha-invert').checked=!!current.invert;
 }
-async function ensure(){if(entities.length&&state)return;[entities,state]=await Promise.all([request('api/energy/entities'),request('api/energy/config')]);pending=structuredClone(state.mappings||{});window.EnergyLive.config=state;window.LMSEnergy.applyServerConfig(state.layout);const devices=[...new Map(entities.filter(e=>e.device_id).map(e=>[e.device_id,e.device_name||e.device_id])).entries()];$('ha-device').innerHTML='<option value="">All devices</option>'+devices.map(([id,name])=>`<option value="${esc(id)}">${esc(name)}</option>`).join('');}
+async function ensure(){if(entities.length&&state)return;[entities,state]=await Promise.all([request('api/energy/entities'),request('api/energy/config')]);pending=structuredClone(state.mappings||{});window.EnergyLive.config=state;window.LMSEnergy.applyServerConfig(state.layout);fillDevices(entities);}
 async function openPart(id){
  partId=id;series=null;search='';demo=false;$('ha-flyout').showModal();$('ha-message').textContent='Loading sensors…';
  try{await ensure();renderPart();}catch(e){$('ha-message').textContent=e.message;}
@@ -55,7 +56,7 @@ function sample(){
  state={revision:state?.revision||0,layout:c,cells:Object.fromEntries((c.storage||[]).map(v=>[v.id,Array.from({length:4},(_,i)=>'cell-'+(i+1))])),mappings:pending};
  const cell=(n,unit)=>({entity_id:'sensor.example_cell_voltage_'+n,state:String(3.3+n/100),device_id:'example-bms',device_name:'Example battery BMS',area_name:'Battery room',last_updated:new Date().toISOString(),attributes:{friendly_name:'Example cell voltage '+n,unit_of_measurement:unit}});
  entities=[{entity_id:'sensor.meter',state:'1200',device_id:'example-house',device_name:'Example house meter',area_name:'Utility',last_updated:new Date().toISOString(),attributes:{friendly_name:'Home meter',unit_of_measurement:'W'}},cell(1,'V'),cell(2,'V'),cell(3,'V'),cell(4,'V')];
- $('ha-device').innerHTML='<option value="">All devices</option><option value="example-house">Example house meter</option><option value="example-bms">Example battery BMS</option>';
+ fillDevices(entities);
  renderPart();
 }
 function applySeries(entityId){

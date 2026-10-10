@@ -23,8 +23,9 @@ function fields(layout,cells={}){const out=[],add=(key,label,role,group)=>out.pu
  add('tariff.currentPrice','Current import price','price','Tariff');return out;
 }
 function trailingNumber(value){const match=String(value).match(/(\d+)(?!.*\d)/);return match?Number(match[1]):null;}
+function devices(entities){const byId=new Map();for(const e of entities){if(!e.device_id||byId.has(e.device_id))continue;byId.set(e.device_id,{id:e.device_id,name:e.device_name||e.device_id,area:e.area_name||''});}return [...byId.values()].sort((a,b)=>(a.area||'\uffff').localeCompare(b.area||'\uffff')||a.name.localeCompare(b.name));}
 function numberedSeries(entities,anchorId,count){const anchor=entities.find(e=>e.entity_id===anchorId);if(!anchor||count<1)return [];const stem=id=>String(id).replace(/(\d+)(?!.*\d)/,'#'),start=trailingNumber(anchor.entity_id);if(start===null)return [anchor];return entities.filter(e=>stem(e.entity_id)===stem(anchor.entity_id)&&trailingNumber(e.entity_id)>=start).sort((a,b)=>trailingNumber(a.entity_id)-trailingNumber(b.entity_id)).slice(0,count);}
 function evaluate(mapping,entities,fieldList){const byId=new Map(entities.map(e=>[e.entity_id,e]));return Object.fromEntries(fieldList.map(f=>[f.key,read(mapping[f.key],byId.get(mapping[f.key]?.entityId),f.role)]));}
 function net(positive,negative){if(positive?.quality!=='good'||negative?.quality!=='good')return {value:null,quality:'incomplete-pair',unit:'kW'};return {value:positive.value-negative.value,quality:'good',unit:'kW'};}
-const api={units,expected,pointer,read,compatible,candidates,fields,evaluate,net,numberedSeries};root.HAEnergyBindings=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
+const api={units,expected,pointer,read,compatible,candidates,fields,evaluate,net,numberedSeries,devices};root.HAEnergyBindings=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(globalThis);

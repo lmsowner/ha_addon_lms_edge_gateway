@@ -30,6 +30,8 @@ assert(fields.some(f=>f.key==='loads.heat'&&f.role==='power'));
 assert(fields.some(f=>f.key==='cells.dc.cell-1.voltage'));
 const numbered=[1,2,3,4].map(n=>({entity_id:'sensor.cell_voltage_'+n,state:'3.3',attributes:{unit_of_measurement:'V'}}));
 assert.deepEqual(b.numberedSeries(numbered,'sensor.cell_voltage_1',3).map(e=>e.entity_id),['sensor.cell_voltage_1','sensor.cell_voltage_2','sensor.cell_voltage_3']);
+const deviceList=b.devices([{device_id:'z',device_name:'Zebra',area_name:'Utility'},{device_id:'a',device_name:'Alpha',area_name:'Garden'},{device_id:'m',device_name:'Meter',area_name:'Garden'},{device_id:'n',device_name:'Loose',area_name:''}]);
+assert.deepEqual(deviceList.map(d=>d.name),['Alpha','Meter','Zebra','Loose']);
 assert.equal(b.fields({arrayRoutes:[{id:'roof',name:'Roof'}],loads:[],storage:[],vehicles:[],cars:0},{}).some(f=>f.key==='arrayEnergy.roof'),true);
 assert.equal(b.evaluate({},[],fields)['loads.heat'].quality,'unmapped');
 console.log('PASS: units, signs, null quality, BMS attribute arrays, availability, freshness, paired flows and picker filters.');
