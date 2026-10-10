@@ -9,7 +9,7 @@ public static class Configuration
     {
         var fields = new Dictionary<string, string> { ["home"]="power", ["grid"]="power", ["grid.import"]="power", ["grid.export"]="power", ["solar"]="power", ["battery"]="power", ["grid.importEnergy"]="energy", ["grid.exportEnergy"]="energy", ["tariff.currentPrice"]="price" };
         foreach (var (group, prefix) in new[] { ("loads","loads"), ("arrayRoutes","arrays"), ("sources","sources"), ("inverters","inverters") })
-            foreach (var v in layout[group]?.AsArray() ?? []) { var id=v!["id"]!.ToString(); fields[$"{prefix}.{id}"]="power"; if(group=="loads") fields[$"loadEnergy.{id}"]="energy"; }
+            foreach (var v in layout[group]?.AsArray() ?? []) { var id=v!["id"]!.ToString(); fields[$"{prefix}.{id}"]="power"; if(group=="loads") fields[$"loadEnergy.{id}"]="energy"; if(group=="arrayRoutes") fields[$"arrayEnergy.{id}"]="energy"; }
         foreach (var v in (layout["vehicles"]?.AsArray() ?? []).Take(layout["cars"]?.GetValue<int>() ?? 0))
         { var id=v!["id"]!.ToString(); foreach(var (prefix,role) in new[]{("ev","power"),("evSoc","soc"),("evEnergy","energy"),("evExportEnergy","energy")}) fields[$"{prefix}.{id}"]=role; }
         for(var i=0;i<(layout["chargers"]?.GetValue<int>()??0);i++) fields[$"chargers.charger-{i+1}"]="power";

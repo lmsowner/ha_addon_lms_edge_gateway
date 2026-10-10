@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.10.10.14.23
+
+- Edit mode puts a mapping control on each dashboard part, so solar, inverters, batteries, loads and the grid are mapped on their own.
+- Numbered battery cell sensors can be applied in order from the first cell to the pack's cell count.
+
 ## 2026.10.02.18.44
 
 - Republish Energy Studio so Home Assistant can install this version from the App store.
