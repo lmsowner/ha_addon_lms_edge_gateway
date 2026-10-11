@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.10.41
+
+- Save this part confirms on the button and updates the diagram. A battery capacity sensor is the energy still stored, divided by the total you entered.
+
 ## 2026.10.11.10.33
 
 - A battery with no state of charge uses current capacity divided by total capacity.

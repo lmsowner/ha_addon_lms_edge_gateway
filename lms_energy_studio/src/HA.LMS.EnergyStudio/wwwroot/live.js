@@ -48,6 +48,9 @@ async function save(){
  catch(e){dirty=null;status.textContent='Layout was not saved: '+e.message+' · Reload Live Home Assistant before editing.';}
  finally{saving=false;if(dirty)save()}
 }
+async function settle(){clearTimeout(timer);dirty=null;while(saving)await new Promise(r=>setTimeout(r,20));return live.config?.revision??null;}
+function flushLayout(){if(dirty&&!saving){clearTimeout(timer);save();}}
+window.EnergyLive.settle=settle;window.EnergyLive.flushLayout=flushLayout;
 window.addEventListener('energy-layout-change',e=>{if(applying||demo)return;dirty=e.detail;clearTimeout(timer);timer=setTimeout(save,600)});
 window.addEventListener('energy-demo',()=>{demo=true;status.textContent='DEMO · Synthetic telemetry and histories';document.querySelectorAll('.live-label').forEach(e=>e.textContent='DEMO')});
 // Keep live and demo explicit; SSE never resumes simulation on disconnect.

@@ -9,6 +9,7 @@ w.fetch=async(url,options={})=>{requests.push({url:String(url),options});const p
  if(p.endsWith('/config')){if(options.method==='PUT'){const body=JSON.parse(options.body);assert.equal(options.headers['X-Energy-Studio'],'1');config={...body,revision:config.revision+1};delete config.expectedRevision;}return {ok:true,json:async()=>structuredClone(config)}}
  if(p.endsWith('/entities'))return {ok:true,json:async()=>[{entity_id:'sensor.meter',registry_id:'meter-identity',state:'1200',last_updated:new Date().toISOString(),attributes:{unit_of_measurement:'W',friendly_name:'Home meter'}}]};
  if(p.endsWith('/history'))return {ok:true,json:async()=>({points:[],intervals:[],totalKwh:0,coverageSeconds:0,costMinor:null})};
+ if(p.endsWith('/snapshot'))return {ok:true,json:async()=>({connection:'connected',revision:config.revision,observedAt:new Date().toISOString(),readings:{},residual:{value:null,quality:'incomplete'}})};
  throw Error('Unexpected request '+url);
 };
 w.EventSource=class{constructor(url){assert.equal(new URL(url).pathname,'/nested/energy/api/energy/live');stream=this;}addEventListener(name,fn){this.listener=fn}close(){}};
@@ -43,6 +44,9 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  w.LMSEnergy.updateSnapshot({connection:'connected',observedAt:new Date().toISOString(),readings:{['batteries.bank.remaining']:{value:6.75,quality:'good',unit:'kWh'}},residual:{value:null,quality:'incomplete'}});
  assert.equal(w.document.getElementById('battery-value').textContent,'25%');
  assert.ok(w.document.getElementById('battery-note').textContent.startsWith('6.8 / 27.0'));
+ w.LMSEnergy.updateSnapshot({connection:'connected',observedAt:new Date().toISOString(),readings:{['batteries.bank.capacity']:{value:6.75,quality:'good',unit:'kWh'}},residual:{value:null,quality:'incomplete'}});
+ assert.equal(w.document.getElementById('battery-value').textContent,'25%');
+ assert.ok(w.document.getElementById('scene').textContent.includes('6.8 / 27.0'));
  w.LMSEnergy.updateSnapshot({connection:'connected',observedAt:new Date().toISOString(),readings:{['batteries.bank.remaining']:{value:6.75,quality:'good',unit:'kWh'},['batteries.bank.soc']:{value:10,quality:'good',unit:'%'}},residual:{value:null,quality:'incomplete'}});
  assert.equal(w.document.getElementById('battery-value').textContent,'10%');
  w.LMSEnergy.resumeDemo();

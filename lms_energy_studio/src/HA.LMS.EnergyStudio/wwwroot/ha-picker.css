@@ -22,7 +22,10 @@ body.ha-editing #ha-add{display:flex}
 #ha-flyout #ha-blurb,#ha-flyout #ha-message{padding:14px;background:#203746;border-radius:10px;color:#bce1ed;font-size:14px;line-height:1.5;margin:0 0 12px}
 #ha-flyout #ha-results{grid-template-columns:repeat(auto-fill,minmax(320px,1fr));align-content:start}
 #ha-flyout .ha-entity strong,#ha-flyout .ha-entity code,#ha-flyout .ha-entity span,#ha-flyout .ha-entity b{overflow-wrap:anywhere;word-break:break-word;white-space:normal}
-#ha-flyout .ha-actions{position:static;flex:0 0 auto;margin:0;bottom:auto;border-top:1px solid #345467;background:#18303e;padding:14px 22px}
+#ha-flyout .ha-actions{position:static;flex:0 0 auto;margin:0;bottom:auto;border-top:1px solid #345467;background:#18303e;padding:14px 22px;align-items:center}
+#ha-save-note{margin:0;font-size:16px;line-height:1.4;color:#d5e8f4}
+#ha-save-note.bad{color:#ffb4be}
+#ha-flyout #ha-save.ha-saved{background:#146b49;color:#e9fff6;box-shadow:0 0 0 3px #49efaf}
 #ha-flyout .ha-result-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 12px}
 #ha-flyout .ha-result-bar #ha-result-count{margin:0}
 #ha-flyout .ha-result-bar .ha-check{margin:0;flex-direction:row;align-items:center;white-space:nowrap}
