@@ -25,7 +25,7 @@ public static class Configuration
     public static void Validate(ConfigurationUpdate update, IReadOnlyDictionary<string, JsonObject> catalogue)
     {
         if(update.Mappings.Count>4096)throw new ArgumentException("Too many mappings.");
-        var allowed = "name house housePhoto panels arrays rating batteries soc chargers chargerNames chargerV2G cars vehicles loads demand charge motion inverters arrayRoutes storage sources installedKW topologyVersion tariff accounting".Split(' ').ToHashSet();
+        var allowed = "name house housePhoto panels arrays rating batteries batteryArray soc chargers chargerNames chargerV2G cars vehicles loads demand charge motion inverters arrayRoutes storage sources installedKW topologyVersion tariff accounting".Split(' ').ToHashSet();
         if(update.Layout.Any(p=>!allowed.Contains(p.Key))) throw new ArgumentException("Unexpected layout property.");
         foreach(var (key,max) in new[]{("cars",4),("chargers",4),("arrays",4),("batteries",6)}) if(update.Layout[key] is JsonNode n && (!int.TryParse(n.ToString(),out var count)||count<0||count>max)) throw new ArgumentException("Invalid layout count.");
         foreach(var group in new[]{"vehicles","loads","inverters","arrayRoutes","storage","sources"})

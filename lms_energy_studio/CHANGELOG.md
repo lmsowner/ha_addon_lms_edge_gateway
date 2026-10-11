@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.07.43
+
+- A battery array is one entry. Its power is a single positive or negative reading, with one combined state of charge.
+
 ## 2026.10.10.18.49
 
 - A battery can be an array of batteries that share one state of charge and one import/export power.
