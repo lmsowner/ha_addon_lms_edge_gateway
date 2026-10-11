@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.16.55
+
+- A battery’s total capacity can be entered in kilowatt-hours or amp-hours. Amp-hours use the nominal voltage.
+
 ## 2026.10.11.16.19
 
 - Battery capacity accepts amp-hour sensors, such as a Victron shunt, and converts them to kWh with the pack voltage.

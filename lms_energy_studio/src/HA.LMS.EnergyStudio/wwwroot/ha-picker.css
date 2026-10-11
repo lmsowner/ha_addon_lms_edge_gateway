@@ -8,7 +8,8 @@ body.ha-editing #ha-add{display:flex}
 #ha-component h3{margin:0 0 4px;font-size:15px}
 #ha-component .button{margin-top:8px}
 #ha-component .ha-remove{border-color:#8d4452;color:#ffb4be}
-.ha-linked{color:#b7d2e1;font-size:13px;line-height:1.45;margin:4px 0}
+ .ha-linked{color:#b7d2e1;font-size:13px;line-height:1.45;margin:4px 0}
+.ha-capacity{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px}
 .stats article,.load-card,.history-panel .panel-top{position:relative}
 .ha-edit{position:absolute;top:10px;right:10px;z-index:3;width:32px;height:32px;border-radius:50%;border:1px solid #64d7a6;background:#102431;color:#b8ffe0;line-height:1}
 .ha-node-edit,.ha-node-remove{cursor:pointer}

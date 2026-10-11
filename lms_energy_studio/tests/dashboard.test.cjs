@@ -84,5 +84,9 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  cross.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));assert.equal(w.document.getElementById('ha-confirm').open,true);assert.match(w.document.getElementById('ha-confirm-title').textContent,/House bank/);
  w.document.getElementById('ha-confirm-cancel').click();assert.ok(w.LMSEnergy.getConfig().storage.some(b=>b.id==='bank'));
  cross.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));w.document.getElementById('ha-confirm-yes').click();assert.equal(w.LMSEnergy.getConfig().storage.some(b=>b.id==='bank'),false);
+ const scratch={arrays:0,panels:0,rating:440,batteries:1,inverters:[],arrayRoutes:[],sources:[],storage:[{id:'shunt',name:'Shunt bank',connection:'ac',capacityUnit:'Ah',capacityAh:200,nominalVolts:50}]};
+ w.EnergyTopology.normalise(scratch);assert.equal(scratch.storage[0].capacity,10);assert.equal(scratch.storage[0].capacityUnit,'Ah');assert.equal(scratch.storage[0].totalCapacity,10);
+ const kilowatt={arrays:0,panels:0,rating:440,batteries:1,inverters:[],arrayRoutes:[],sources:[],storage:[{id:'pack',connection:'ac',capacity:27}]};
+ w.EnergyTopology.normalise(kilowatt);assert.equal(kilowatt.storage[0].capacity,27);assert.equal(kilowatt.storage[0].capacityUnit,'kWh');
  dom.window.close();console.log('PASS: production startup, partial rendering, no fictional BMS/history, stable IDs, nested relative URLs and sample write isolation.');
 })().catch(e=>{console.error(e);dom.window.close();process.exitCode=1});
