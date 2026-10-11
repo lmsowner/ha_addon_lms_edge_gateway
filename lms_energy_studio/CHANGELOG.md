@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.15.21
+
+- The remove question is a small dialog, only as tall as the question and the buttons.
+
 ## 2026.10.11.15.17
 
 - House, charger and load settings open as a dialog. In Edit mode, × on a component asks, then removes it, including a Powerwall.

@@ -14,7 +14,7 @@ body.ha-editing #ha-add{display:flex}
 .ha-node-edit,.ha-node-remove{cursor:pointer}
 body:not(.ha-editing) .ha-card-remove{display:none}
 .ha-card-remove{position:absolute;top:10px;right:48px;z-index:3;width:32px;height:32px;border-radius:50%;border:1px solid #ff697b;background:#2a1218;color:#ffd0d6;line-height:1;font-size:18px}
-#ha-confirm{width:min(440px,92vw);padding:28px 28px 22px}
+#ha-confirm{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);margin:0;width:min(420px,92vw);height:auto;max-height:none;overflow:visible;padding:22px 22px 18px}
 #ha-confirm h2{margin:0 0 10px;font-size:24px}
 #ha-confirm p{margin:0 0 22px;color:#d5e8f4;font-size:16px;line-height:1.45}
 .ha-confirm-actions{display:flex;justify-content:flex-end;gap:10px}
