@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.17.12
+
+- Saving a sensor reports the actual reason when the energy service rejects it, instead of only HTTP 400.
+
 ## 2026.10.11.16.55
 
 - A battery’s total capacity can be entered in kilowatt-hours or amp-hours. Amp-hours use the nominal voltage.

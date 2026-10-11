@@ -47,18 +47,18 @@ public static class Configuration
         var fields=Fields(update.Layout,update.Cells);
         foreach(var (key,b) in update.Mappings)
         {
-            if(!fields.TryGetValue(key,out var role)||b.MaxAgeSeconds<0||b.MaxAgeSeconds>604800) throw new ArgumentException("Invalid mapping target or freshness policy.");
+            if(!fields.TryGetValue(key,out var role)||b.MaxAgeSeconds<0||b.MaxAgeSeconds>604800) throw new ArgumentException($"Invalid mapping target or freshness policy for {key}.");
             if(!catalogue.TryGetValue(b.EntityId,out var entity)) throw new ArgumentException($"Entity {b.EntityId} is missing; refresh the catalogue.");
-            if(b.RegistryId is not null && b.RegistryId!=entity["registry_id"]?.ToString()) throw new ArgumentException("Registry identity mismatch.");
-            if(!string.IsNullOrEmpty(b.Pointer)) { Measurements.Pointer(entity,b.Pointer); if(b.SourceUnit is null && role!="boolean") throw new ArgumentException("Attribute mappings require a source unit."); }
+            if(b.RegistryId is not null && b.RegistryId!=entity["registry_id"]?.ToString()) throw new ArgumentException($"Registry identity mismatch for {key}.");
+            if(!string.IsNullOrEmpty(b.Pointer)) { Measurements.Pointer(entity,b.Pointer); if(b.SourceUnit is null && role!="boolean") throw new ArgumentException($"Attribute mappings require a source unit for {key}."); }
             var unit=b.SourceUnit??entity["attributes"]?["unit_of_measurement"]?.ToString();
             var ampHours=key.StartsWith("batteries.")&&(key.EndsWith(".remaining")||key.EndsWith(".capacity"))&&Measurements.Scale("capacity",unit) is not null;
-            if(role=="boolean" ? b.Invert : Measurements.Scale(role,unit) is null && !ampHours) throw new ArgumentException("Incompatible unit or sign transform.");
+            if(role=="boolean" ? b.Invert : Measurements.Scale(role,unit) is null && !ampHours) throw new ArgumentException($"Incompatible unit or sign transform for {key} ({unit??"no unit"}).");
         }
         var acKeys=(update.Layout["inverters"]?.AsArray()??[]).Select(v=>$"inverters.{v!["id"]}")
             .Concat((update.Layout["sources"]?.AsArray()??[]).Where(v=>v?["connection"]?.ToString()=="ac").Select(v=>$"sources.{v!["id"]}"))
             .Concat((update.Layout["storage"]?.AsArray()??[]).Where(v=>v?["connection"]?.ToString()!="inverter").Select(v=>$"batteries.{v!["id"]}.power"));
-        var used=new HashSet<string>();foreach(var key in acKeys)if(update.Mappings.TryGetValue(key,out var binding)&&!used.Add(binding.EntityId+"|"+binding.Pointer))throw new ArgumentException("An AC contributor is mapped twice; this would double-count energy.");
+        var used=new Dictionary<string,string>();foreach(var key in acKeys)if(update.Mappings.TryGetValue(key,out var binding)&&!used.TryAdd(binding.EntityId+"|"+binding.Pointer,key))throw new ArgumentException($"{binding.EntityId} is already used by {used[binding.EntityId+"|"+binding.Pointer]} and {key}. Use it on only one AC reading.");
         foreach(var prefix in new[]{"grid"}.Concat(storage.Select(id=>$"batteries.{id}")))
         { var net=prefix=="grid"?prefix:prefix+".power"; var pos=prefix+(prefix=="grid"?".import":".discharge");var neg=prefix+(prefix=="grid"?".export":".charge"); if(update.Mappings.ContainsKey(net)&&(update.Mappings.ContainsKey(pos)||update.Mappings.ContainsKey(neg))) throw new ArgumentException("Select net OR split directional readings."); }
         if(update.Layout["tariff"] is JsonObject tariff) {
