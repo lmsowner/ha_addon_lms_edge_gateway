@@ -42,7 +42,7 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  assert.ok(readingNames.includes('Combined state of charge'));
  assert.ok(readingNames.includes('Battery power · positive or negative'));
  assert.ok(!readingNames.some(name=>/import|export/i.test(name)));
- assert.ok(readingNames.includes('Current capacity'));
+ assert.ok(readingNames.some(name=>name.startsWith('Current capacity')));
  w.LMSEnergy.updateSnapshot({connection:'connected',observedAt:new Date().toISOString(),readings:{['batteries.bank.remaining']:{value:6.75,quality:'good',unit:'kWh'}},residual:{value:null,quality:'incomplete'}});
  assert.equal(w.document.getElementById('battery-value').textContent,'25%');
  assert.ok(w.document.getElementById('battery-note').textContent.startsWith('6.8 / 27.0'));
@@ -51,6 +51,9 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  assert.ok(w.document.getElementById('scene').textContent.includes('6.8 / 27.0'));
  w.LMSEnergy.updateSnapshot({connection:'connected',observedAt:new Date().toISOString(),readings:{['batteries.bank.remaining']:{value:6.75,quality:'good',unit:'kWh'},['batteries.bank.soc']:{value:10,quality:'good',unit:'%'}},residual:{value:null,quality:'incomplete'}});
  assert.equal(w.document.getElementById('battery-value').textContent,'10%');
+ w.LMSEnergy.updateSnapshot({connection:'connected',observedAt:new Date().toISOString(),readings:{['batteries.bank.remaining']:{value:100,quality:'good',unit:'Ah'},['batteries.bank.capacity']:{value:200,quality:'good',unit:'Ah'},['batteries.bank.voltage']:{value:50,quality:'good',unit:'V'}},residual:{value:null,quality:'incomplete'}});
+ assert.equal(w.document.getElementById('battery-value').textContent,'50%');
+ assert.ok(w.document.getElementById('battery-note').textContent.startsWith('5.0 / 10.0'));
  w.LMSEnergy.resumeDemo();
  assert.ok(w.document.querySelector('#ha-component input[data-comp="array"]'));
  assert.ok(!w.document.getElementById('settings').textContent.includes('Connections'));

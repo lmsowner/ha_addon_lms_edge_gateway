@@ -51,7 +51,9 @@ public static class Configuration
             if(!catalogue.TryGetValue(b.EntityId,out var entity)) throw new ArgumentException($"Entity {b.EntityId} is missing; refresh the catalogue.");
             if(b.RegistryId is not null && b.RegistryId!=entity["registry_id"]?.ToString()) throw new ArgumentException("Registry identity mismatch.");
             if(!string.IsNullOrEmpty(b.Pointer)) { Measurements.Pointer(entity,b.Pointer); if(b.SourceUnit is null && role!="boolean") throw new ArgumentException("Attribute mappings require a source unit."); }
-            if(role=="boolean" ? b.Invert : Measurements.Scale(role,b.SourceUnit??entity["attributes"]?["unit_of_measurement"]?.ToString()) is null) throw new ArgumentException("Incompatible unit or sign transform.");
+            var unit=b.SourceUnit??entity["attributes"]?["unit_of_measurement"]?.ToString();
+            var ampHours=key.StartsWith("batteries.")&&(key.EndsWith(".remaining")||key.EndsWith(".capacity"))&&Measurements.Scale("capacity",unit) is not null;
+            if(role=="boolean" ? b.Invert : Measurements.Scale(role,unit) is null && !ampHours) throw new ArgumentException("Incompatible unit or sign transform.");
         }
         var acKeys=(update.Layout["inverters"]?.AsArray()??[]).Select(v=>$"inverters.{v!["id"]}")
             .Concat((update.Layout["sources"]?.AsArray()??[]).Where(v=>v?["connection"]?.ToString()=="ac").Select(v=>$"sources.{v!["id"]}"))

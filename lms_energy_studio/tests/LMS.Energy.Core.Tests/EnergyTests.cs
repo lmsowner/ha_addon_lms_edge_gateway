@@ -13,6 +13,8 @@ public class EnergyTests
     [Theory][InlineData("unavailable","unavailable")][InlineData("unknown","unavailable")][InlineData("","missing-value")][InlineData("NaN","not-numeric")]
     public void MissingNeverBecomesZero(string raw,string quality)
     {var m=Measurements.Read(new("sensor.test"),Entity(raw),"power",true,Now);Assert.Null(m.Value);Assert.Equal(quality,m.Quality);}
+    [Fact]public void AmpHoursStayAmpHoursUntilVoltageConvertsThem()
+    {var ah=Measurements.Read(new("sensor.test"),Entity("180","Ah"),"capacity",true,Now);Assert.Equal("Ah",ah.Unit);Assert.Equal(180,ah.Value);Assert.Equal("invalid-unit",Measurements.Read(new("sensor.test"),Entity("180","Ah"),"energy",true,Now).Quality);}
     [Fact]public void AttributeArraysRequireTheirOwnUnit()
     {var e=Entity();Assert.Equal(3.3,Measurements.Read(new("sensor.test",Pointer:"/attributes/cells/0/voltage",SourceUnit:"mV"),e,"voltage",true,Now).Value!.Value,6);Assert.Equal("invalid-unit",Measurements.Read(new("sensor.test",Pointer:"/attributes/cells/0/voltage"),e,"voltage",true,Now).Quality);}
     [Fact]public void UsesReportedTimeAndDisconnectQuality()

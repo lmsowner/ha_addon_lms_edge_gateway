@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.16.19
+
+- Battery capacity accepts amp-hour sensors, such as a Victron shunt, and converts them to kWh with the pack voltage.
+
 ## 2026.10.11.15.43
 
 - Photographs sit on top of the cards again, and they stay still when the readings update.
