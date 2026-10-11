@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.10.33
+
+- A battery with no state of charge uses current capacity divided by total capacity.
+
 ## 2026.10.11.09.48
 
 - Edit mode adds one solar array, inverter, or battery at a time. Opening it shows only that component, including the link to the next device.

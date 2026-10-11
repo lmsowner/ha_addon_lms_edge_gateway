@@ -16,7 +16,7 @@ public static class Configuration
         foreach(var v in layout["storage"]?.AsArray() ?? [])
         {
             var id=v!["id"]!.ToString();
-            foreach(var (field,role) in new[]{("power","power"),("charge","power"),("discharge","power"),("soc","soc"),("voltage","voltage"),("nominalVoltage","voltage"),("ampHours","capacity"),("capacity","energy"),("current","current"),("temperature","temperature"),("chargeEnergy","energy"),("dischargeEnergy","energy")}) fields[$"batteries.{id}.{field}"]=role;
+            foreach(var (field,role) in new[]{("power","power"),("charge","power"),("discharge","power"),("soc","soc"),("voltage","voltage"),("nominalVoltage","voltage"),("ampHours","capacity"),("remaining","energy"),("capacity","energy"),("current","current"),("temperature","temperature"),("chargeEnergy","energy"),("dischargeEnergy","energy")}) fields[$"batteries.{id}.{field}"]=role;
             foreach(var route in v["balanceRoutes"]?.AsArray()??[]) { var r=route!["id"]!.ToString(); fields[$"routes.{id}.{r}.active"]="boolean";fields[$"routes.{id}.{r}.current"]="current"; }
             foreach(var cell in cells.GetValueOrDefault(id) ?? []) foreach(var (field,role) in new[]{("voltage","voltage"),("soc","soc"),("balancing","boolean"),("balanceCurrent","current"),("balanceResistance","resistance")}) fields[$"cells.{id}.{cell}.{field}"]=role;
         }

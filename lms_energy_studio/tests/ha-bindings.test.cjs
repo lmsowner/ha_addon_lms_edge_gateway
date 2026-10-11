@@ -38,6 +38,8 @@ assert.deepEqual(deviceList.map(d=>d.name),['Alpha','Meter','Zebra','Loose']);
 assert.equal(b.fields({arrayRoutes:[{id:'roof',name:'Roof'}],loads:[],storage:[],vehicles:[],cars:0},{}).some(f=>f.key==='arrayEnergy.roof'),true);
 const arrayFields=b.fields({storage:[{id:'bank',name:'House bank',array:true,units:3}],loads:[],vehicles:[],cars:0},{});
 assert.equal(arrayFields.find(f=>f.key==='batteries.bank.soc').label,'Combined state of charge');
+assert.equal(arrayFields.find(f=>f.key==='batteries.bank.remaining').label,'Current capacity');
+assert.equal(arrayFields.find(f=>f.key==='batteries.bank.capacity').label,'Total capacity');
 assert.equal(arrayFields.find(f=>f.key==='batteries.bank.power').label,'Battery power · positive or negative');
 assert.equal(arrayFields.some(f=>f.key==='batteries.bank.charge'||f.key==='batteries.bank.discharge'),false);
 assert.equal(b.fields({storage:[{id:'one',name:'Shed'}],loads:[],vehicles:[],cars:0},{}).find(f=>f.key==='batteries.one.soc').label,'Pack SoC');
