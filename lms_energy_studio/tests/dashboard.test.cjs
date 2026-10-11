@@ -74,5 +74,6 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  assert.equal(battery.inverter,inverter.id);
  assert.equal(w.document.getElementById('ha-flyout-title').textContent,battery.name);
  assert.equal(w.document.querySelectorAll('#settings .topology-edit').length,0);
+ const picture=w.document.querySelector('#scene-static image');assert.ok(picture);w.LMSEnergy.render();assert.equal(w.document.querySelector('#scene-static image'),picture);
  dom.window.close();console.log('PASS: production startup, partial rendering, no fictional BMS/history, stable IDs, nested relative URLs and sample write isolation.');
 })().catch(e=>{console.error(e);dom.window.close();process.exitCode=1});

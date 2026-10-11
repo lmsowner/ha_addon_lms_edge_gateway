@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.10.55
+
+- Live readings update the numbers on the diagram. Photographs stay put instead of being redrawn on every refresh.
+
 ## 2026.10.11.10.49
 
 - Save confirms as soon as the mapping is stored, without waiting to copy every Home Assistant sensor again.
