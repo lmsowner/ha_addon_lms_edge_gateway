@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.15.43
+
+- Photographs sit on top of the cards again, and they stay still when the readings update.
+
 ## 2026.10.11.15.34
 
 - The house photograph stays in place when the live readings update.
