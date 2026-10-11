@@ -75,5 +75,9 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  assert.equal(w.document.getElementById('ha-flyout-title').textContent,battery.name);
  assert.equal(w.document.querySelectorAll('#settings .topology-edit').length,0);
  const picture=w.document.querySelector('#scene-static image');assert.ok(picture);w.LMSEnergy.render();assert.equal(w.document.querySelector('#scene-static image'),picture);
+ const cross=w.document.querySelector('[data-ha-remove="storage:bank"]');assert.ok(cross);assert.equal(cross.dataset.haRemoveName,'House bank');
+ cross.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));assert.equal(w.document.getElementById('ha-confirm').open,true);assert.match(w.document.getElementById('ha-confirm-title').textContent,/House bank/);
+ w.document.getElementById('ha-confirm-cancel').click();assert.ok(w.LMSEnergy.getConfig().storage.some(b=>b.id==='bank'));
+ cross.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));w.document.getElementById('ha-confirm-yes').click();assert.equal(w.LMSEnergy.getConfig().storage.some(b=>b.id==='bank'),false);
  dom.window.close();console.log('PASS: production startup, partial rendering, no fictional BMS/history, stable IDs, nested relative URLs and sample write isolation.');
 })().catch(e=>{console.error(e);dom.window.close();process.exitCode=1});

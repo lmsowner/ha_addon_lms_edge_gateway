@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.15.17
+
+- House, charger and load settings open as a dialog. In Edit mode, × on a component asks, then removes it, including a Powerwall.
+
 ## 2026.10.11.10.55
 
 - Live readings update the numbers on the diagram. Photographs stay put instead of being redrawn on every refresh.
