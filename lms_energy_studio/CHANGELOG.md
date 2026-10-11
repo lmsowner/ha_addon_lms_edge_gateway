@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.10.49
+
+- Save confirms as soon as the mapping is stored, without waiting to copy every Home Assistant sensor again.
+
 ## 2026.10.11.10.41
 
 - Save this part confirms on the button and updates the diagram. A battery capacity sensor is the energy still stored, divided by the total you entered.

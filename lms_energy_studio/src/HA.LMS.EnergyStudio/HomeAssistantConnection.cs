@@ -14,6 +14,10 @@ public sealed class HomeAssistantConnection(IConfiguration settings,Configuratio
     readonly Dictionary<string,JsonObject> states=[];
     readonly Dictionary<string,JsonObject?> bootstrapEvents=[];
     JsonArray registry=[],devices=[],areas=[];
+    readonly Dictionary<string,JsonNode> registryByEntity=new(StringComparer.Ordinal);
+    readonly Dictionary<string,string> entityByRegistry=new(StringComparer.Ordinal);
+    readonly Dictionary<string,JsonNode> deviceById=new(StringComparer.Ordinal);
+    readonly Dictionary<string,JsonNode> areaById=new(StringComparer.Ordinal);
     ClientWebSocket? socket;
     bool bootstrapping;
     int sequence;
@@ -22,23 +26,37 @@ public sealed class HomeAssistantConnection(IConfiguration settings,Configuratio
     string Token=>Environment.GetEnvironmentVariable("SUPERVISOR_TOKEN")??settings["EnergyStudio:HomeAssistantToken"]??"";
     Uri Rest=>new(Environment.GetEnvironmentVariable("SUPERVISOR_TOKEN") is not null?"http://supervisor/core/api/":(settings["EnergyStudio:HomeAssistantUrl"]??"http://localhost:8123").TrimEnd('/')+"/api/");
     Uri WebSocket=>Environment.GetEnvironmentVariable("SUPERVISOR_TOKEN") is not null?new("ws://supervisor/core/websocket"):new UriBuilder(new Uri(Rest,"websocket")){Scheme=Rest.Scheme=="https"?"wss":"ws"}.Uri;
+    void Reindex()
+    {
+        registryByEntity.Clear();entityByRegistry.Clear();deviceById.Clear();areaById.Clear();
+        foreach(var entry in registry){var id=entry?["entity_id"]?.ToString();if(id is null)continue;registryByEntity[id]=entry!;var registryId=entry?["id"]?.ToString();if(registryId is not null)entityByRegistry[registryId]=id;}
+        foreach(var device in devices){var id=device?["id"]?.ToString();if(id is not null)deviceById[id]=device!;}
+        foreach(var area in areas){var id=area?["area_id"]?.ToString();if(id is not null)areaById[id]=area!;}
+    }
+    JsonObject Decorate(string id,JsonObject? state)
+    {
+        registryByEntity.TryGetValue(id,out var entry);
+        JsonNode? device=null;var deviceId=entry?["device_id"]?.ToString();if(deviceId is not null)deviceById.TryGetValue(deviceId,out device);
+        var areaId=entry?["area_id"]?.ToString()??device?["area_id"]?.ToString();JsonNode? area=null;if(areaId is not null)areaById.TryGetValue(areaId,out area);
+        return new JsonObject{["entity_id"]=id,["state"]=state?["state"]?.DeepClone()??"unavailable",["last_updated"]=state?["last_updated"]?.DeepClone(),["last_reported"]=state?["last_reported"]?.DeepClone(),["registry_id"]=entry?["id"]?.DeepClone(),["device_id"]=entry?["device_id"]?.DeepClone(),["device_name"]=(device?["name_by_user"]??device?["name"])?.DeepClone(),["area_name"]=area?["name"]?.DeepClone(),["attributes"]=Sanitize(state?["attributes"],0)??new JsonObject(),["history_capability"]="recorder-if-enabled",["statistics_capability"]=state?["attributes"]?["state_class"]?.DeepClone()};
+    }
+    (Binding? Binding,JsonObject? Entity) Lookup(Binding? binding)
+    {
+        if(binding is null)return (null,null);
+        lock(stateGate)
+        {
+            var id=binding.RegistryId is not null&&entityByRegistry.TryGetValue(binding.RegistryId,out var renamed)?renamed:binding.EntityId;
+            states.TryGetValue(id,out var state);
+            return (id==binding.EntityId?binding:binding with{EntityId=id},state is null?null:Decorate(id,state));
+        }
+    }
     public Dictionary<string,JsonObject> Catalogue()
     {
         lock(stateGate)
         {
             var result=new Dictionary<string,JsonObject>();
-            foreach(var (id,state) in states)
-            {
-                if(!id.StartsWith("sensor.")&&!id.StartsWith("binary_sensor.")&&!id.StartsWith("input_number."))continue;
-                var entry=registry.FirstOrDefault(e=>e?["entity_id"]?.ToString()==id);var device=devices.FirstOrDefault(d=>d?["id"]?.ToString()==entry?["device_id"]?.ToString());
-                var areaId=entry?["area_id"]?.ToString()??device?["area_id"]?.ToString();var area=areas.FirstOrDefault(a=>a?["area_id"]?.ToString()==areaId);
-                var item=(JsonObject)state.DeepClone(); item["registry_id"]=entry?["id"]?.DeepClone(); item["device_id"]=entry?["device_id"]?.DeepClone();item["device_name"]=(device?["name_by_user"]??device?["name"])?.DeepClone();item["area_name"]=area?["name"]?.DeepClone();
-                // Bound values and redact common credential attributes before returning a catalogue.
-                item.Remove("context");item["attributes"]=Sanitize(item["attributes"],0);
-                item["history_capability"]="recorder-if-enabled";item["statistics_capability"]=state["attributes"]?["state_class"]?.DeepClone();
-                result[id]=item;
-            }
-            foreach(var e in registry) { var id=e?["entity_id"]?.ToString();if(id is not null&&id.StartsWith("sensor.")&&!result.ContainsKey(id))result[id]=new JsonObject{["entity_id"]=id,["registry_id"]=e?["id"]?.DeepClone(),["state"]="unavailable",["attributes"]=new JsonObject()}; }
+            foreach(var (id,state) in states)if(id.StartsWith("sensor.")||id.StartsWith("binary_sensor.")||id.StartsWith("input_number."))result[id]=Decorate(id,state);
+            foreach(var (id,_) in registryByEntity)if(id.StartsWith("sensor.")&&!result.ContainsKey(id))result[id]=Decorate(id,null);
             return result;
         }
     }
@@ -69,8 +87,9 @@ public sealed class HomeAssistantConnection(IConfiguration settings,Configuratio
     }
     public object Snapshot()
     {
-        var c=ResolvedConfiguration();var catalogue=Catalogue();var now=DateTimeOffset.UtcNow;
-        var readings=Configuration.Fields(c.Layout,c.Cells).ToDictionary(p=>p.Key,p=>{var b=c.Mappings.GetValueOrDefault(p.Key);var e=b is null?null:Resolve(b,catalogue).Entity;var m=Measurements.Read(b,e,p.Value,connected,now);return b?.RegistryId is not null&&e is null?m with{Quality="repair-required"}:m;});
+        var c=store.Get();var now=DateTimeOffset.UtcNow;
+        var readings=new Dictionary<string,Measurement>();
+        foreach(var (key,role) in Configuration.Fields(c.Layout,c.Cells)){c.Mappings.TryGetValue(key,out var binding);var (resolved,entity)=Lookup(binding);var m=Measurements.Read(resolved,entity,role,connected,now);readings[key]=resolved?.RegistryId is not null&&entity is null?m with{Quality="repair-required"}:m;}
         void Pair(string net,string positive,string negative) { if(c.Mappings.ContainsKey(net)||(!c.Mappings.ContainsKey(positive)&&!c.Mappings.ContainsKey(negative)))return;var a=readings[positive];var b=readings[negative];readings[net]=Measurements.Sum([a,b with{Value=-b.Value}],"kW",now); }
         foreach(var key in readings.Keys.ToArray())if((key is "grid.import" or "grid.export" || key.StartsWith("arrays.")||key.StartsWith("sources.")||key.StartsWith("loads.")||key.EndsWith(".charge")||key.EndsWith(".discharge"))&&readings[key].Value<0)readings[key]=readings[key] with{Value=null,Quality="invalid-direction"};
         Pair("grid","grid.import","grid.export");
@@ -131,7 +150,7 @@ public sealed class HomeAssistantConnection(IConfiguration settings,Configuratio
     }
     async Task RefreshRegistry(CancellationToken ct)
     {
-        var r=(await Command(new JsonObject{["type"]="config/entity_registry/list"},ct))!.AsArray();var d=(await Command(new JsonObject{["type"]="config/device_registry/list"},ct))!.AsArray();var a=(await Command(new JsonObject{["type"]="config/area_registry/list"},ct))!.AsArray();lock(stateGate){registry=r;devices=d;areas=a;}
+        var r=(await Command(new JsonObject{["type"]="config/entity_registry/list"},ct))!.AsArray();var d=(await Command(new JsonObject{["type"]="config/device_registry/list"},ct))!.AsArray();var a=(await Command(new JsonObject{["type"]="config/area_registry/list"},ct))!.AsArray();lock(stateGate){registry=r;devices=d;areas=a;Reindex();}
     }
     async Task ReadLoop(CancellationToken ct)
     {
