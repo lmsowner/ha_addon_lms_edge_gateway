@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.09.48
+
+- Edit mode adds one solar array, inverter, or battery at a time. Opening it shows only that component, including the link to the next device.
+
 ## 2026.10.11.07.43
 
 - A battery array is one entry. Its power is a single positive or negative reading, with one combined state of charge.
