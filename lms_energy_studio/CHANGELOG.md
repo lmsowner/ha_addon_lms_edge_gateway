@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.15.34
+
+- The house photograph stays in place when the live readings update.
+
 ## 2026.10.11.15.26
 
 - A search already typed in the sensor list is applied when that list is shown.

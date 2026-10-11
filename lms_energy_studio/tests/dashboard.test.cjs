@@ -76,7 +76,7 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  assert.equal(battery.inverter,inverter.id);
  assert.equal(w.document.getElementById('ha-flyout-title').textContent,battery.name);
  assert.equal(w.document.querySelectorAll('#settings .topology-edit').length,0);
- const picture=w.document.querySelector('#scene-static image');assert.ok(picture);w.LMSEnergy.render();assert.equal(w.document.querySelector('#scene-static image'),picture);
+ const picture=w.document.querySelector('#scene-static image');assert.ok(picture);const house=[...w.document.querySelectorAll('#scene-static image')].find(el=>el.getAttribute('href').includes('villa')||el.getAttribute('clip-path')==='url(#houseClip)');assert.ok(house);w.LMSEnergy.render();assert.equal(w.document.querySelector('#scene-static image'),picture);assert.equal([...w.document.querySelectorAll('#scene-static image')].find(el=>el.getAttribute('clip-path')==='url(#houseClip)'),house);
  const cross=w.document.querySelector('[data-ha-remove="storage:bank"]');assert.ok(cross);assert.equal(cross.dataset.haRemoveName,'House bank');
  cross.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));assert.equal(w.document.getElementById('ha-confirm').open,true);assert.match(w.document.getElementById('ha-confirm-title').textContent,/House bank/);
  w.document.getElementById('ha-confirm-cancel').click();assert.ok(w.LMSEnergy.getConfig().storage.some(b=>b.id==='bank'));
