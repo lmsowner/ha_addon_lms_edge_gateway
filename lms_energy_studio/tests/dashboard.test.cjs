@@ -24,6 +24,8 @@ for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.
  assert.ok(w.document.getElementById('energy-mini-origin').textContent.includes('Recorded history'));
  const edit=[...w.document.querySelectorAll('header button')].find(b=>b.textContent==='Edit mode');edit.click();assert.equal(edit.getAttribute('aria-pressed'),'true');
  w.document.querySelector('[data-ha-edit="home"]').click();await new Promise(r=>setTimeout(r,20));assert.ok(w.document.getElementById('ha-flyout').open);assert.equal(w.document.getElementById('ha-flyout-title').textContent,'Home consumption');
+ w.document.getElementById('ha-search').value='no-such-sensor';w.document.querySelector('[data-ha-reading]').click();assert.equal(w.document.querySelectorAll('[data-ha-entity]').length,0);
+ w.document.getElementById('ha-search').value='';w.document.querySelector('[data-ha-reading]').click();assert.ok(w.document.querySelector('[data-ha-entity="sensor.meter"]'));
  w.document.querySelector('[data-ha-entity="sensor.meter"]').click();w.document.getElementById('ha-save').click();await new Promise(r=>setTimeout(r,20));assert.equal(config.mappings.home.entityId,'sensor.meter');assert.equal(config.mappings.home.registryId,'meter-identity');w.document.getElementById('ha-sample').click();w.document.getElementById('ha-save').click();assert.ok(w.document.getElementById('ha-message').textContent.includes('Sample mapping preview only'));
  assert.equal(requests.filter(r=>r.options.method==='PUT').length,2);
  w.LMSEnergy.resumeDemo();assert.ok(w.document.querySelector('header + p').textContent.includes('DEMO'));

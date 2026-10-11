@@ -77,6 +77,7 @@ function renderPart(){
  renderCandidates();
 }
 function renderCandidates(){
+ const queryBox=$('ha-search'),deviceBox=$('ha-device');if(queryBox)search=queryBox.value;if(deviceBox)device=deviceBox.value;
  const info=spec(partId),field=(info?.fields||[]).find(f=>f.key===reading);if(!field){$('ha-results').innerHTML='';$('ha-result-count').textContent='';return;}
  const role=series?.role||field.role;
  const all=b.candidates(entities,role,search,device,false);
@@ -91,7 +92,7 @@ function renderCandidates(){
 }
 async function ensure(){if(entities.length&&state)return;const keep=preferLocal?window.LMSEnergy.getConfig():null;[entities,state]=await Promise.all([request('api/energy/entities'),request('api/energy/config')]);pending=structuredClone(state.mappings||{});window.EnergyLive.config=state;const layoutNow=keep||state.layout;state.layout=layoutNow;window.LMSEnergy.applyServerConfig(layoutNow);fillDevices(entities);}
 async function openPart(id){
- partId=id;series=null;search='';demo=false;window.EnergyLive?.hold?.(true);if(!$('ha-flyout').open)$('ha-flyout').showModal();$('ha-message').textContent='Loading sensors…';
+ partId=id;series=null;demo=false;window.EnergyLive?.hold?.(true);if(!$('ha-flyout').open)$('ha-flyout').showModal();$('ha-message').textContent='Loading sensors…';
  try{await ensure();renderPart();}catch(e){try{renderPart();}catch{} $('ha-message').textContent=e.message;}
 }
 function sample(){

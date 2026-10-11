@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.10.11.15.26
+
+- A search already typed in the sensor list is applied when that list is shown.
+
 ## 2026.10.11.15.21
 
 - The remove question is a small dialog, only as tall as the question and the buttons.
