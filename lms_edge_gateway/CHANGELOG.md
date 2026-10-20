@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.10.20.20.01
+
+- Prevent caching of login pages, passkey responses, and authentication redirects so stale sign-in responses are not reused.
+- Make passkey browser requests explicitly bypass caches while preserving caching for versioned static assets.
+
 ## 2026.10.20.19.03
 
 - Sign in with a saved passkey without entering an email address; the device selects the account.

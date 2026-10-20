@@ -123,6 +123,7 @@ window.lmsEdgePasskeys.login = async (returnUrl) => {
 async function postJson(url, body) {
     const response = await fetch(url, {
         method: "POST",
+        cache: "no-store",
         headers: {
             "Content-Type": "application/json",
             "Accept": "application/json"

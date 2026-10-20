@@ -91,6 +91,7 @@ app.Use(async (context, next) =>
 
     await next();
 });
+app.UseMiddleware<AuthenticationCacheControlMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
