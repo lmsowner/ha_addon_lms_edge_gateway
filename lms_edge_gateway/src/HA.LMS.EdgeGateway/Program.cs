@@ -813,10 +813,7 @@ app.MapPost("/api/passkeys/login/options", async (
 {
     try
     {
-        var request = await context.Request.ReadFromJsonAsync<PasskeyLoginOptionsRequest>(
-            cancellationToken: context.RequestAborted) ?? new PasskeyLoginOptionsRequest(null);
         var result = await passkeyAuthenticationService.BuildLoginOptionsAsync(
-            request.Email ?? string.Empty,
             context.Request,
             context.RequestAborted);
 
@@ -1227,8 +1224,6 @@ static async Task<(string StateId, string CredentialJson, string? Error)> ReadPa
 }
 
 sealed record PasskeyEnrollmentOptionsRequest(string? FriendlyName);
-
-sealed record PasskeyLoginOptionsRequest(string? Email);
 
 sealed record PublicAssetPublishRequest(
     string Hostname,

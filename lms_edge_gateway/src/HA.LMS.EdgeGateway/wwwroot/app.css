@@ -3961,6 +3961,7 @@ textarea {
     justify-items: stretch;
 }
 
+.auth-login-field-group[hidden],
 .auth-method-panel[hidden] {
     display: none;
 }

@@ -60,7 +60,7 @@ async function enrollWithOptionsEndpoint(optionsUrl, friendlyName) {
     }
 }
 
-window.lmsEdgePasskeys.login = async (email, returnUrl) => {
+window.lmsEdgePasskeys.login = async (returnUrl) => {
     if (!window.PublicKeyCredential) {
         return {
             succeeded: false,
@@ -75,21 +75,12 @@ window.lmsEdgePasskeys.login = async (email, returnUrl) => {
         };
     }
 
-    if (!email || email.trim() === "") {
-        return {
-            succeeded: false,
-            message: "Enter your email first."
-        };
-    }
-
     try {
-        const optionsResponse = await postJson("/api/passkeys/login/options", {
-            email: email.trim()
-        });
+        const optionsResponse = await postJson("/api/passkeys/login/options", {});
         if (!optionsResponse.succeeded) {
             return {
                 succeeded: false,
-                message: optionsResponse.message ?? "No passkey is available for this email."
+                message: optionsResponse.message ?? "Passkey sign-in could not start."
             };
         }
 

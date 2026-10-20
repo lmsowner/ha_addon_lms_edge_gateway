@@ -77,7 +77,7 @@ public sealed class PasskeyAuthenticationService(
                 .ToArray(),
             AuthenticatorSelection = new AuthenticatorSelection
             {
-                ResidentKey = ResidentKeyRequirement.Preferred,
+                ResidentKey = ResidentKeyRequirement.Required,
                 UserVerification = UserVerificationRequirement.Required
             },
             AttestationPreference = AttestationConveyancePreference.None
@@ -171,42 +171,25 @@ public sealed class PasskeyAuthenticationService(
         }
     }
 
-    public async Task<PasskeyOptionsResult> BuildLoginOptionsAsync(
-        string email,
+    public Task<PasskeyOptionsResult> BuildLoginOptionsAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var normalizedEmail = email.Trim().ToLowerInvariant();
-        var configuration = await securityStore.LoadAsync(cancellationToken);
-        var user = configuration.Users.FirstOrDefault(candidate =>
-            candidate.Email.Equals(normalizedEmail, StringComparison.OrdinalIgnoreCase));
-        if (user is null || !user.IsEnabled)
-        {
-            return PasskeyOptionsResult.Fail("No passkey is available for this email.");
-        }
-
-        var passkeys = configuration.Passkeys.Where(passkey => passkey.UserId == user.Id).ToArray();
-        if (passkeys.Length == 0)
-        {
-            return PasskeyOptionsResult.Fail("No passkey is available for this email.");
-        }
-
+        cancellationToken.ThrowIfCancellationRequested();
         var fido = BuildFido(request);
         var assertionOptions = fido.GetAssertionOptions(new GetAssertionOptionsParams
         {
-            AllowedCredentials = passkeys
-                .Select(passkey => new PublicKeyCredentialDescriptor(PasskeyBase64Url.Decode(passkey.CredentialId)))
-                .ToArray(),
+            AllowedCredentials = [],
             UserVerification = UserVerificationRequirement.Required
         });
 
         var stateId = Guid.NewGuid().ToString("N");
         memoryCache.Set(
             $"{AssertionStatePrefix}{stateId}",
-            new PasskeyAssertionState(user.Id, assertionOptions),
+            new PasskeyAssertionState(assertionOptions),
             TimeSpan.FromMinutes(5));
 
-        return new PasskeyOptionsResult(true, null, stateId, SerializeAssertionOptions(assertionOptions));
+        return Task.FromResult(new PasskeyOptionsResult(true, null, stateId, SerializeAssertionOptions(assertionOptions)));
     }
 
     public async Task<PasskeyLoginResult> CompleteLoginAsync(
@@ -226,7 +209,8 @@ public sealed class PasskeyAuthenticationService(
         var assertionResponse = JsonSerializer.Deserialize(
             credentialJson,
             FidoModelSerializerContext.Default.AuthenticatorAssertionRawResponse);
-        if (assertionResponse is null || string.IsNullOrWhiteSpace(assertionResponse.Id))
+        if (assertionResponse is null || string.IsNullOrWhiteSpace(assertionResponse.Id) ||
+            assertionResponse.Response.UserHandle is not { Length: > 0 })
         {
             return PasskeyLoginResult.Fail("The passkey response was not valid.");
         }
@@ -234,7 +218,7 @@ public sealed class PasskeyAuthenticationService(
         var configuration = await securityStore.LoadAsync(cancellationToken);
         var credential = configuration.Passkeys.FirstOrDefault(passkey =>
             passkey.CredentialId.Equals(assertionResponse.Id, StringComparison.Ordinal));
-        if (credential is null || credential.UserId != state.UserId)
+        if (credential is null)
         {
             return PasskeyLoginResult.Fail("The passkey was not recognised.");
         }
@@ -452,7 +436,7 @@ public sealed class PasskeyAuthenticationService(
         string FriendlyName,
         CredentialCreateOptions Options);
 
-    private sealed record PasskeyAssertionState(Guid UserId, AssertionOptions Options);
+    private sealed record PasskeyAssertionState(AssertionOptions Options);
 
     private sealed record PasskeyPublicOrigin(string Origin, string RelyingPartyId);
 }

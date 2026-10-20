@@ -48,11 +48,11 @@
                     <input type="hidden" name="returnUrl" value="@NormalizedReturnUrl" />
                     <input type="hidden" name="authMethod" value="@InitialAuthMethod" data-auth-method-input />
 
-                    <label class="auth-login-field-group">
+                    <label class="auth-login-field-group" data-auth-email-field hidden="@(InitialAuthMethod == "passkey")">
                         <span>Email</span>
                         <span class="auth-input-shell">
                             <span class="auth-input-icon">EM</span>
-                            <input name="email" type="email" value="@EmailValue" autocomplete="email" placeholder="you@example.com" required />
+                            <input name="email" type="email" value="@EmailValue" autocomplete="email" placeholder="you@example.com" required="@(InitialAuthMethod != "passkey")" disabled="@(InitialAuthMethod == "passkey")" />
                         </span>
                     </label>
 
@@ -152,6 +152,14 @@
                 methodInput.value = method;
             }
 
+            const emailField = shell.querySelector("[data-auth-email-field]");
+            const emailInput = shell.querySelector("[name='email']");
+            if (emailField instanceof HTMLElement && emailInput instanceof HTMLInputElement) {
+                emailField.hidden = method === "passkey";
+                emailInput.disabled = method === "passkey";
+                emailInput.required = method !== "passkey";
+            }
+
             for (const button of buttons) {
                 const selected = button.getAttribute("data-auth-method-button") === method;
                 button.classList.toggle("selected", selected);
@@ -190,10 +198,8 @@
     function wirePasskeyLogin(form) {
         const passkeyButton = form.querySelector("[data-passkey-login]");
         const status = form.querySelector("[data-passkey-status]");
-        const emailInput = form.querySelector("[name='email']");
         const returnUrlInput = form.querySelector("[name='returnUrl']");
         if (!(passkeyButton instanceof HTMLButtonElement) ||
-            !(emailInput instanceof HTMLInputElement) ||
             !(returnUrlInput instanceof HTMLInputElement)) {
             return;
         }
@@ -207,7 +213,7 @@
             passkeyButton.disabled = true;
             setStatus(status, "Waiting for device passkey...");
             try {
-                const result = await window.lmsEdgePasskeys.login(emailInput.value, returnUrlInput.value || "/");
+                const result = await window.lmsEdgePasskeys.login(returnUrlInput.value || "/");
                 if (!result.succeeded) {
                     setStatus(status, result.message || "Device passkey sign-in failed.", true);
                 }

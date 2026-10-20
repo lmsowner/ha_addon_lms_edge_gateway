@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.10.20.19.03
+
+- Sign in with a saved passkey without entering an email address; the device selects the account.
+- Require discoverable credentials for new passkeys. Older non-discoverable keys can be saved again after email-code or authenticator sign-in.
+
 ## 2026.09.17.07.19
 
 - Sort discovered HTTP/S stamps by real titles, then Unknown with favicons, then bare Unknown, then redirect/error responses (302/4xx/5xx).

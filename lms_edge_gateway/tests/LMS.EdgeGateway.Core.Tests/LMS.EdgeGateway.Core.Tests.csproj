@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LMS.EdgeGateway.Core\LMS.EdgeGateway.Core.csproj" />
+    <ProjectReference Include="..\..\src\HA.LMS.EdgeGateway\HA.LMS.EdgeGateway.csproj" />
   </ItemGroup>
 
   <ItemGroup>
