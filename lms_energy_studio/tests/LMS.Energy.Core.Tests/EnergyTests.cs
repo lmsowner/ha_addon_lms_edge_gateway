@@ -17,6 +17,19 @@ public class EnergyTests
     {var ah=Measurements.Read(new("sensor.test"),Entity("180","Ah"),"capacity",true,Now);Assert.Equal("Ah",ah.Unit);Assert.Equal(180,ah.Value);Assert.Equal("invalid-unit",Measurements.Read(new("sensor.test"),Entity("180","Ah"),"energy",true,Now).Quality);}
     [Fact]public void AttributeArraysRequireTheirOwnUnit()
     {var e=Entity();Assert.Equal(3.3,Measurements.Read(new("sensor.test",Pointer:"/attributes/cells/0/voltage",SourceUnit:"mV"),e,"voltage",true,Now).Value!.Value,6);Assert.Equal("invalid-unit",Measurements.Read(new("sensor.test",Pointer:"/attributes/cells/0/voltage"),e,"voltage",true,Now).Quality);}
+    [Fact]public void BmsResistanceAndPackBalancingAreSeparateMappings()
+    {
+        var layout=JsonNode.Parse("""{"storage":[{"id":"jk"}]}""")!.AsObject();
+        var catalogue=new Dictionary<string,JsonObject>{{"sensor.resistance",Entity("2.5","mΩ")},{"binary_sensor.balancing",Entity("on","")},{"sensor.balance_current",Entity("800","mA")}};
+        var update=new ConfigurationUpdate(layout,new(){["jk"]=["cell-1"]},new(){["cells.jk.cell-1.resistance"]=new("sensor.resistance"),["batteries.jk.balancing"]=new("binary_sensor.balancing"),["batteries.jk.balanceCurrent"]=new("sensor.balance_current")});
+        Configuration.Validate(update,catalogue);
+        var fields=Configuration.Fields(layout,update.Cells);
+        Assert.Equal("resistance",fields["cells.jk.cell-1.resistance"]);
+        Assert.Equal(.0025,Measurements.Read(update.Mappings["cells.jk.cell-1.resistance"],catalogue["sensor.resistance"],"resistance",true,Now).Value!.Value,6);
+        Assert.True(Measurements.Read(update.Mappings["batteries.jk.balancing"],catalogue["binary_sensor.balancing"],"boolean",true,Now).Active);
+        Assert.Equal(.8,Measurements.Read(update.Mappings["batteries.jk.balanceCurrent"],catalogue["sensor.balance_current"],"current",true,Now).Value!.Value,6);
+        Assert.Equal("unmapped",Measurements.Read(null,catalogue["binary_sensor.balancing"],"boolean",true,Now).Quality);
+    }
     [Fact]public void UsesReportedTimeAndDisconnectQuality()
     {var e=Entity();e["last_updated"]=Now.AddDays(-5).ToString("O");e["last_reported"]=Now.ToString("O");Assert.Equal("good",Measurements.Read(new("sensor.test",MaxAgeSeconds:60),e,"power",true,Now).Quality);Assert.Equal("stale",Measurements.Read(new("sensor.test",MaxAgeSeconds:60),e,"power",true,Now.AddMinutes(2)).Quality);Assert.Null(Measurements.Read(new("sensor.test"),e,"power",false,Now).Value);}
     [Fact]public void SignedReadingsAndSkewAreExplicit()

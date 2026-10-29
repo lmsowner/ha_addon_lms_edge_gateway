@@ -1,0 +1,56 @@
+const {JSDOM}=require('jsdom');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const root=path.join(__dirname,'../src/HA.LMS.EnergyStudio/wwwroot');
+const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'http://localhost/nested/energy/',runScripts:'outside-only'}),w=dom.window;
+w.structuredClone=structuredClone;w.matchMedia=()=>({matches:false,addEventListener(){}});w.setInterval=()=>0;
+w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};
+const entity=(id,value,unit,attrs={})=>({entity_id:id,device_id:'jk-bms',registry_id:id,state:String(value),last_updated:new Date().toISOString(),attributes:{friendly_name:id.split('.')[1],unit_of_measurement:unit,...attrs}});
+const volts=[1,3].map(n=>entity('sensor.jk_cell_voltage_'+n,3.31+n/1000,'V'));
+const ohms=[1,2,3].map(n=>entity('sensor.jk_cell_resistance_'+n,.001+n/10000,'Ω'));
+const catalogue=[...volts,...ohms,entity('binary_sensor.jk_balancing','on',null),entity('sensor.jk_balancing_current',.8,'A'),entity('sensor.jk_properties','online',null,{cells:[{resistance:2.5,balancing:false}]})];
+let config={revision:1,layout:{name:'BMS test',batteries:1,storage:[{id:'bank',name:'JK bank',capacity:15,connection:'inverter',balanceType:'active'}]},cells:{bank:['first','second','third']},mappings:{'cells.bank.second.voltage':{entityId:volts[0].entity_id}}},writes=0;
+w.fetch=async(url,options={})=>{const p=new URL(url).pathname;let value;if(p.endsWith('/healthz'))value={version:'test'};
+ else if(p.endsWith('/config')){if(options.method==='PUT'){writes++;const next=JSON.parse(options.body);config={...next,revision:config.revision+1};delete config.expectedRevision;}value=config;}
+ else if(p.endsWith('/entities'))value=catalogue;
+ else if(p.endsWith('/history'))value={points:[],intervals:[],totalKwh:0,coverageSeconds:0,costMinor:null};
+ else if(p.endsWith('/snapshot'))value={connection:'connected',revision:config.revision,observedAt:new Date().toISOString(),readings:{},residual:{value:null,quality:'incomplete'}};
+ else throw Error('Unexpected request '+p);return {ok:true,json:async()=>structuredClone(value)};};
+w.EventSource=class{addEventListener(){}close(){}};
+for(const file of ['topology.js','battery-analysis.js','energy-history.js','app.js','ha-bindings.js','ha-picker.js','live.js'])w.eval(fs.readFileSync(path.join(root,file),'utf8'));
+const $=id=>w.document.getElementById(id),click=selector=>{const node=w.document.querySelector(selector);assert(node,selector);node.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));},change=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new w.Event('change',{bubbles:true}));},pause=()=>new Promise(r=>setTimeout(r,25));
+(async()=>{
+ await pause();[...w.document.querySelectorAll('header button')].find(b=>b.textContent==='Edit mode').click();click('[data-ha-edit="storage:bank"]');await pause();
+ assert.equal($('ha-cell-count').value,'3');
+ click('[data-series="voltage"]');click('[data-ha-entity="sensor.jk_cell_voltage_1"]');
+ assert.match($('ha-series-preview').textContent,/2 of 3 matched/);assert.match($('ha-series-preview').textContent,/No compatible match/);
+ assert.equal(writes,0,'Preview must not save');click('#ha-series-accept');
+ click('[data-series="resistance"]');click('[data-ha-entity="sensor.jk_cell_resistance_1"]');click('#ha-series-cancel');
+ assert.match(w.document.querySelector('[data-ha-reading="cells.bank.first.resistance"]').textContent,/Not mapped/);
+ click('[data-series="resistance"]');click('[data-ha-entity="sensor.jk_cell_resistance_1"]');click('#ha-series-accept');
+ click('[data-ha-reading="batteries.bank.balancing"]');click('[data-ha-entity="binary_sensor.jk_balancing"]');
+ click('[data-ha-reading="batteries.bank.balanceCurrent"]');click('[data-ha-entity="sensor.jk_balancing_current"]');
+ $('ha-save').click();await pause();
+ assert.equal(config.mappings['cells.bank.first.voltage'].entityId,volts[0].entity_id);
+ assert.equal(config.mappings['cells.bank.second.voltage'].entityId,volts[0].entity_id,'Gap preserves the old mapping');
+ assert.equal(config.mappings['cells.bank.third.voltage'].entityId,volts[1].entity_id);
+ assert.equal(config.mappings['cells.bank.third.resistance'].entityId,ohms[2].entity_id);
+ assert.equal(config.mappings['batteries.bank.balancing'].entityId,'binary_sensor.jk_balancing');
+ assert(!config.mappings['cells.bank.first.balancing'],'Pack activity must not invent per-cell activity');
+ const analysis=w.LMSEnergy.getState().batteryAnalysis.bank;assert.equal(analysis.balancing,true);assert.equal(analysis.balanceCurrent,.8);assert.equal(analysis.cells[2].resistance,.0013);
+ click('[data-ha-reading="cells.bank.first.resistance"]');change('ha-source-mode','attributes');click('[data-ha-entity="sensor.jk_properties"]');
+ change('ha-property','/attributes/cells/0/resistance');change('ha-unit','mΩ');assert.match($('ha-property-preview').textContent,/2.50 mΩ/);
+ $('ha-save').click();await pause();assert.equal(config.mappings['cells.bank.first.resistance'].pointer,'/attributes/cells/0/resistance');assert.equal(config.mappings['cells.bank.first.resistance'].sourceUnit,'mΩ');
+ // Custom IDs survive changes to cell count; existing mappings stay attached.
+ $('ha-cell-count').value='4';$('ha-apply-cells').click();$('ha-save').click();await pause();assert.deepEqual(config.cells.bank,['first','second','third','cell-4']);
+ const heat=w.BatteryAnalysis.cellHeat,low=heat(3.29,3.3,3,10),high=heat(3.31,3.3,3,10);
+ assert(Math.abs(low.level-high.level)<1e-10);assert.equal(low.style,high.style);assert.equal(heat(3.3,3.3,3,10).level,0);assert.equal(heat(3.35,3.3,3,10).level,1);assert.equal(heat(NaN,3.3,3).delta,null);assert.equal(heat(3.3,3.3,1).delta,null);
+ // The same card DOM node survives telemetry refreshes for smooth colour transitions.
+ const pack={id:'bank',name:'JK bank'},a={soc:98,balanceType:'active',balancing:true,balanceCurrent:.8,cells:[{id:'first',voltage:3.29,resistance:.002},{id:'second',voltage:3.3},{id:'third',voltage:3.31}],history:[]};
+ w.BatteryAnalysis.refresh({storage:[pack],motion:true},{batteryUnits:[pack],batteryAnalysis:{bank:a}},true);w.BatteryAnalysis.open('bank');
+ const card=$('battery-detail-body').querySelector('.cell-card');card.focus();assert.match(card.textContent,/2.00 mΩ/);assert(!card.textContent.includes('HIGH'));assert(card.textContent.includes('LOW'));
+ a.cells[0].voltage=3.295;w.BatteryAnalysis.refresh({storage:[pack],motion:true},{batteryUnits:[pack],batteryAnalysis:{bank:a}},true);
+ assert.equal($('battery-detail-body').querySelector('.cell-card'),card);assert.equal(w.document.activeElement,card);assert.match(card.textContent,/3.295/);
+ change('bms-heat-range','20');assert.match($('battery-detail-body').textContent,/±20\+ mV/);
+ a.cells.forEach(c=>c.voltage=3.3);w.BatteryAnalysis.refresh({storage:[pack],motion:true},{batteryUnits:[pack],batteryAnalysis:{bank:a}},true);assert(![...$('battery-detail-body').querySelectorAll('.cell-name span')].length,'Equal cells have no false extremes');
+ dom.window.close();console.log('PASS: reviewed voltage/resistance series, gaps, pack balance, attribute units, stable cell IDs and symmetric live heat map.');
+})().catch(e=>{console.error(e);dom.window.close();process.exitCode=1});

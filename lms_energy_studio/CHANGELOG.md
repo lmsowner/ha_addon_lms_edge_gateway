@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.29.11.29
+
+- Pick one cell voltage or resistance sensor and review matching numbered entities before applying a series. Gaps and ambiguous numbers remain unmapped; existing readings and stable cell IDs are preserved.
+- Review and edit every cell's readings in a mapping table, or select nested entity properties without typing JSON pointers.
+- Map BMS-wide balancing status and current separately from cell activity. Cell resistance displays in mΩ and remains distinct from a passive balancing resistor.
+- Cell cards use a consistent linear teal-to-red heat map for absolute deviation from the pack mean, with an adjustable range, a gentle pulse and smooth live updates. Both low and high outliers turn red; missing data remains neutral. Pause and reduced-motion preferences are respected.
+
 ## 2026.10.11.17.12
 
 - Saving a sensor reports the actual reason when the energy service rejects it, instead of only HTTP 400.

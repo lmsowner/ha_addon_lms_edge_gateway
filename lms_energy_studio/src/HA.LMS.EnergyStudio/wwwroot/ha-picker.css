@@ -46,3 +46,18 @@ body:not(.ha-editing) .ha-card-remove{display:none}
 .ha-links p{width:100%;margin:0;color:#9abbd0}
 .ha-series-actions{display:flex;flex-wrap:wrap;gap:8px}
 #ha-cell-tools h3{margin:18px 0 8px}
+#ha-cell-overview{border:1px solid #375467;background:#142a35;border-radius:14px;padding:18px;margin-bottom:22px}
+#ha-cell-overview h3{margin:0 0 10px}#ha-cell-overview p,.ha-advanced p{font-size:14px;line-height:1.5;color:#b7d2e1}
+.ha-cell-setup{display:flex;align-items:center;gap:14px}.ha-cell-setup label{max-width:150px}
+.ha-table-scroll{overflow:auto;max-height:340px;margin:14px 0;border:1px solid #375467;border-radius:10px}
+.ha-cell-table{border-collapse:collapse;width:100%;font-size:13px;text-align:left}
+.ha-cell-table caption{text-align:left;padding:12px;color:#b7d2e1}.ha-cell-table th,.ha-cell-table td{padding:9px;border-bottom:1px solid #375467;vertical-align:top}
+.ha-cell-table thead th{position:sticky;top:0;background:#18303e;z-index:1}.ha-cell-table code{overflow-wrap:anywhere}
+.ha-cell-binding{min-width:150px;max-width:220px;text-align:left;display:flex;flex-direction:column;gap:6px;border:1px solid #375467;border-radius:8px;background:#102431;color:#d4e7f3;padding:10px;width:100%}
+.ha-cell-binding span{font-size:11px;overflow-wrap:anywhere;color:#9abbd0}.ha-cell-binding:hover,.ha-cell-binding.selected{border-color:#64d7a6;background:#204238}
+#ha-series-preview{padding:16px;background:#102431;border:1px solid #64d7a6;border-radius:10px;margin:14px 0}
+#ha-series-preview h4{margin:0}.ha-property-editor{padding:16px;background:#173a30;border:1px solid #41735c;border-radius:10px;margin:16px 0}
+.ha-property-editor code{overflow-wrap:anywhere}.ha-property-editor strong{display:block;color:#bafce1}
+#ha-flyout .ha-property-editor[hidden],#ha-flyout #ha-cell-overview[hidden],#ha-series-preview[hidden]{display:none}
+.ha-advanced{padding:12px 0;border-bottom:1px solid #345467}.ha-advanced summary,#ha-cell-review summary{cursor:pointer;color:#c5e3ee;padding:8px 0}
+#ha-selected-reading{font-size:19px;margin:18px 0 0}
